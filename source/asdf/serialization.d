@@ -496,14 +496,12 @@ unittest
 		Appender!(string[]) strings; //`put` method is used
 	}
 
-	import std.stdio;
-	S(5).serializeToJson.writeln;
 	assert(S(5).serializeToJson == `{"numbers":[0,1,2,3,4]}`);
 	assert(`{"strings":["a","b"]}`.deserialize!S.strings.data == ["a","b"]);
 }
 
 /++
-Allows serilalize / deserialize fields like arrays.
+Allows serilalize / deserialize fields like objects.
 
 See_also: $(DUBREF asdf, .Asdf.opCast).
 +/
@@ -512,6 +510,35 @@ enum Serialization serializationLikeObject = serialization("like-object");
 ///
 unittest
 {
+	static struct M
+	{
+		private int sum;
+
+		// opApply is used for serialization
+		int opApply(int delegate(in char[] key, int val) dg)
+		{
+			if(auto r = dg("a", 1)) return r;
+			if(auto r = dg("b", 2)) return r;
+			if(auto r = dg("c", 3)) return r;
+			return 0;
+		}
+
+		// opIndexAssign for deserialization
+		void opIndexAssign(int val, string key)
+		{
+			sum += val;
+		}
+	}
+
+	static struct S
+	{
+		@serializationLikeObject
+		@serializedAs!int
+		M obj;
+	}
+
+	assert(S.init.serializeToJson == `{"obj":{"a":1,"b":2,"c":3}}`);
+	assert(`{"obj":{"a":1,"b":2,"c":9}}`.deserialize!S.obj.sum == 12);
 }
 
 /++
@@ -541,7 +568,7 @@ unittest
 		return i + 2;
 	}
 
-	struct S
+	static struct S
 	{
 		@serializationTransformIn!fin
 		@serializationTransformOut!`"str".repeat.take(a).joiner("_").to!string`
@@ -1163,12 +1190,16 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 
 					static if(isLikeArray(V.stringof, member, udas))
 					{
-						if(val is null)
+						alias V = typeof(val);
+						static if(is(V == interface) || is(V == class) || is(V : E[], E))
 						{
-							serializer.putValue(null);
-							return;
+							if(val is null)
+							{
+								serializer.putValue(null);
+								continue;
+							}
 						}
-						auto state = serializer.arrayBegin();
+						auto valState = serializer.arrayBegin();
 						foreach (ref elem; val)
 						{
 							serializer.elemBegin;
@@ -1182,7 +1213,34 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 								serializer.serializeValue(elem);
 							}
 						}
-						serializer.arrayEnd(state);
+						serializer.arrayEnd(valState);
+					}
+					else
+					static if(isLikeObject(V.stringof, member, udas))
+					{
+						static if(is(V == interface) || is(V == class) || is(V : E[T], E, T))
+						{
+							if(val is null)
+							{
+								serializer.putValue(null);
+								continue;
+							}
+						}
+						auto valState = serializer.objectBegin();
+						foreach (key, elem; val)
+						{
+							serializer.putKey(key);
+							static if(hasSerializedAs!(__traits(getMember, value, member)))
+							{
+								alias Proxy = getSerializedAs!(__traits(getMember, value, member));
+								serializer.serializeValue(elem.to!Proxy);
+							}
+							else
+							{
+								serializer.serializeValue(elem);
+							}
+						}
+						serializer.objectEnd(valState);
 					}
 					else
 					static if(hasSerializedAs!(__traits(getMember, value, member)))
@@ -1545,6 +1603,20 @@ void deserializeValue(V)(Asdf data, ref V value)
 								}
 							}
 							else
+							static if(isLikeObject(V.stringof, member, udas))
+							{
+								static assert(hasSerializedAs!(__traits(getMember, value, member)), V.stringof ~ "." ~ member ~ " should have a Proxy type for deserialization");
+								alias Proxy = getSerializedAs!(__traits(getMember, value, member));
+								enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(elem.value, proxy));
+								alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
+								foreach(v; elem.value.byKeyValue)
+								{
+									Proxy proxy;
+									Fun(v.value, proxy);
+									__traits(getMember, value, member)[elem.key.idup] = proxy;
+								}
+							}
+							else
 							static if(hasSerializedAs!(__traits(getMember, value, member)))
 							{
 								alias Proxy = getSerializedAs!(__traits(getMember, value, member));
@@ -1884,35 +1956,35 @@ private bool privateOrPackage(string protection)
  */
 private template aliasSeqOf(alias range)
 {
-    import std.traits : isArray, isNarrowString;
+	import std.traits : isArray, isNarrowString;
 
-    alias ArrT = typeof(range);
-    static if (isArray!ArrT && !isNarrowString!ArrT)
-    {
-        static if (range.length == 0)
-        {
-            alias aliasSeqOf = AliasSeq!();
-        }
-        else static if (range.length == 1)
-        {
-            alias aliasSeqOf = AliasSeq!(range[0]);
-        }
-        else
-        {
-            alias aliasSeqOf = AliasSeq!(aliasSeqOf!(range[0 .. $/2]), aliasSeqOf!(range[$/2 .. $]));
-        }
-    }
-    else
-    {
-        import std.range.primitives : isInputRange;
-        static if (isInputRange!ArrT)
-        {
-            import std.array : array;
-            alias aliasSeqOf = aliasSeqOf!(array(range));
-        }
-        else
-        {
-            static assert(false, "Cannot transform range of type " ~ ArrT.stringof ~ " into a AliasSeq.");
-        }
-    }
+	alias ArrT = typeof(range);
+	static if (isArray!ArrT && !isNarrowString!ArrT)
+	{
+		static if (range.length == 0)
+		{
+			alias aliasSeqOf = AliasSeq!();
+		}
+		else static if (range.length == 1)
+		{
+			alias aliasSeqOf = AliasSeq!(range[0]);
+		}
+		else
+		{
+			alias aliasSeqOf = AliasSeq!(aliasSeqOf!(range[0 .. $/2]), aliasSeqOf!(range[$/2 .. $]));
+		}
+	}
+	else
+	{
+		import std.range.primitives : isInputRange;
+		static if (isInputRange!ArrT)
+		{
+			import std.array : array;
+			alias aliasSeqOf = aliasSeqOf!(array(range));
+		}
+		else
+		{
+			static assert(false, "Cannot transform range of type " ~ ArrT.stringof ~ " into a AliasSeq.");
+		}
+	}
 }
