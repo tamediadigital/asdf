@@ -471,6 +471,50 @@ unittest
 }
 
 /++
+Allows serilalize / deserialize fields like arrays.
++/
+enum Serialization serializationLikeArray = serialization("like-array");
+
+///
+unittest
+{
+	import std.range;
+	import std.uuid;
+
+	static struct S
+	{
+		private int count;
+		@serializationLikeArray
+		auto numbers() @property // uses `foreach`
+		{
+			return iota(count);
+		}
+
+		@serializationLikeArray
+		@serializedAs!string // input element type of
+		@serializationIgnoreOut
+		Appender!(string[]) strings; //`put` method is used
+	}
+
+	import std.stdio;
+	S(5).serializeToJson.writeln;
+	assert(S(5).serializeToJson == `{"numbers":[0,1,2,3,4]}`);
+	assert(`{"strings":["a","b"]}`.deserialize!S.strings.data == ["a","b"]);
+}
+
+/++
+Allows serilalize / deserialize fields like arrays.
+
+See_also: $(DUBREF asdf, .Asdf.opCast).
++/
+enum Serialization serializationLikeObject = serialization("like-object");
+
+///
+unittest
+{
+}
+
+/++
 Attributes for in and out transformations.
 Return type of in transformation must be implicitly convertable to the type of the field.
 Return type of out transformation may be differ from the type of the field.
@@ -1116,6 +1160,31 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 
 					enum key = keyOut(S.stringof, member, udas);
 					serializer.putEscapedKey(key);
+
+					static if(isLikeArray(V.stringof, member, udas))
+					{
+						if(val is null)
+						{
+							serializer.putValue(null);
+							return;
+						}
+						auto state = serializer.arrayBegin();
+						foreach (ref elem; val)
+						{
+							serializer.elemBegin;
+							static if(hasSerializedAs!(__traits(getMember, value, member)))
+							{
+								alias Proxy = getSerializedAs!(__traits(getMember, value, member));
+								serializer.serializeValue(elem.to!Proxy);
+							}
+							else
+							{
+								serializer.serializeValue(elem);
+							}
+						}
+						serializer.arrayEnd(state);
+					}
+					else
 					static if(hasSerializedAs!(__traits(getMember, value, member)))
 					{
 						alias Proxy = getSerializedAs!(__traits(getMember, value, member));
@@ -1462,6 +1531,20 @@ void deserializeValue(V)(Asdf data, ref V value)
 							{
 								alias Type = typeof(__traits(getMember, value, member));
 							}
+							static if(isLikeArray(V.stringof, member, udas))
+							{
+								static assert(hasSerializedAs!(__traits(getMember, value, member)), V.stringof ~ "." ~ member ~ " should have a Proxy type for deserialization");
+								alias Proxy = getSerializedAs!(__traits(getMember, value, member));
+								enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(elem.value, proxy));
+								alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
+								foreach(v; elem.value.byElement)
+								{
+									Proxy proxy;
+									Fun(v, proxy);
+									__traits(getMember, value, member).put(proxy);
+								}
+							}
+							else
 							static if(hasSerializedAs!(__traits(getMember, value, member)))
 							{
 								alias Proxy = getSerializedAs!(__traits(getMember, value, member));
@@ -1695,6 +1778,33 @@ private bool isFlexible(string type, string member, Serialization[] attrs)
 	throw new Exception(type ~ "." ~ member ~
 		` : Only single declaration of "flexible" serialization attribute is allowed`);
 }
+
+private bool isLikeArray(string type, string member, Serialization[] attrs)
+{
+	import std.algorithm.searching: canFind, find, startsWith, count;
+	alias pred = unaryFun!(a => a.args[0] == "like-array");
+	auto c = attrs.count!pred;
+	if(c == 0)
+		return false;
+	if(c == 1)
+		return true;
+	throw new Exception(type ~ "." ~ member ~
+		` : Only single declaration of "like-array" serialization attribute is allowed`);
+}
+
+private bool isLikeObject(string type, string member, Serialization[] attrs)
+{
+	import std.algorithm.searching: canFind, find, startsWith, count;
+	alias pred = unaryFun!(a => a.args[0] == "like-object");
+	auto c = attrs.count!pred;
+	if(c == 0)
+		return false;
+	if(c == 1)
+		return true;
+	throw new Exception(type ~ "." ~ member ~
+		` : Only single declaration of "like-object" serialization attribute is allowed`);
+}
+
 
 private bool isScoped(string type, string member, Serialization[] attrs)
 {
