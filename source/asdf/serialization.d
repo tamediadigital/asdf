@@ -1702,6 +1702,34 @@ void deserializeValue(V)(Asdf data, ref V value)
 								{
 									alias Type = typeof(__traits(getMember, value, member));
 								}
+								static if(isLikeArray(V.stringof, member, udas))
+								{
+									static assert(hasSerializedAs!(__traits(getMember, value, member)), V.stringof ~ "." ~ member ~ " should have a Proxy type for deserialization");
+									alias Proxy = getSerializedAs!(__traits(getMember, value, member));
+									enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(elem.value, proxy));
+									alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
+									foreach(v; elem.value.byElement)
+									{
+										Proxy proxy;
+										Fun(v, proxy);
+										__traits(getMember, value, member).put(proxy);
+									}
+								}
+								else
+								static if(isLikeObject(V.stringof, member, udas))
+								{
+									static assert(hasSerializedAs!(__traits(getMember, value, member)), V.stringof ~ "." ~ member ~ " should have a Proxy type for deserialization");
+									alias Proxy = getSerializedAs!(__traits(getMember, value, member));
+									enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(elem.value, proxy));
+									alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
+									foreach(v; elem.value.byKeyValue)
+									{
+										Proxy proxy;
+										Fun(v.value, proxy);
+										__traits(getMember, value, member)[elem.key.idup] = proxy;
+									}
+								}
+								else
 								static if(hasSerializedAs!(__traits(getMember, value, member)))
 								{
 									alias Proxy = getSerializedAs!(__traits(getMember, value, member));
