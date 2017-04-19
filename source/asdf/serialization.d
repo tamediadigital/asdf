@@ -592,6 +592,77 @@ unittest
 }
 
 /++
+Allows serilalize / deserialize fields like arrays.
++/
+enum Serialization serializationLikeArray = serialization("like-array");
+
+///
+unittest
+{
+	import std.range;
+	import std.uuid;
+
+	static struct S
+	{
+		private int count;
+		@serializationLikeArray
+		auto numbers() @property // uses `foreach`
+		{
+			return iota(count);
+		}
+
+		@serializationLikeArray
+		@serializedAs!string // input element type of
+		@serializationIgnoreOut
+		Appender!(string[]) strings; //`put` method is used
+	}
+
+	assert(S(5).serializeToJson == `{"numbers":[0,1,2,3,4]}`);
+	assert(`{"strings":["a","b"]}`.deserialize!S.strings.data == ["a","b"]);
+}
+
+/++
+Allows serilalize / deserialize fields like objects.
+
+See_also: $(DUBREF asdf, .Asdf.opCast).
++/
+enum Serialization serializationLikeObject = serialization("like-object");
+
+///
+unittest
+{
+	static struct M
+	{
+		private int sum;
+
+		// opApply is used for serialization
+		int opApply(int delegate(in char[] key, int val) dg)
+		{
+			if(auto r = dg("a", 1)) return r;
+			if(auto r = dg("b", 2)) return r;
+			if(auto r = dg("c", 3)) return r;
+			return 0;
+		}
+
+		// opIndexAssign for deserialization
+		void opIndexAssign(int val, string key)
+		{
+			sum += val;
+		}
+	}
+
+	static struct S
+	{
+		@serializationLikeObject
+		@serializedAs!int
+		M obj;
+	}
+
+	assert(S.init.serializeToJson == `{"obj":{"a":1,"b":2,"c":3}}`);
+	assert(`{"obj":{"a":1,"b":2,"c":9}}`.deserialize!S.obj.sum == 12);
+}
+
+/++
 Attributes for in and out transformations.
 Return type of in transformation must be implicitly convertable to the type of the field.
 Return type of out transformation may be differ from the type of the field.
