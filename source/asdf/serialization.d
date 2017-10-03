@@ -1226,13 +1226,21 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 		auto state = serializer.objectBegin();
 		foreach(member; __traits(allMembers, V))
 		{
+			import std.traits : isFunction;
 			static if(
+				// check if we can read and write this member
 				(__traits(compiles, __traits(getMember, value, member) = __traits(getMember, value, member))
 				||
+					// check if we can read this member
 					__traits(compiles, { auto _val = __traits(getMember, value, member); })
 					&&
+					// is it a function
+					isFunction!(typeof(__traits(getMember, value, member)))
+					&&
+					// is it a property also
 					functionAttributes!(__traits(getMember, value, member)) & FunctionAttribute.property)
 				&&
+				// check if this member has no private or package visibility
 				!__traits(getProtection, __traits(getMember, value, member)).privateOrPackage)
 			{
 				enum udas = [getUDAs!(__traits(getMember, value, member), Serialization)];
