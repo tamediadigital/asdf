@@ -36,6 +36,9 @@ testdata/update-center.json - 0.501 ms - 0.484 ms
 clang++ -O2 -std=c++14 benchmark/benchmark.cpp -Iinclude
 ```
 
+Reason clang++ is only -O2, not -O{3,s,z} is that sajson loops are manually unrolled already. Very aggressive
+optimisation makes no sense and may unroll loops additionally and slowdown the program.
+
 ```
                        file -      avg -      min
                        ---- -      --- -      ---
