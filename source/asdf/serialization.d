@@ -253,18 +253,19 @@ unittest
 	}
 
 	// test for Not a Number
-	assert (serializeToJson(Foo()) == `{"f":null}`);
-	assert (serializeToAsdf(Foo()).to!string == `{"f":null}`);
+	assert (serializeToJson(Foo()) == `{"f":"nan"}`);
+	assert (serializeToAsdf(Foo()).to!string == `{"f":"nan"}`);
 
 	assert (deserialize!Foo(`{"f":null}`) == Foo());
+	assert (deserialize!Foo(`{"f":"nan"}`) == Foo());
 
-	// test for Infinity
-	// Unfortunately json does not support floating point infinity
-	// in any way, so infinity serializes as null like nan and deserializes
-	// as nan
-	auto inf_foo = Foo(float.infinity);
-	assert (serializeToJson(inf_foo) == `{"f":null}`);
-	assert (serializeToAsdf(inf_foo).to!string == `{"f":null}`);
+	assert (serializeToJson(Foo(float.infinity)).to!string == `{"f":"inf"}`);
+	assert (serializeToAsdf(Foo(float.infinity)).to!string == `{"f":"inf"}`);
+	assert (deserialize!Foo(`{"f":"inf"}`) == Foo(float.infinity));
+
+	assert (serializeToJson(Foo(-float.infinity)).to!string == `{"f":"-inf"}`);
+	assert (serializeToAsdf(Foo(-float.infinity)).to!string == `{"f":"-inf"}`);
+	assert (deserialize!Foo(`{"f":"-inf"}`) == Foo(-float.infinity));
 }
 
 import std.traits;
@@ -1200,11 +1201,19 @@ void serializeValue(S, V)(ref S serializer, in V value, FormatSpec!char fmt = Fo
 	static if (isFloatingPoint!V)
 	{
 		import std.math : isNaN, isInfinity;
-		if (isNaN(value) || isInfinity(value))
+		if (isInfinity(value))
 		{
-			serializer.putValue(null);
+			if (value < 0)
+				serializer.putValue("-inf");
+			else
+				serializer.putValue("inf");
 			return;
 		}
+        if (isNaN(value))
+        {
+            serializer.putValue("nan");
+            return;
+        }
 	}
 	
 	serializer.putNumberValue(value, fmt);
@@ -1571,10 +1580,28 @@ void deserializeValue(V)(Asdf data, ref V value)
 
 	static if (isFloatingPoint!V)
 	{
-		if(kind == Asdf.Kind.null_)
+		if (kind == Asdf.Kind.null_)
 		{
 			value = V.nan;
 			return;
+		}
+		if (kind == Asdf.Kind.string)
+		{
+			string v;
+			.deserializeValue(data, v);
+			switch (v)
+			{
+				case "nan":
+					value = V.nan;
+					return;
+				case "inf":
+					value = V.infinity;
+					return;
+				case "-inf":
+					value = -V.infinity;
+					return;
+				default:
+			}
 		}
 	}
 
