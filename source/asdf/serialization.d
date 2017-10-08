@@ -335,8 +335,8 @@ string serializeToJsonPretty(string sep = "\t", V)(auto ref V value)
 ///
 unittest
 {
-    static struct S { int a; }
-    assert(S(4).serializeToJsonPretty == "{\n\t\"a\": 4\n}");
+	static struct S { int a; }
+	assert(S(4).serializeToJsonPretty == "{\n\t\"a\": 4\n}");
 }
 
 /// ASDF serialization function
@@ -1036,9 +1036,7 @@ unittest
 	
 	ser.objectEnd(state0);
 	ser.flush;
-
-	import std.stdio;
-
+	
 	assert(app.data == 
 `{
 	"null": null,
@@ -1804,7 +1802,7 @@ void deserializeValue(V : T[E], T, E)(Asdf data, ref V value)
 	}
 }
 
-/// Deserialize enumeration-value associative array
+/// Deserialize associative array with integral type key
 void deserializeValue(V : T[K], T, K)(Asdf data, ref V value)
     if((isIntegral!K) && !is(K == enum))
 {
@@ -1829,11 +1827,10 @@ void deserializeValue(V : T[K], T, K)(Asdf data, ref V value)
 ///
 unittest
 {
-	enum E {a, b}
-	assert(deserialize!(int[E])(serializeToJson(null)) is null);
-	assert(deserialize!(int[E])(serializeToAsdf(null)) is null);
-	assert(deserialize!(int[E])(serializeToJson([E.a : 1, E.b : 2])) == [E.a : 1, E.b : 2]);
-	assert(deserialize!(int[E])(serializeToAsdf([E.a : 1, E.b : 2])) == [E.a : 1, E.b : 2]);
+	assert(deserialize!(int[int])(serializeToJson(null)) is null);
+	assert(deserialize!(int[int])(serializeToAsdf(null)) is null);
+	assert(deserialize!(int[int])(serializeToJson([2 : 1, 40 : 2])) == [2 : 1, 40 : 2]);
+	assert(deserialize!(int[int])(serializeToAsdf([2 : 1, 40 : 2])) == [2 : 1, 40 : 2]);
 }
 
 /// Deserialize Nullable value
@@ -1867,6 +1864,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 		{
 			throw new DeserializationException(kind);
 		}
+
 		static if(is(V == class) || is(V == interface))
 		{
 			if(value is null)
@@ -1881,6 +1879,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 				}
 			}
 		}
+
 		foreach(elem; data.byKeyValue)
 		{
 			switch(elem.key)
@@ -1913,6 +1912,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 				case key:
 
 							}
+
 							static if(!proper)
 							{
 								alias Type = Parameters!(__traits(getMember, value, member));
@@ -1921,6 +1921,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 							{
 								alias Type = typeof(__traits(getMember, value, member));
 							}
+
 							static if(isLikeArray(V.stringof, member, udas))
 							{
 								static assert(hasSerializedAs!(__traits(getMember, value, member)), V.stringof ~ "." ~ member ~ " should have a Proxy type for deserialization");
@@ -1955,10 +1956,9 @@ void deserializeValue(V)(Asdf data, ref V value)
 								enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(elem.value, proxy));
 								alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
 						
-					Proxy proxy;
-					Fun(elem.value, proxy);
-					__traits(getMember, value, member) = proxy.to!Type;
-
+								Proxy proxy;
+								Fun(elem.value, proxy);
+								__traits(getMember, value, member) = proxy.to!Type;
 							}
 							else
 							static if(proper && __traits(compiles, {auto ptr = &__traits(getMember, value, member); }))
@@ -1966,25 +1966,23 @@ void deserializeValue(V)(Asdf data, ref V value)
 								enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(elem.value, __traits(getMember, value, member)));
 								alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
 
-					Fun(elem.value, __traits(getMember, value, member));
-
+								Fun(elem.value, __traits(getMember, value, member));
 							}
 							else
 							{
-					Type val;
+								Type val;
 
 								enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(elem.value, val));
 								alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
 
-					Fun(elem.value, val);
-					__traits(getMember, value, member) = val;
-
+								Fun(elem.value, val);
+								__traits(getMember, value, member) = val;
 							}
 
 							static if(hasTransformIn!(__traits(getMember, value, member)))
 							{
 								alias f = unaryFun!(getTransformIn!(__traits(getMember, value, member)));
-					__traits(getMember, value, member) = f(__traits(getMember, value, member));
+								__traits(getMember, value, member) = f(__traits(getMember, value, member));
 							}
 
 					break;
@@ -1995,6 +1993,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 				default:
 			}
 		}
+
 		foreach(member; __traits(allMembers, V))
 		{
 			enum proper = __traits(compiles, __traits(getMember, value, member) = __traits(getMember, value, member));
@@ -2034,6 +2033,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 								{
 									alias Type = typeof(__traits(getMember, value, member));
 								}
+
 								static if(isLikeArray(V.stringof, member, udas))
 								{
 									static assert(hasSerializedAs!(__traits(getMember, value, member)), V.stringof ~ "." ~ member ~ " should have a Proxy type for deserialization");
@@ -2079,7 +2079,6 @@ void deserializeValue(V)(Asdf data, ref V value)
 									alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
 
 									Fun(d, __traits(getMember, value, member));
-
 								}
 								else
 								{
@@ -2090,7 +2089,6 @@ void deserializeValue(V)(Asdf data, ref V value)
 
 									Fun(elem.value, val);
 									__traits(getMember, value, member) = val;
-
 								}
 
 								static if(hasTransformIn!(__traits(getMember, value, member)))
