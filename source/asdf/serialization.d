@@ -234,6 +234,39 @@ unittest
 	assert (deserialize!Bar(`{"nullable":777,"field":"it's a bar"}`) == Bar(Nullable!long(777), "it's a bar"));
 }
 
+/// Support for floating point nan and (partial) infinity
+unittest
+{
+	static struct Foo
+	{
+		float f;
+
+		bool opEquals()(auto ref const(typeof(this)) rhs)
+		{
+			import std.math : isNaN, approxEqual;
+
+			if (f.isNaN && rhs.f.isNaN)
+				return true;
+
+			return approxEqual(f, rhs.f);
+		}
+	}
+
+	// test for Not a Number
+	assert (serializeToJson(Foo()) == `{"f":null}`);
+	assert (serializeToAsdf(Foo()).to!string == `{"f":null}`);
+
+	assert (deserialize!Foo(`{"f":null}`) == Foo());
+
+	// test for Infinity
+	// Unfortunately json does not support floating point infinity
+	// in any way, so infinity serializes as null like nan and deserializes
+	// as nan
+	auto inf_foo = Foo(float.infinity);
+	assert (serializeToJson(inf_foo) == `{"f":null}`);
+	assert (serializeToAsdf(inf_foo).to!string == `{"f":null}`);
+}
+
 import std.traits;
 import std.meta;
 import std.range.primitives;
@@ -1164,6 +1197,16 @@ unittest
 void serializeValue(S, V)(ref S serializer, in V value, FormatSpec!char fmt = FormatSpec!char.init)
 	if((isNumeric!V && !is(V == enum)) || is(V == BigInt))
 {
+	static if (isFloatingPoint!V)
+	{
+		import std.math : isNaN, isInfinity;
+		if (isNaN(value) || isInfinity(value))
+		{
+			serializer.putValue(null);
+			return;
+		}
+	}
+	
 	serializer.putNumberValue(value, fmt);
 }
 
@@ -1525,6 +1568,16 @@ void deserializeValue(V)(Asdf data, ref V value)
 	if((isNumeric!V && !is(V == enum)) || is(V == BigInt))
 {
 	auto kind = data.kind;
+
+	static if (isFloatingPoint!V)
+	{
+		if(kind == Asdf.Kind.null_)
+		{
+			value = V.nan;
+			return;
+		}
+	}
+
 	if(kind != Asdf.Kind.number)
 		throw new DeserializationException(kind);
 	value = (cast(string) data.data[2 .. $]).to!V;
