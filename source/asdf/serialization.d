@@ -1287,6 +1287,38 @@ void serializeValue(S, T)(ref S serializer, T[] value)
 	serializer.arrayEnd(state);
 }
 
+/// Input range serialization
+void serializeValue(S, R)(ref S serializer, R value) 
+	if ((isInputRange!R) && !isSomeChar!(ElementType!R) && !isDynamicArray!R)
+{
+	auto state = serializer.arrayBegin();
+	foreach (ref elem; value)
+	{
+		serializer.elemBegin;
+		serializer.serializeValue(elem);
+	}
+	serializer.arrayEnd(state);
+}
+
+/// input range serialization
+unittest
+{
+	import std.algorithm : filter;
+
+	struct Foo
+	{
+		int i;
+	}
+
+	auto ar = [Foo(1), Foo(3), Foo(4), Foo(17)];
+	
+	auto filtered1 = ar.filter!"a.i & 1";
+	auto filtered2 = ar.filter!"!(a.i & 1)";
+
+	assert(serializeToJson(filtered1) == `[{"i":1},{"i":3},{"i":17}]`);
+	assert(serializeToJson(filtered2) == `[{"i":4}]`);
+}
+
 ///
 unittest
 {
@@ -1399,7 +1431,7 @@ void serializeValue(S, N)(ref S serializer, auto ref N value)
 
 /// Aggregation type serialization
 void serializeValue(S, V)(ref S serializer, auto ref V value)
-	if(!isNullable!V && isAggregateType!V && !is(V : BigInt))
+	if(!isNullable!V && isAggregateType!V && !is(V : BigInt) && !isInputRange!V)
 {
 	static if(is(V == class) || is(V == interface))
 	{
