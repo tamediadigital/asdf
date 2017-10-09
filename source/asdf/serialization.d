@@ -253,18 +253,19 @@ unittest
 	}
 
 	// test for Not a Number
-	assert (serializeToJson(Foo()) == `{"f":"nan"}`);
+	assert (serializeToJson(Foo()).to!string == `{"f":"nan"}`);
 	assert (serializeToAsdf(Foo()).to!string == `{"f":"nan"}`);
 
-	assert (deserialize!Foo(`{"f":null}`) == Foo());
+	assert (deserialize!Foo(`{"f":null}`)  == Foo());
 	assert (deserialize!Foo(`{"f":"nan"}`) == Foo());
 
-	assert (serializeToJson(Foo(float.infinity)).to!string == `{"f":"inf"}`);
-	assert (serializeToAsdf(Foo(float.infinity)).to!string == `{"f":"inf"}`);
-	assert (deserialize!Foo(`{"f":"inf"}`) == Foo(float.infinity));
+	assert (serializeToJson(Foo(1f/0f)).to!string == `{"f":"inf"}`);
+	assert (serializeToAsdf(Foo(1f/0f)).to!string == `{"f":"inf"}`);
+	assert (deserialize!Foo(`{"f":"inf"}`)  == Foo( float.infinity));
+	assert (deserialize!Foo(`{"f":"-inf"}`) == Foo(-float.infinity));
 
-	assert (serializeToJson(Foo(-float.infinity)).to!string == `{"f":"-inf"}`);
-	assert (serializeToAsdf(Foo(-float.infinity)).to!string == `{"f":"-inf"}`);
+	assert (serializeToJson(Foo(-1f/0f)).to!string == `{"f":"-inf"}`);
+	assert (serializeToAsdf(Foo(-1f/0f)).to!string == `{"f":"-inf"}`);
 	assert (deserialize!Foo(`{"f":"-inf"}`) == Foo(-float.infinity));
 }
 
@@ -1200,23 +1201,19 @@ void serializeValue(S, V)(ref S serializer, in V value, FormatSpec!char fmt = Fo
 {
 	static if (isFloatingPoint!V)
 	{
-		import std.math : isNaN, isInfinity;
-		if (isInfinity(value))
-		{
-			if (value < 0)
-				serializer.putValue("-inf");
-			else
-				serializer.putValue("inf");
-			return;
-		}
-        if (isNaN(value))
-        {
-            serializer.putValue("nan");
-            return;
-        }
+		import std.math : isNaN, isFinite, signbit;
+		
+		if (isFinite(value))
+			serializer.putNumberValue(value, fmt);
+		else if (value.isNaN)
+			serializer.putValue(signbit(value) ? "-nan" : "nan");
+		else if (value == V.infinity)
+			serializer.putValue("inf");
+		else if (value == -V.infinity)
+			serializer.putValue("-inf");
 	}
-	
-	serializer.putNumberValue(value, fmt);
+	else
+		serializer.putNumberValue(value, fmt);
 }
 
 ///
