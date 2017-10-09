@@ -187,7 +187,7 @@ unittest
 				return false;
 
 			return my_nullable == rhs.my_nullable && 
-				         field == rhs.field;
+						 field == rhs.field;
 		}
 	}
 
@@ -219,7 +219,7 @@ unittest
 				return false;
 
 			return nullable == rhs.nullable && 
-				         field == rhs.field;
+						 field == rhs.field;
 		}
 	}
 
@@ -1870,24 +1870,24 @@ void deserializeValue(V : T[E], T, E)(Asdf data, ref V value)
 
 /// Deserialize associative array with integral type key
 void deserializeValue(V : T[K], T, K)(Asdf data, ref V value)
-    if((isIntegral!K) && !is(K == enum))
+	if((isIntegral!K) && !is(K == enum))
 {
-    auto kind = data.kind;
-    with(Asdf.Kind) switch(kind)
-    {
-        case object:
-            foreach(elem; data.byKeyValue)
-            {
-                T v;
-                .deserializeValue(elem.value, v);
-                value[elem.key.to!K] = v;
-            }
-            return;
-        case null_:
-            return;
-        default:
-            throw new DeserializationException(kind);
-    }
+	auto kind = data.kind;
+	with(Asdf.Kind) switch(kind)
+	{
+		case object:
+			foreach(elem; data.byKeyValue)
+			{
+				T v;
+				.deserializeValue(elem.value, v);
+				value[elem.key.to!K] = v;
+			}
+			return;
+		case null_:
+			return;
+		default:
+			throw new DeserializationException(kind);
+	}
 }
 
 ///
