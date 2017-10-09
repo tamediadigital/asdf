@@ -1289,7 +1289,10 @@ void serializeValue(S, T)(ref S serializer, T[] value)
 
 /// Input range serialization
 void serializeValue(S, R)(ref S serializer, R value) 
-	if ((isInputRange!R) && !isSomeChar!(ElementType!R) && !isDynamicArray!R)
+	if ((isInputRange!R) && 
+		!isSomeChar!(ElementType!R) && 
+		!isDynamicArray!R &&
+		!isNullable!R)
 {
 	auto state = serializer.arrayBegin();
 	foreach (ref elem; value)
