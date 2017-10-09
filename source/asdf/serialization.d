@@ -2587,7 +2587,7 @@ private template hasProtection(alias Aggregate, alias member)
 
 private template isMemberSomeProperty(alias Kind, alias Aggregate, alias member)
 {
-	import std.traits : isCallable, isType, isTypeTuple;
+	import std.traits : isCallable, isTypeTuple;
 
 	// TODO isn't direct using 'this' a hack?
 	static if (member == "this" || 
