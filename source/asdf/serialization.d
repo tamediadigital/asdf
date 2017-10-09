@@ -1642,7 +1642,21 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 					}
 					else
 					{
-						serializer.serializeValue(cast()val);
+						static if (isNullable!(typeof(cast()val)))
+						{
+							if(val.isNull)
+							{
+								serializer.putValue(null);
+							}
+							else
+							{
+								serializer.serializeValue(val.get);
+							}
+						}
+						else
+						{
+							.serializeValue(serializer, cast() val);
+						}
 					}
 				}
 			}
