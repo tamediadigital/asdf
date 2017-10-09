@@ -364,9 +364,16 @@ unittest
 /// Deserialization function
 V deserialize(V)(Asdf data)
 {
-	V value;
-	deserializeValue(data, value);
-	return value;
+	static if (__traits(compiles, { auto val = V.deserialize(data); }))
+	{
+		return V.deserialize(data);
+	}
+	else
+	{
+		V value;
+		deserializeValue(data, value);
+		return value;
+	}
 }
 
 /// ditto
@@ -1691,11 +1698,30 @@ void deserializeValue(V : T[], T)(Asdf data, ref V value)
 		case array:
 			import std.algorithm.searching: count;
 			auto elems = data.byElement;
-			value = new T[elems.save.count];
-			foreach(ref e; value)
+			// create array of properly initialized (by means of ctor) elements
+			static if (__traits(compiles, {value = new T[elems.save.count];}))
 			{
-				.deserializeValue(elems.front, e);
-				elems.popFront;
+				value = new T[elems.save.count];
+				foreach(ref e; value)
+				{
+					.deserializeValue(elems.front, e);
+					elems.popFront;
+				}
+			}
+			else
+			// if T has no default ctor create array of uninitialized elements
+			// and initialize them using static `deserialize`
+			{
+				//static assert (__traits(compiles, { auto v = T.deserialize(elems.front); }),
+				//	"Type `'" ~ T.stringof ~ "'` should have either default ctor or static deserialize method!");
+
+				import std.array;
+				value = uninitializedArray!(T[])(elems.save.count); 
+				foreach(ref e; value)
+				{
+					e = T.deserialize(elems.front);
+					elems.popFront;
+				}
 			}
 			assert(elems.empty);
 			return;
@@ -1714,6 +1740,46 @@ unittest
 	assert(deserialize!(int[])(serializeToAsdf(null)) is null);
 	assert(deserialize!(int[])(serializeToJson([1, 3, 4])) == [1, 3, 4]);
 	assert(deserialize!(int[])(serializeToAsdf([1, 3, 4])) == [1, 3, 4]);
+}
+
+///
+unittest
+{
+	static struct Foo
+	{
+		int i;
+
+		@disable
+		this();
+
+		this(int i)
+		{
+			this.i = i;
+		}
+
+		static auto deserialize(D)(auto ref D deserializer)
+		{
+			import asdf : deserialize;
+
+			foreach(elem; deserializer.byKeyValue)
+			{
+				switch(elem.key)
+				{
+					case "i":
+						int i = elem.value.to!int;
+						return typeof(this)(i);
+					default:
+				}
+			}
+
+			return typeof(this).init;
+		}
+	}
+
+	assert(deserialize!(Foo[])(serializeToJson(null)) is null);
+	assert(deserialize!(Foo[])(serializeToAsdf(null)) is null);
+	assert(deserialize!(Foo[])(serializeToJson([Foo(1), Foo(3), Foo(4)])) == [Foo(1), Foo(3), Foo(4)]);
+	assert(deserialize!(Foo[])(serializeToAsdf([Foo(1), Foo(3), Foo(4)])) == [Foo(1), Foo(3), Foo(4)]);
 }
 
 /// Deserialize static array
