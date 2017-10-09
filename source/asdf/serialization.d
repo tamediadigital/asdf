@@ -1607,7 +1607,7 @@ void serializeValue(S, T, K)(ref S serializer, auto ref T[K] value)
 		import std.format : sformat;
 		auto str = sformat(buffer[], "%d", key);
 		serializer.putEscapedKey(str);
-		serializer.putValue(val);
+		.serializeValue(serializer, val);
 	}
 	serializer.objectEnd(state);
 }
@@ -2066,6 +2066,17 @@ unittest
 	assert(deserialize!(int[4])(serializeToAsdf([1, 3, 4])) == [1, 3, 4, 0]);
 	assert(deserialize!(int[2])(serializeToJson([1, 3, 4])) == [1, 3]);
 	assert(deserialize!(int[2])(serializeToAsdf([1, 3, 4])) == [1, 3]);
+}
+
+/// AA with value of aggregate type
+unittest
+{
+	struct Foo
+	{
+		
+	}
+
+	assert (deserialize!(Foo[int])(serializeToJson([1: Foo()])) == [1:Foo()]);
 }
 
 /// Deserialize string-value associative array
