@@ -1893,7 +1893,8 @@ void deserializeValue(V : T[], T)(Asdf data, ref V value)
 			value = null;
 			return;
 		default:
-			throw new DeserializationException(kind);
+			import std.conv : text;
+			throw new DeserializationException(kind, "Json array expected but `" ~ text(cast(Asdf.Kind)kind) ~ "` given");
 	}
 }
 
