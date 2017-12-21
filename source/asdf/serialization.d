@@ -187,7 +187,7 @@ unittest
 				return false;
 
 			return my_nullable == rhs.my_nullable && 
-				         field == rhs.field;
+						 field == rhs.field;
 		}
 	}
 
@@ -219,7 +219,7 @@ unittest
 				return false;
 
 			return nullable == rhs.nullable && 
-				         field == rhs.field;
+						 field == rhs.field;
 		}
 	}
 
@@ -232,6 +232,41 @@ unittest
 
 	bar.nullable = 777;
 	assert (deserialize!Bar(`{"nullable":777,"field":"it's a bar"}`) == Bar(Nullable!long(777), "it's a bar"));
+}
+
+/// Support for floating point nan and (partial) infinity
+unittest
+{
+	static struct Foo
+	{
+		float f;
+
+		bool opEquals()(auto ref const(typeof(this)) rhs)
+		{
+			import std.math : isNaN, approxEqual;
+
+			if (f.isNaN && rhs.f.isNaN)
+				return true;
+
+			return approxEqual(f, rhs.f);
+		}
+	}
+
+	// test for Not a Number
+	assert (serializeToJson(Foo()).to!string == `{"f":"nan"}`);
+	assert (serializeToAsdf(Foo()).to!string == `{"f":"nan"}`);
+
+	assert (deserialize!Foo(`{"f":null}`)  == Foo());
+	assert (deserialize!Foo(`{"f":"nan"}`) == Foo());
+
+	assert (serializeToJson(Foo(1f/0f)).to!string == `{"f":"inf"}`);
+	assert (serializeToAsdf(Foo(1f/0f)).to!string == `{"f":"inf"}`);
+	assert (deserialize!Foo(`{"f":"inf"}`)  == Foo( float.infinity));
+	assert (deserialize!Foo(`{"f":"-inf"}`) == Foo(-float.infinity));
+
+	assert (serializeToJson(Foo(-1f/0f)).to!string == `{"f":"-inf"}`);
+	assert (serializeToAsdf(Foo(-1f/0f)).to!string == `{"f":"-inf"}`);
+	assert (deserialize!Foo(`{"f":"-inf"}`) == Foo(-float.infinity));
 }
 
 import std.traits;
@@ -300,8 +335,8 @@ string serializeToJsonPretty(string sep = "\t", V)(auto ref V value)
 ///
 unittest
 {
-    static struct S { int a; }
-    assert(S(4).serializeToJsonPretty == "{\n\t\"a\": 4\n}");
+	static struct S { int a; }
+	assert(S(4).serializeToJsonPretty == "{\n\t\"a\": 4\n}");
 }
 
 /// ASDF serialization function
@@ -329,9 +364,16 @@ unittest
 /// Deserialization function
 V deserialize(V)(Asdf data)
 {
-	V value;
-	deserializeValue(data, value);
-	return value;
+	static if (__traits(compiles, { auto val = V.deserialize(data); }))
+	{
+		return V.deserialize(data);
+	}
+	else
+	{
+		V value;
+		deserializeValue(data, value);
+		return value;
+	}
 }
 
 /// ditto
@@ -1001,9 +1043,7 @@ unittest
 	
 	ser.objectEnd(state0);
 	ser.flush;
-
-	import std.stdio;
-
+	
 	assert(app.data == 
 `{
 	"null": null,
@@ -1164,7 +1204,21 @@ unittest
 void serializeValue(S, V)(ref S serializer, in V value, FormatSpec!char fmt = FormatSpec!char.init)
 	if((isNumeric!V && !is(V == enum)) || is(V == BigInt))
 {
-	serializer.putNumberValue(value, fmt);
+	static if (isFloatingPoint!V)
+	{
+		import std.math : isNaN, isFinite, signbit;
+		
+		if (isFinite(value))
+			serializer.putNumberValue(value, fmt);
+		else if (value.isNaN)
+			serializer.putValue(signbit(value) ? "-nan" : "nan");
+		else if (value == V.infinity)
+			serializer.putValue("inf");
+		else if (value == -V.infinity)
+			serializer.putValue("-inf");
+	}
+	else
+		serializer.putNumberValue(value, fmt);
 }
 
 ///
@@ -1177,6 +1231,12 @@ unittest
 void serializeValue(S)(ref S serializer, bool value)
 {
 	serializer.putValue(value);
+}
+
+/// Char serialization
+void serializeValue(S)(ref S serializer, char value)
+{
+	serializer.putValue([value]);
 }
 
 ///
@@ -1231,6 +1291,41 @@ void serializeValue(S, T)(ref S serializer, T[] value)
 		serializer.serializeValue(elem);
 	}
 	serializer.arrayEnd(state);
+}
+
+/// Input range serialization
+void serializeValue(S, R)(ref S serializer, R value) 
+	if ((isInputRange!R) && 
+		!isSomeChar!(ElementType!R) && 
+		!isDynamicArray!R &&
+		!isNullable!R)
+{
+	auto state = serializer.arrayBegin();
+	foreach (ref elem; value)
+	{
+		serializer.elemBegin;
+		serializer.serializeValue(elem);
+	}
+	serializer.arrayEnd(state);
+}
+
+/// input range serialization
+unittest
+{
+	import std.algorithm : filter;
+
+	struct Foo
+	{
+		int i;
+	}
+
+	auto ar = [Foo(1), Foo(3), Foo(4), Foo(17)];
+	
+	auto filtered1 = ar.filter!"a.i & 1";
+	auto filtered2 = ar.filter!"!(a.i & 1)";
+
+	assert(serializeToJson(filtered1) == `[{"i":1},{"i":3},{"i":17}]`);
+	assert(serializeToJson(filtered2) == `[{"i":4}]`);
 }
 
 ///
@@ -1315,7 +1410,7 @@ void serializeValue(S, T, K)(ref S serializer, auto ref T[K] value)
 		import std.format : sformat;
 		auto str = sformat(buffer[], "%d", key);
 		serializer.putEscapedKey(str);
-		serializer.putValue(val);
+		.serializeValue(serializer, val);
 	}
 	serializer.objectEnd(state);
 }
@@ -1328,7 +1423,109 @@ unittest
 	ar.remove(256);
 	assert(serializeToJson(ar) == `{}`);
 	assert(serializeToJson((uint[string]).init) == `null`);
-	assert(deserialize!(uint[short])(`{"256":1}`) == cast(uint[short]) [256 : 1]);
+}
+
+///
+unittest
+{
+	static struct S
+	{
+		static string static_string = "me shouldn't be serialized at all!";
+		string str = "me shall be serialized";
+
+		static @property staticProperty()
+		{
+			return static_string;
+		}
+
+		enum A = 200;
+		const float B = 10f;
+		float f;
+		int i;
+
+		this(float f, int i)
+		{
+			this.f = f;
+			this.i = i;
+		}
+
+		bool opEquals()(auto ref const(typeof(this)) rhs)
+		{
+			import std.math : isNaN;
+
+			if (f.isNaN && rhs.f.isNaN)
+			{
+				// if both f are nan then they are equal
+			}
+			else if (f != rhs.f)
+				return false;
+
+			return str == rhs.str && i == rhs.i;
+		}
+	}
+
+	assert (S.staticProperty == S.static_string);
+
+	{
+		auto asdf = serializeToAsdf(S());
+		assert (asdf.text == `{"str":"me shall be serialized","B":10,"f":"nan","i":0}`);
+		assert (S() == deserialize!S(asdf));
+	}
+
+	{
+		auto s = S(22f, 100);
+		auto json = serializeToJson(s);
+		assert (json.text == `{"str":"me shall be serialized","B":10,"f":22,"i":100}`);
+		assert (s == deserialize!S(json));
+	}
+}
+
+///
+unittest
+{
+	struct Nested
+	{
+		int[] iarr;
+	}
+
+	struct S
+	{
+		enum E = 100;
+
+		// will be serialized because it's a field
+		// without private or package protection
+		Nested nested;
+
+		// won't be serialized due to private protection
+		private int private_field;
+		// will be serialized as it's getter property
+		@property privateField() { return private_field; }
+		// won't be serialized as it's setter property
+		@property privateField(int v) { private_field = v; }
+
+		// will be serialized as it's a field and has no
+		// private or package protection
+		protected int protected_field;
+		// will be serialized as it's getter property
+		@property protectedField() { return protected_field; }
+		// won't be serialized as it's setter property
+		@property protectedField(int v) { protected_field = v; }
+
+		// won't be serialized because it's a regular method (not a
+		// property)
+		void toMsgpack(Packer)(ref Packer packer)
+		{
+
+		}
+
+		// won't be serialized because it's a regular method (not a
+		// property)
+		int getPrivateField()
+		{
+			return private_field;
+		}
+	}
+	assert (serializeToJson(S()) == `{"nested":{"iarr":null},"privateField":0,"protected_field":0,"protectedField":0}`);
 }
 
 /// Nullable type serialization
@@ -1345,7 +1542,7 @@ void serializeValue(S, N)(ref S serializer, auto ref N value)
 
 /// Aggregation type serialization
 void serializeValue(S, V)(ref S serializer, auto ref V value)
-	if(!isNullable!V && isAggregateType!V && !is(V : BigInt))
+	if(!isNullable!V && isAggregateType!V && !is(V : BigInt) && !isInputRange!V)
 {
 	static if(is(V == class) || is(V == interface))
 	{
@@ -1365,13 +1562,13 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 		foreach(member; __traits(allMembers, V))
 		{
 			static if(
-				(__traits(compiles, __traits(getMember, value, member) = __traits(getMember, value, member))
-				||
-					__traits(compiles, { auto _val = __traits(getMember, value, member); })
-					&&
-					functionAttributes!(__traits(getMember, value, member)) & FunctionAttribute.property)
-				&&
-				!__traits(getProtection, __traits(getMember, value, member)).privateOrPackage)
+				// member SHALL NOT be static
+				!isMemberStatic!(V, member) &&
+				(
+					// and member SHALL be a field or getter property
+					(isMemberField!(value, member) ||
+					isMemberGetterProperty!(value, member)))
+				)
 			{
 				enum udas = [getUDAs!(__traits(getMember, value, member), Serialization)];
 				static if(!ignoreOut(udas))
@@ -1451,7 +1648,21 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 					}
 					else
 					{
-						serializer.serializeValue(val);
+						static if (isNullable!(typeof(cast()val)))
+						{
+							if(val.isNull)
+							{
+								serializer.putValue(null);
+							}
+							else
+							{
+								serializer.serializeValue(val.get);
+							}
+						}
+						else
+						{
+							.serializeValue(serializer, cast() val);
+						}
 					}
 				}
 			}
@@ -1525,6 +1736,34 @@ void deserializeValue(V)(Asdf data, ref V value)
 	if((isNumeric!V && !is(V == enum)) || is(V == BigInt))
 {
 	auto kind = data.kind;
+
+	static if (isFloatingPoint!V)
+	{
+		if (kind == Asdf.Kind.null_)
+		{
+			value = V.nan;
+			return;
+		}
+		if (kind == Asdf.Kind.string)
+		{
+			string v;
+			.deserializeValue(data, v);
+			switch (v)
+			{
+				case "nan":
+					value = V.nan;
+					return;
+				case "inf":
+					value = V.infinity;
+					return;
+				case "-inf":
+					value = -V.infinity;
+					return;
+				default:
+			}
+		}
+	}
+
 	if(kind != Asdf.Kind.number)
 		throw new DeserializationException(kind);
 	value = (cast(string) data.data[2 .. $]).to!V;
@@ -1597,6 +1836,13 @@ void deserializeValue(V)(Asdf data, ref V value)
 	}
 }
 
+/// Deserialize single char
+void deserializeValue(V)(Asdf data, V value) if (is (V : char))
+{
+	auto v = cast(char[1])[value];
+	deserializeValue(data, v);
+}
+
 ///
 unittest
 {
@@ -1616,11 +1862,30 @@ void deserializeValue(V : T[], T)(Asdf data, ref V value)
 		case array:
 			import std.algorithm.searching: count;
 			auto elems = data.byElement;
-			value = new T[elems.save.count];
-			foreach(ref e; value)
+			// create array of properly initialized (by means of ctor) elements
+			static if (__traits(compiles, {value = new T[elems.save.count];}))
 			{
-				.deserializeValue(elems.front, e);
-				elems.popFront;
+				value = new T[elems.save.count];
+				foreach(ref e; value)
+				{
+					.deserializeValue(elems.front, e);
+					elems.popFront;
+				}
+			}
+			else
+			// if T has no default ctor create array of uninitialized elements
+			// and initialize them using static `deserialize`
+			{
+				//static assert (__traits(compiles, { auto v = T.deserialize(elems.front); }),
+				//	"Type `'" ~ T.stringof ~ "'` should have either default ctor or static deserialize method!");
+
+				import std.array;
+				value = uninitializedArray!(T[])(elems.save.count); 
+				foreach(ref e; value)
+				{
+					e = T.deserialize(elems.front);
+					elems.popFront;
+				}
 			}
 			assert(elems.empty);
 			return;
@@ -1628,7 +1893,8 @@ void deserializeValue(V : T[], T)(Asdf data, ref V value)
 			value = null;
 			return;
 		default:
-			throw new DeserializationException(kind);
+			import std.conv : text;
+			throw new DeserializationException(kind, "Json array expected but `" ~ text(cast(Asdf.Kind)kind) ~ "` given");
 	}
 }
 
@@ -1641,12 +1907,56 @@ unittest
 	assert(deserialize!(int[])(serializeToAsdf([1, 3, 4])) == [1, 3, 4]);
 }
 
+///
+unittest
+{
+	static struct Foo
+	{
+		int i;
+
+		@disable
+		this();
+
+		this(int i)
+		{
+			this.i = i;
+		}
+
+		static auto deserialize(D)(auto ref D deserializer)
+		{
+			import asdf : deserialize;
+
+			foreach(elem; deserializer.byKeyValue)
+			{
+				switch(elem.key)
+				{
+					case "i":
+						int i = elem.value.to!int;
+						return typeof(this)(i);
+					default:
+				}
+			}
+
+			return typeof(this).init;
+		}
+	}
+
+	assert(deserialize!(Foo[])(serializeToJson(null)) is null);
+	assert(deserialize!(Foo[])(serializeToAsdf(null)) is null);
+	assert(deserialize!(Foo[])(serializeToJson([Foo(1), Foo(3), Foo(4)])) == [Foo(1), Foo(3), Foo(4)]);
+	assert(deserialize!(Foo[])(serializeToAsdf([Foo(1), Foo(3), Foo(4)])) == [Foo(1), Foo(3), Foo(4)]);
+}
+
 /// Deserialize static array
 void deserializeValue(V : T[N], T, size_t N)(Asdf data, ref V value)
 {
 	auto kind = data.kind;
 	with(Asdf.Kind) switch(kind)
 	{
+static if(is(T == char))
+{
+		case string:
+}
 		case array:
 			auto elems = data.byElement;
 			foreach(ref e; value)
@@ -1673,6 +1983,17 @@ unittest
 	assert(deserialize!(int[4])(serializeToAsdf([1, 3, 4])) == [1, 3, 4, 0]);
 	assert(deserialize!(int[2])(serializeToJson([1, 3, 4])) == [1, 3]);
 	assert(deserialize!(int[2])(serializeToAsdf([1, 3, 4])) == [1, 3]);
+}
+
+/// AA with value of aggregate type
+unittest
+{
+	struct Foo
+	{
+		
+	}
+
+	assert (deserialize!(Foo[int])(serializeToJson([1: Foo()])) == [1:Foo()]);
 }
 
 /// Deserialize string-value associative array
@@ -1727,36 +2048,35 @@ void deserializeValue(V : T[E], T, E)(Asdf data, ref V value)
 	}
 }
 
-/// Deserialize enumeration-value associative array
+/// Deserialize associative array with integral type key
 void deserializeValue(V : T[K], T, K)(Asdf data, ref V value)
-    if((isIntegral!K) && !is(K == enum))
+	if((isIntegral!K) && !is(K == enum))
 {
-    auto kind = data.kind;
-    with(Asdf.Kind) switch(kind)
-    {
-        case object:
-            foreach(elem; data.byKeyValue)
-            {
-                T v;
-                .deserializeValue(elem.value, v);
-                value[elem.key.to!K] = v;
-            }
-            return;
-        case null_:
-            return;
-        default:
-            throw new DeserializationException(kind);
-    }
+	auto kind = data.kind;
+	with(Asdf.Kind) switch(kind)
+	{
+		case object:
+			foreach(elem; data.byKeyValue)
+			{
+				T v;
+				.deserializeValue(elem.value, v);
+				value[elem.key.to!K] = v;
+			}
+			return;
+		case null_:
+			return;
+		default:
+			throw new DeserializationException(kind);
+	}
 }
 
 ///
 unittest
 {
-	enum E {a, b}
-	assert(deserialize!(int[E])(serializeToJson(null)) is null);
-	assert(deserialize!(int[E])(serializeToAsdf(null)) is null);
-	assert(deserialize!(int[E])(serializeToJson([E.a : 1, E.b : 2])) == [E.a : 1, E.b : 2]);
-	assert(deserialize!(int[E])(serializeToAsdf([E.a : 1, E.b : 2])) == [E.a : 1, E.b : 2]);
+	assert(deserialize!(int[int])(serializeToJson(null)) is null);
+	assert(deserialize!(int[int])(serializeToAsdf(null)) is null);
+	assert(deserialize!(int[int])(serializeToJson([2 : 1, 40 : 2])) == [2 : 1, 40 : 2]);
+	assert(deserialize!(int[int])(serializeToAsdf([2 : 1, 40 : 2])) == [2 : 1, 40 : 2]);
 }
 
 /// Deserialize Nullable value
@@ -1790,6 +2110,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 		{
 			throw new DeserializationException(kind);
 		}
+
 		static if(is(V == class) || is(V == interface))
 		{
 			if(value is null)
@@ -1804,24 +2125,18 @@ void deserializeValue(V)(Asdf data, ref V value)
 				}
 			}
 		}
+
 		foreach(elem; data.byKeyValue)
 		{
 			switch(elem.key)
 			{
 				foreach(member; __traits(allMembers, V))
 				{
-					enum proper = __traits(compiles, __traits(getMember, value, member) = __traits(getMember, value, member));
 					static if(
+						!isMemberStatic!(V, member) &&
 						(
-							proper
-							||
-							__traits(compiles, {auto _ptr = &__traits(getMember, value, member);})
-							&&
-							isCallable!(__traits(getMember, value, member))
-							&&
-							functionAttributes!(__traits(getMember, value, member)) & FunctionAttribute.property
-							&&
-							Parameters!(__traits(getMember, value, member)).length == 1
+							(isMemberField!(value, member) ||
+							 isMemberSetterProperty!(value, member))
 						)
 						&&
 						!__traits(getProtection, __traits(getMember, value, member)).privateOrPackage)
@@ -1836,14 +2151,16 @@ void deserializeValue(V)(Asdf data, ref V value)
 				case key:
 
 							}
-							static if(!proper)
+
+							static if(isMemberSetterProperty!(value, member))
 							{
-								alias Type = Parameters!(__traits(getMember, value, member));
+								alias Type = SetterParameters!(value, member);
 							}
 							else
 							{
 								alias Type = typeof(__traits(getMember, value, member));
 							}
+
 							static if(isLikeArray(V.stringof, member, udas))
 							{
 								static assert(hasSerializedAs!(__traits(getMember, value, member)), V.stringof ~ "." ~ member ~ " should have a Proxy type for deserialization");
@@ -1878,36 +2195,32 @@ void deserializeValue(V)(Asdf data, ref V value)
 								enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(elem.value, proxy));
 								alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
 						
-					Proxy proxy;
-					Fun(elem.value, proxy);
-					__traits(getMember, value, member) = proxy.to!Type;
-
-							}
-							else
-							static if(proper && __traits(compiles, {auto ptr = &__traits(getMember, value, member); }))
-							{
-								enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(elem.value, __traits(getMember, value, member)));
-								alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
-
-					Fun(elem.value, __traits(getMember, value, member));
-
+								Proxy proxy;
+								Fun(elem.value, proxy);
+								__traits(getMember, value, member) = proxy.to!Type;
 							}
 							else
 							{
-					Type val;
+								Type val;
 
 								enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(elem.value, val));
 								alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
 
-					Fun(elem.value, val);
-					__traits(getMember, value, member) = val;
-
+								static if(is(Type == const) || is(Type == immutable))
+								{
+									// do not deserialize const/immutable members
+								}
+								else
+								{
+									Fun(elem.value, val);
+									__traits(getMember, value, member) = val;
+								}
 							}
 
 							static if(hasTransformIn!(__traits(getMember, value, member)))
 							{
 								alias f = unaryFun!(getTransformIn!(__traits(getMember, value, member)));
-					__traits(getMember, value, member) = f(__traits(getMember, value, member));
+								__traits(getMember, value, member) = f(__traits(getMember, value, member));
 							}
 
 					break;
@@ -1918,20 +2231,15 @@ void deserializeValue(V)(Asdf data, ref V value)
 				default:
 			}
 		}
+
 		foreach(member; __traits(allMembers, V))
 		{
 			enum proper = __traits(compiles, __traits(getMember, value, member) = __traits(getMember, value, member));
 			static if(
+				!isMemberStatic!(V, member) &&
 				(
-					proper
-					||
-					__traits(compiles, {auto _ptr = &__traits(getMember, value, member);})
-					&&
-					isCallable!(__traits(getMember, value, member))
-					&&
-					functionAttributes!(__traits(getMember, value, member)) & FunctionAttribute.property
-					&&
-					Parameters!(__traits(getMember, value, member)).length == 1
+					(isMemberField!(value, member) ||
+					 isMemberSetterProperty!(value, member))
 				)
 				&&
 				!__traits(getProtection, __traits(getMember, value, member)).privateOrPackage)
@@ -1957,6 +2265,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 								{
 									alias Type = typeof(__traits(getMember, value, member));
 								}
+
 								static if(isLikeArray(V.stringof, member, udas))
 								{
 									static assert(hasSerializedAs!(__traits(getMember, value, member)), V.stringof ~ "." ~ member ~ " should have a Proxy type for deserialization");
@@ -2002,7 +2311,6 @@ void deserializeValue(V)(Asdf data, ref V value)
 									alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
 
 									Fun(d, __traits(getMember, value, member));
-
 								}
 								else
 								{
@@ -2013,7 +2321,6 @@ void deserializeValue(V)(Asdf data, ref V value)
 
 									Fun(elem.value, val);
 									__traits(getMember, value, member) = val;
-
 								}
 
 								static if(hasTransformIn!(__traits(getMember, value, member)))
@@ -2292,3 +2599,82 @@ private template isNullable(T)
 		enum isNullable = false;
 	}
 }
+
+private template isGetter(alias T) if (isCallable!T)
+{
+	enum isGetter = (functionAttributes!T & FunctionAttribute.property)
+		&& Parameters!T.length == 0;
+}
+
+private template isSetter(alias T) if (isCallable!T)
+{
+	enum isSetter = (functionAttributes!T & FunctionAttribute.property)
+		&& Parameters!T.length == 1;
+}
+
+private template hasProtection(alias Aggregate, alias member)
+{
+	static if (__traits(compiles, { auto s = __traits(getProtection, __traits(getMember, Aggregate, member)); }))
+		enum hasProtection = true;
+	else
+		enum hasProtection = false;
+}
+
+private template isMemberSomeProperty(alias Kind, alias Aggregate, alias member)
+{
+	import std.traits : isCallable, isTypeTuple;
+
+	// TODO isn't direct using 'this' a hack?
+	static if (member == "this" || 
+		!hasProtection!(Aggregate, member) ||
+		__traits(getProtection, __traits(getMember, Aggregate, member)).privateOrPackage ||
+		isTypeTuple!(__traits(getMember, Aggregate, member)))
+	{
+		enum isMemberSomeProperty = false;
+	}
+	// getter should be function
+	else static if (isCallable!(__traits(getMember, Aggregate, member)))
+	{
+		// function can be overloaded, so iterate over all of them
+		alias overloads = AliasSeq!(__traits(getOverloads, Aggregate, member));
+		enum isMemberSomeProperty = anySatisfy!(Kind, overloads);
+	}
+	else
+	{
+		enum isMemberSomeProperty = false;
+	}
+}
+
+private template SetterParameters(alias Aggregate, alias member)
+{
+	alias Overloads = AliasSeq!(__traits(getOverloads, Aggregate, member));
+	alias Setters = Filter!(isSetter, Overloads);
+	
+	static if (Setters.length == 1)
+		alias SetterParameters = Parameters!(Setters[0]);
+	else
+		alias SetterParameters = void;
+}
+
+private template isMemberField(alias Aggregate, alias member)
+{
+	import std.traits : isSomeFunction;
+	static if (
+		// field has address
+		hasMemberAddress!(Aggregate, member) &&
+		// field isn't either function, or delegates or function pointer
+		!isSomeFunction!(__traits(getMember, Aggregate, member)))
+	{
+		// private or package fields do not serialize
+		enum isMemberField = !__traits(getProtection, __traits(getMember, Aggregate, member)).privateOrPackage;
+	}
+	else
+	{
+		enum isMemberField = false;
+	}
+}
+
+private enum isMemberGetterProperty(alias Aggregate, alias member) = isMemberSomeProperty!(isGetter, Aggregate, member);
+private enum isMemberSetterProperty(alias Aggregate, alias member) = isMemberSomeProperty!(isSetter, Aggregate, member);
+private enum hasMemberAddress(alias aggregate, alias member) = __traits(compiles, { auto addr = &__traits(getMember, aggregate, member); } );
+private enum isMemberStatic(T, alias member) = __traits(compiles, { auto a = mixin("T." ~ member); });
