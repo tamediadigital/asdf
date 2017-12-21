@@ -1953,6 +1953,10 @@ void deserializeValue(V : T[N], T, size_t N)(Asdf data, ref V value)
 	auto kind = data.kind;
 	with(Asdf.Kind) switch(kind)
 	{
+static if(is(T == char))
+{
+		case string:
+}
 		case array:
 			auto elems = data.byElement;
 			foreach(ref e; value)
