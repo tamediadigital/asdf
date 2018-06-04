@@ -56,7 +56,7 @@ class InvalidAsdfException: AsdfException
 		uint kind,
 		string file = __FILE__,
 		size_t line = __LINE__,
-		Throwable next = null) pure nothrow @nogc @safe 
+		Throwable next = null) pure nothrow @safe 
 	{
 		import std.conv: text;
 		super(text("ASDF values is invalid for kind = ", kind), file, line, next);
@@ -68,7 +68,7 @@ class InvalidAsdfException: AsdfException
 		Throwable next,
 		string file = __FILE__,
 		size_t line = __LINE__,
-		) pure nothrow @nogc @safe 
+		) pure nothrow @safe 
 	{
 		this(kind, file, line, next);
 	}
