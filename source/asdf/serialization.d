@@ -1984,6 +1984,23 @@ void deserializeValue(V : T[], T)(Asdf data, ref V value)
 			import std.algorithm.searching: count;
 			auto elems = data.byElement;
 			// create array of properly initialized (by means of ctor) elements
+			static if (hasStaticTemplatedDeserialize!(T, Asdf))
+			{
+				// create array of uninitialized elements
+				// and initialize them using static `deserialize`
+
+				import std.array : uninitializedArray;
+				value = (()@trusted => uninitializedArray!(T[])(elems.save.count))();
+				foreach(ref e; value)
+				{
+					import std.conv: emplace;
+					cast(void)(()@trusted => emplace(&e, T.deserialize(elems.front)))();
+					if (0) //break safety if deserialize is not not safe
+						T.deserialize(elems.front);
+					elems.popFront;
+				}
+			}
+			else
 			static if (__traits(compiles, {value = new T[elems.save.count];}))
 			{
 				value = new T[elems.save.count];
@@ -1993,20 +2010,7 @@ void deserializeValue(V : T[], T)(Asdf data, ref V value)
 					elems.popFront;
 				}
 			}
-			else static if (hasStaticTemplatedDeserialize!(T, Asdf))
-			{
-				// create array of uninitialized elements
-				// and initialize them using static `deserialize`
-
-				import std.array : uninitializedArray;
-				value = uninitializedArray!(T[])(elems.save.count); 
-				foreach(ref e; value)
-				{
-					e = T.deserialize(elems.front);
-					elems.popFront;
-				}
-			}
-			else
+			else 
 				static assert(0, "Type `" ~ T.stringof ~ "` should have either default ctor or static `T.deserialize(R)(R r)` method!");
 			assert(elems.empty);
 			return;
