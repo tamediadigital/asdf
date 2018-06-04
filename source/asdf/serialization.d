@@ -297,7 +297,7 @@ class DeserializationException: AsdfException
 		string func = __PRETTY_FUNCTION__,
 		string file = __FILE__,
 		size_t line = __LINE__,
-		Throwable next = null) pure nothrow @safe 
+		Throwable next = null) pure nothrow @nogc @safe 
 	{
 		this.kind = kind;
 		this.func = func;
@@ -312,7 +312,7 @@ class DeserializationException: AsdfException
 		string func = __PRETTY_FUNCTION__,
 		string file = __FILE__,
 		size_t line = __LINE__,
-		) pure nothrow @safe 
+		) pure nothrow @nogc @safe 
 	{
 		this(kind, msg, func, file, line, next);
 	}
