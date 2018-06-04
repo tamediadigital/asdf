@@ -35,6 +35,17 @@ class AsdfException: Exception
 	{
 		super(msg, file, line, next);
 	}
+
+	///
+	this(
+		string msg,
+		Throwable next,
+		string file = __FILE__,
+		size_t line = __LINE__,
+		) pure nothrow @nogc @safe 
+	{
+		this(msg, file, line, next);
+	}
 }
 
 ///
@@ -49,6 +60,17 @@ class InvalidAsdfException: AsdfException
 	{
 		import std.conv: text;
 		super(text("ASDF values is invalid for kind = ", kind), file, line, next);
+	}
+
+	///
+	this(
+		uint kind,
+		Throwable next,
+		string file = __FILE__,
+		size_t line = __LINE__,
+		) pure nothrow @safe 
+	{
+		this(kind, file, line, next);
 	}
 }
 
@@ -95,7 +117,8 @@ struct Asdf
 	/// Returns ASDF Kind
 	ubyte kind() const pure @safe
 	{
-		enforce!EmptyAsdfException(data.length);
+		if (!data.length)
+			throw new EmptyAsdfException;
 		return data[0];
 	}
 
@@ -167,7 +190,8 @@ struct Asdf
 	+/
 	private void toStringImpl(Dg)(ref JsonBuffer!Dg sink)
 	{
-		enforce!EmptyAsdfException(data.length, "data buffer is empty");
+		if (!data.length)
+			throw new EmptyAsdfException("Data buffer is empty");
 		auto t = data[0];
 		switch(t)
 		{
