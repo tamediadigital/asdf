@@ -811,7 +811,7 @@ unittest
 		UUID id;
 	}
 	assert(`{"id":"8AB3060E-2cba-4f23-b74c-b52db3bdfb46"}`.deserialize!S.id
-				==  UUID("8AB3060E-2cba-4f23-b74c-b52db3bdfb46"));
+				== UUID("8AB3060E-2cba-4f23-b74c-b52db3bdfb46"));
 }
 
 /++
@@ -2175,7 +2175,7 @@ unittest
 	assert(deserialize!(int[E])(serializeToJson([E.a : 1, E.b : 2])) == [E.a : 1, E.b : 2]);
 	assert(deserialize!(int[E])(serializeToAsdf([E.a : 1, E.b : 2])) == [E.a : 1, E.b : 2]);
 }
-	       
+
 unittest
 {
 	enum E {a, b}
@@ -2200,7 +2200,7 @@ void deserializeValue(V : T[K], T, K)(Asdf data, ref V value)
             }
             return;
         case null_:
-	    value = null;
+            value = null;
             return;
         default:
             throw new DeserializationException(kind);
@@ -2215,7 +2215,7 @@ unittest
 	assert(deserialize!(int[int])(serializeToJson([2 : 1, 40 : 2])) == [2 : 1, 40 : 2]);
 	assert(deserialize!(int[int])(serializeToAsdf([2 : 1, 40 : 2])) == [2 : 1, 40 : 2]);
 }
-	       
+
 unittest
 {
 	int[int] r = [3 : 1];
@@ -2590,7 +2590,7 @@ unittest
 	static assert(!hasSerializedAs!foo);
 }
 
-private alias getSerializedAs(T :  serializedAs!Proxy, Proxy) = Proxy;
+private alias getSerializedAs(T : serializedAs!Proxy, Proxy) = Proxy;
 private alias getTransformIn(T) = T.transform;
 private alias getTransformOut(T) = T.transform;
 
