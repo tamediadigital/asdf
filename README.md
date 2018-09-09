@@ -30,6 +30,12 @@ see also [github.com/tamediadigital/je](https://github.com/tamediadigital/je) a 
 3. profit! 
 
 ```D
+/+dub.sdl:
+dependency "asdf" version="~>0.2.5"
+
+#turns on SSE4.2 optimizations when compiled with LDC
+dflags "-mattr=+sse4.2" platform="ldc"
++/
 import asdf;
 
 struct Simple
@@ -68,6 +74,7 @@ dub init <project-name>
 
 Now you need to edit the `dub.json` add `asdf` as dependency and set its targetType to `executable`.
 
+(dub.json)
 ```json
 {
 	...
@@ -77,6 +84,13 @@ Now you need to edit the `dub.json` add `asdf` as dependency and set its targetT
 	"targetType": "executable",
 	"dflags-ldc": ["-mcpu=native"]
 }
+```
+
+(dub.sdl)
+```sdl
+dependency "asdf" version="~><current-version>"
+targetType "executable"
+dflags "-mcpu=native" platform="ldc"
 ```
 
 Now you can create a main file in the `source` and run your code with 
