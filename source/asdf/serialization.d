@@ -1715,15 +1715,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 						foreach (ref elem; val)
 						{
 							serializer.elemBegin;
-							static if(hasSerializedAs!(__traits(getMember, value, member)))
-							{
-								alias Proxy = getSerializedAs!(__traits(getMember, value, member));
-								serializer.serializeValue(elem.to!Proxy);
-							}
-							else
-							{
-								serializer.serializeValue(elem);
-							}
+							serializer.serializeValue(elem);
 						}
 						serializer.arrayEnd(valState);
 					}
@@ -1742,15 +1734,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 						foreach (key, elem; val)
 						{
 							serializer.putKey(key);
-							static if(hasSerializedAs!(__traits(getMember, value, member)))
-							{
-								alias Proxy = getSerializedAs!(__traits(getMember, value, member));
-								serializer.serializeValue(elem.to!Proxy);
-							}
-							else
-							{
-								serializer.serializeValue(elem);
-							}
+							serializer.serializeValue(elem);
 						}
 						serializer.objectEnd(valState);
 					}
