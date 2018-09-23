@@ -1639,25 +1639,6 @@ void serializeValue(S, N)(ref S serializer, auto ref N value)
 void serializeValue(S, V)(ref S serializer, auto ref V value)
 	if(!isNullable!V && isAggregateType!V && !is(V : BigInt))
 {
-
-	enum isPublic(string member) = !__traits(getProtection, __traits(getMember, value, member)).privateOrPackage;
-	enum proper(string member) = __traits(compiles, __traits(getMember, value, member) = __traits(getMember, value, member));
-	template proccess(string member)
-	{
-		static if (!isPublic!member)
-			enum proccess = false;
-		else
-		static if (proper!member)
-			enum proccess = true;
-		else
-		static if (__traits(compiles, { auto _val = __traits(getMember, value, member); }))
-			static if (functionAttributes!(__traits(getMember, value, member)) & FunctionAttribute.property)
-				enum proccess = true;
-			else
-				enum proccess = false;
-		else
-			enum proccess = false;
-	}
 	static if(is(V == class) || is(V == interface))
 	{
 		if(value is null)
@@ -1680,9 +1661,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 	else
 	{
 		auto state = serializer.objectBegin();
-		foreach(member; __traits(allMembers, V))
-		{
-			static if(proccess!member)
+		foreach(member; SerializableMembers!value)
 			{
 				enum udas = [getUDAs!(__traits(getMember, value, member), Serialization)];
 				static if(!ignoreOut(udas))
@@ -1748,7 +1727,6 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 					{
 						serializer.serializeValue(val);
 					}
-				}
 			}
 		}
 		static if(__traits(hasMember, V, "finalizeSerialization"))
@@ -2266,28 +2244,10 @@ void deserializeValue(V)(Asdf data, ref V value)
 				}
 			}
 		}
-		enum isPublic(string member) = !__traits(getProtection, __traits(getMember, value, member)).privateOrPackage;
-		enum proper(string member) = __traits(compiles, __traits(getMember, value, member) = __traits(getMember, value, member));
-		template proccess(string member)
-		{
-			static if (!isPublic!member)
-				enum proccess = false;
-			else
-			static if (proper!member)
-				enum proccess = true;
-			else
-			static if (__traits(compiles, {auto _ptr = &__traits(getMember, value, member);}) && isCallable!(__traits(getMember, value, member)))
-				static if ((functionAttributes!(__traits(getMember, value, member)) & FunctionAttribute.property) && Parameters!(__traits(getMember, value, member)).length == 1)
-					enum proccess = true;
-				else
-					enum proccess = false;
-			else
-				enum proccess = false;
-		}
+
 		struct RequiredFlags
 		{
-			static foreach(member; __traits(allMembers, V))
-				static if (proccess!member)
+			static foreach(member; DeserializableMembers!value)
 					static if (hasRequired([getUDAs!(__traits(getMember, value, member), Serialization)]))
 						mixin ("bool " ~ member ~ ";");
 		}
@@ -2296,9 +2256,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 		{
 			switch(elem.key)
 			{
-				foreach(member; __traits(allMembers, V))
-				{
-					static if (proccess!member)
+				foreach(member; DeserializableMembers!value)
 					{
 						enum udas = [getUDAs!(__traits(getMember, value, member), Serialization)];
 						enum F = isFlexible(V.stringof, member, udas);
@@ -2312,7 +2270,8 @@ void deserializeValue(V)(Asdf data, ref V value)
 							}
 							static if (hasRequired(udas))
 								__traits(getMember, requiredFlags, member) = true;
-							static if(!proper!member)
+
+							static if(!isReadableAndWritable!(value, member))
 							{
 								alias Type = Unqual!(Parameters!(__traits(getMember, value, member)));
 							}
@@ -2361,7 +2320,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 								__traits(getMember, value, member) = proxy.to!Type;
 							}
 							else
-							static if(proper!member && __traits(compiles, {auto ptr = &__traits(getMember, value, member); }))
+							static if(isReadableAndWritable!(value, member) && __traits(compiles, {auto ptr = &__traits(getMember, value, member); }))
 							{
 								enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(elem.value, __traits(getMember, value, member)));
 								alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
@@ -2388,15 +2347,12 @@ void deserializeValue(V)(Asdf data, ref V value)
 					break;
 
 						}
-					}
 				}
 				default:
 			}
 		}
-		foreach(member; __traits(allMembers, V))
+		foreach(member; DeserializableMembers!value)
 		try {
-			static if (proccess!member)
-			{
 				enum udas = [getUDAs!(__traits(getMember, value, member), Serialization)];
 				enum F = isFlexible(V.stringof, member, udas);
 				static if(!ignoreIn(udas))
@@ -2412,7 +2368,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 							{
 								static if (hasRequired(udas))
 									__traits(getMember, requiredFlags, member) = true;
-								static if(!proper!member)
+								static if(!isReadableAndWritable!(value, member))
 								{
 									alias Type = Parameters!(__traits(getMember, value, member));
 								}
@@ -2459,7 +2415,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 									__traits(getMember, value, member) = proxy.to!Type;
 								}
 								else
-								static if(proper!member && __traits(compiles, {auto ptr = &__traits(getMember, value, member); }))
+								static if(isReadableAndWritable!(value, member) && __traits(compiles, {auto ptr = &__traits(getMember, value, member); }))
 								{
 									enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(d, __traits(getMember, value, member)));
 									alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
@@ -2485,7 +2441,6 @@ void deserializeValue(V)(Asdf data, ref V value)
 							}
 						}
 					}
-				}
 			}
 		}
 		catch (AsdfException e)
@@ -2774,4 +2729,70 @@ private template isNullable(T)
 	{
 		enum isNullable = false;
 	}
+}
+
+// check if the member is readable/writeble?
+private enum isReadableAndWritable(alias aggregate, string member) = __traits(compiles, __traits(getMember, aggregate, member) = __traits(getMember, aggregate, member));
+private enum isPublic(alias aggregate, string member) = !__traits(getProtection, __traits(getMember, aggregate, member)).privateOrPackage;
+
+// check if the member is property
+private template isProperty(alias aggregate, string member)
+{
+	static if(isSomeFunction!(__traits(getMember, aggregate, member)))
+		enum isProperty = (functionAttributes!(__traits(getMember, aggregate, member)) & FunctionAttribute.property);
+	else
+		enum isProperty = false;
+}
+// check if the member is readable
+private enum isReadable(alias aggregate, string member) = __traits(compiles, { auto _val = __traits(getMember, aggregate, member); });
+
+// This trait defines what members should be serialized -
+// public members that are either readable and writable or getter properties
+private template Serializable(alias value, string member)
+{
+	static if (!isPublic!(value, member))
+		enum Serializable = false;
+	else
+	static if (isReadableAndWritable!(value, member))
+		enum Serializable = true;
+	else
+	static if (isReadable!(value, member))
+		enum Serializable = isProperty!(value, member); // a readable property is getter
+	else
+		enum Serializable = false;
+}
+
+/// returns alias sequence, members of which are members of value
+/// that should be processed
+private template SerializableMembers(alias value)
+{
+	import std.meta : ApplyLeft, Filter;
+	alias AllMembers = AliasSeq!(__traits(allMembers, typeof(value)));
+	alias isProper = ApplyLeft!(Serializable, value);
+	alias SerializableMembers = Filter!(isProper, AllMembers);
+}
+
+// This trait defines what members should be serialized -
+// public members that are either readable and writable or setter properties
+private template Deserializable(alias value, string member)
+{
+	static if (!isPublic!(value, member))
+		enum Deserializable = false;
+	else
+	static if (isReadableAndWritable!(value, member))
+		enum Deserializable = true;
+	else
+	static if (isProperty!(value, member))
+		// property that has one argument is setter(?)
+		enum Deserializable = Parameters!(__traits(getMember, value, member)).length == 1;
+	else
+		enum Deserializable = false;
+}
+
+private template DeserializableMembers(alias value)
+{
+	import std.meta : ApplyLeft, Filter;
+	alias AllMembers = AliasSeq!(__traits(allMembers, typeof(value)));
+	alias isProper = ApplyLeft!(Deserializable, value);
+	alias DeserializableMembers = Filter!(isProper, AllMembers);
 }
