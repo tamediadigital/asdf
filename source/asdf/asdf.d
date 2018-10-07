@@ -176,7 +176,7 @@ struct Asdf
 	}
 
 	///
-	void toString(Dg)(scope Dg sink)
+	void toString(Dg)(scope Dg sink) const
 	{
 		scope buffer = JsonBuffer!Dg(sink);
 		toStringImpl(buffer);
@@ -188,7 +188,7 @@ struct Asdf
 	Params:
 		sink = output range that accepts `char`, `in char[]` and compile time string `(string str)()`
 	+/
-	private void toStringImpl(Dg)(ref JsonBuffer!Dg sink)
+	private void toStringImpl(Dg)(ref JsonBuffer!Dg sink) const
 	{
 		if (!data.length)
 			throw new EmptyAsdfException("Data buffer is empty");
@@ -221,8 +221,8 @@ struct Asdf
 				sink.put('"');
 				break;
 			case Kind.array:
-				auto elems = byElement;
-				if(byElement.empty)
+				auto elems = Asdf(cast(ubyte[])data).byElement;
+				if(elems.empty)
 				{
 					sink.put!"[]";
 					break;
@@ -238,8 +238,8 @@ struct Asdf
 				sink.put(']');
 				break;
 			case Kind.object:
-				auto pairs = byKeyValue;
-				if(byKeyValue.empty)
+				auto pairs = Asdf(cast(ubyte[])data).byKeyValue;
+				if(pairs.empty)
 				{
 					sink.put!"{}";
 					break;
@@ -269,7 +269,7 @@ struct Asdf
 		import std.conv: to;
 		import asdf.jsonparser;
 		auto text = `{"foo":"bar","inner":{"a":true,"b":false,"c":"32323","d":null,"e":{}}}`;
-		auto asdfData = text.parseJson;
+		const asdfData = text.parseJson;
 		assert(asdfData.to!string == text);
 	}
 
