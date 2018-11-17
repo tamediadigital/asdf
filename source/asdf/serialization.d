@@ -1975,7 +1975,7 @@ Deserializes string value.
 This function allocates new string.
 +/
 void deserializeValue(V)(Asdf data, ref V value)
-	if(is(V : const(char)[]))
+	if(is(V : const(char)[]) && !is(V == enum))
 {
 	auto kind = data.kind;
 	with(Asdf.Kind) switch(kind)
@@ -1989,6 +1989,23 @@ void deserializeValue(V)(Asdf data, ref V value)
 		default:
 			throw new DeserializationException(kind);
 	}
+}
+
+/// issue #94/#95
+unittest
+{
+	enum SimpleEnum : string
+	{
+		se1 = "se1value",
+		se2 = "se1value"
+	}
+
+	struct Simple
+	{
+		SimpleEnum en;
+	}
+
+	Simple simple = `{"en":"se1"}`.deserialize!(Simple);
 }
 
 /// Deserialize single char
