@@ -1673,7 +1673,30 @@ void serializeValue(S, N)(ref S serializer, auto ref N value)
 		serializer.putValue(null);
 		return;
 	}
-	serializer.putValue(value.get);
+	serializer.serializeValue(value.get);
+}
+
+///
+unittest
+{
+	import std.typecons;
+
+	struct Nested
+	{
+		float f;
+	}
+
+	struct T
+	{
+		string str;
+		Nullable!Nested nested;
+	}
+
+	T t;
+	assert(t.serializeToJson == `{"str":null,"nested":null}`);
+	t.str = "txt";
+	t.nested = Nested(123);
+	assert(t.serializeToJson == `{"str":"txt","nested":{"f":123}}`);
 }
 
 /// Struct and class type serialization
@@ -2279,6 +2302,29 @@ void deserializeValue(V)(Asdf data, ref V value)
 	typeof(value.get) payload;
 	.deserializeValue(data, payload);
 	value = payload;
+}
+
+///
+unittest
+{
+	import std.typecons;
+
+	struct Nested
+	{
+		float f;
+	}
+
+	struct T
+	{
+		string str;
+		Nullable!Nested nested;
+	}
+
+	T t;
+	assert(deserialize!T(`{"str":null,"nested":null}`) == t);
+	t.str = "txt";
+	t.nested = Nested(123);
+	assert(deserialize!T(`{"str":"txt","nested":{"f":123}}`) == t);
 }
 
 private static void Flex(V)(Asdf a, ref V v) { v = a.to!V; }
