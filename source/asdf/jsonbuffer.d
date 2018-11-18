@@ -234,7 +234,7 @@ package struct JsonBuffer(Dg)
 	}
 
 	/+
-	Sends to `sink` remaining data.
+	Sends remaining data to `sink`.
 	+/
 	void flush()
 	{

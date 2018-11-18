@@ -65,7 +65,7 @@ See ASDF [API](http://docs.asdf.dlang.io) and [Specification](https://github.com
 
 [![Dub version](https://img.shields.io/dub/v/asdf.svg)](http://code.dlang.org/packages/asdf)
 
-[Dub](https://code.dlang.org/getting_started) is the D's package manager.
+[Dub](https://code.dlang.org/getting_started) is D's package manager.
 You can create a new project with:
 
 ```
@@ -105,7 +105,7 @@ dub --build=release --compiler=ldmd2
 `ldmd2` is a shell on top of [LDC (LLVM D Compiler)](https://github.com/ldc-developers/ldc).
 `"dflags-ldc": ["-mcpu=native"]` allows LDC to optimize ASDF for your CPU.
 
-Instead of using `-mcpu=native`, you may specify additional instruction set for a target with `-mattr`.
+Instead of using `-mcpu=native`, you may specify an additional instruction set for a target with `-mattr`.
 For example, `-mattr=+sse4.2`. ASDF has specialized code for
 [SSE4.2](https://en.wikipedia.org/wiki/SSE4#SSE4.2 instruction set).
 
@@ -129,11 +129,11 @@ For example, `-mattr=+sse4.2`. ASDF has specialized code for
 | `@serializedAs!string` | call to!string |
 | `@serializationTransformIn!fin` | call function `fin` to transform the data |
 | `@serializationTransformOut!fout`  | run function `fout` on serialization, different notation |
-| `@serializationFlexible`  | be flexible on the datatype on reading, e.g. read long's that are wrapped as strings |
+| `@serializationFlexible`  | be flexible on the datatype on reading, e.g. read longs that are wrapped as strings |
 | `@serializationRequired`  | Force deserialiser to throw AsdfException if field was not found in the input. |
 
 
-please also look into the Docs or Unittest for concrete examples!
+Please also look into the Docs or Unittest for concrete examples!
 
 #### ASDF Example (incomplete)
 
@@ -146,9 +146,9 @@ void main()
 {
 	auto target = Asdf("red");
 	File("input.jsonl")
-		// Use at least 4096 bytes for real wolrd apps
+		// Use at least 4096 bytes for real world apps
 		.byChunk(4096)
-		// 32 is minimal value for internal buffer. Buffer can be reallocated to get more memory.
+		// 32 is minimum size for internal buffer. Buffer can be reallocated to get more memory.
 		.parseJsonByLine(4096)
 		.filter!(object => object
 			// opIndex accepts array of keys: {"key0": {"key1": { ... {"keyN-1": <value>}... }}}
@@ -156,7 +156,7 @@ void main()
 			// iterates over an array
 			.byElement
 			// Comparison with ASDF is little bit faster
-			//   then compression with a string.
+			//   than comparison with a string.
 			.canFind(target))
 			//.canFind("red"))
 		// Formatting uses internal buffer to reduce system delegate and system function calls

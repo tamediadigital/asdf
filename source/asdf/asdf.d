@@ -541,7 +541,7 @@ struct Asdf
 
 
 	/++
-	Searches a value recursively in an ASDF object.
+	Searches for a value recursively in an ASDF object.
 
 	Params:
 		keys = list of keys keys
@@ -584,7 +584,7 @@ struct Asdf
 
 	/++
 	Params:
-		def = default value. It is used when ASDF value equals to `Asdf.init`.
+		def = default value. It is used when ASDF value equals `Asdf.init`.
 	Returns:
 		`cast(T) this` if `this != Asdf.init` and `def` otherwise.
 	+/

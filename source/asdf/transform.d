@@ -151,7 +151,7 @@ pure:
 		assert(root.get(value, "inner", "f").data == false);
 	}
 
-	/// Serilization primitive
+	/// Serialization primitive
 	void serialize(ref AsdfSerializer serializer)
 	{
 		if(isLeaf)
@@ -304,9 +304,10 @@ pure:
 	}
 
 	/++
-	Returns a subset of the object-tree, which is not represented in `node`.
-	If leaf represented but has different value then it will be included to return value.
-	Returned value has ASDF format and its leafs  are set to `null`.
+	Returns the subset of the object-tree which is not represented in `node`.
+	If a leaf is represented but has a different value then it will be included
+	in the return value.
+	Returned value has ASDF format and its leaves are set to `null`.
 	+/
 	Asdf removed(AsdfNode node)
 	{
@@ -349,8 +350,9 @@ pure:
 	}
 
 	/++
-	Returns a subset of the node, which is not represented in the object-tree.
-	If leaf represented but has different value then it will be included to return value.
+	Returns the subset of the node which is not represented in the object-tree.
+	If a leaf is represented but has a different value then it will be included
+	in the return value.
 	Returned value has ASDF format.
 	+/
 	Asdf added(AsdfNode node)

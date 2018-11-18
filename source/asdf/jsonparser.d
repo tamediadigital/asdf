@@ -64,7 +64,7 @@ Parses json value
 Params:
     chunks = input range composed of elements type of `const(ubyte)[]`.
         `chunks` can use the same buffer for each chunk.
-    initLength = initial output buffer length. Minimal value equals 32.
+    initLength = initial output buffer length. Minimum value is 32.
 Returns:
     ASDF value
 +/
