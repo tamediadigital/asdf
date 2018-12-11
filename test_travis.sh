@@ -7,6 +7,7 @@ else
   echo $ARCH
   dub test --arch=$ARCH --build=unittest$CONF
   if [ \( "$DC" = "ldc2" \) -o \( "$DC" = "ldmd2" \) ]
+  then
       cd benchmarks/sajson ; dub --build=release-nobounds --compiler=ldmd2 ; cd ../..
-   fi
+  fi
 fi
