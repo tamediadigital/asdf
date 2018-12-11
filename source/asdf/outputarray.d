@@ -81,7 +81,7 @@ pure:
 		version (X86_Any)
 			*cast(uint*) (data.ptr + sh) = b;
 		else
-			static assert(0, "not implemented for this target");
+			*cast(ubyte[4]*) (data.ptr + sh) = cast(ubyte[4]) cast(uint[1]) [b];
 	}
 
 	void extend(size_t len)

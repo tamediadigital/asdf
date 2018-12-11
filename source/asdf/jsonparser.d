@@ -784,7 +784,7 @@ struct JsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Alloc
         version(X86_Any)
             *cast(uint*) structureLengthPtr = cast(uint) structureLength;
         else
-            static assert(0, "not implemented");
+            *cast(ubyte[4]*) structureLengthPtr = cast(ubyte[4]) cast(uint[1]) [cast(uint) structureLength];
         goto next;
     }
     value:
@@ -1059,7 +1059,7 @@ struct JsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Alloc
                 version(X86_Any)
                     *cast(uint*)stringAndNumberShift = cast(uint) stringLength;
                 else
-                    static assert(0, "not implemented");
+                    *cast(ubyte[4]*)stringAndNumberShift = cast(ubyte[4]) cast(uint[1]) [cast(uint) stringLength];
                 goto next;
             }
         }

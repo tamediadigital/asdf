@@ -23,6 +23,12 @@ import std.traits;
 import asdf.jsonbuffer;
 import asdf.jsonparser: assumePure;
 
+version(X86_64)
+    version = X86_Any;
+else
+version(X86)
+    version = X86_Any;
+
 ///
 class AsdfException: Exception
 {
@@ -525,20 +531,34 @@ struct Asdf
 	}
 
 	/// returns 4-byte length
-	private size_t length4() const @property pure nothrow @nogc @safe
+	private size_t length4() const @property pure nothrow @nogc @trusted
 	{
 		assert(data.length >= 5);
-		return (cast(uint[1])cast(ubyte[4])data[1 .. 5])[0];
+		version(X86_Any)
+		{
+			return (cast(uint*)(data.ptr + 1))[0];
+		}
+		else
+		{
+			align(4) auto ret = *cast(ubyte[4]*)(data.ptr + 1);
+			return (cast(uint[1])ret)[0];
+		}
 	}
 
 	/// ditto
-	void length4(size_t len) const @property pure nothrow @nogc @safe
+	void length4(size_t len) const @property pure nothrow @nogc @trusted
 	{
 		assert(data.length >= 5);
 		assert(len <= uint.max);
-		(cast(uint[1])cast(ubyte[4])data[1 .. 5])[0] = cast(uint) len;
+		version(X86_Any)
+		{
+			*(cast(uint*)(data.ptr + 1)) = cast(uint) len;
+		}
+		else
+		{
+			*(cast(ubyte[4]*)(data.ptr + 1)) = cast(ubyte[4]) cast(uint[1]) [cast(uint) len];
+		}
 	}
-
 
 	/++
 	Searches for a value recursively in an ASDF object.
