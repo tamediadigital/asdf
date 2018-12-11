@@ -9,12 +9,11 @@ d:
  - dmd-2.083.0
  - ldc-1.12.0
 env:
- - 
  - ARCH="x86_64" CONF="-sse42"
- - ARCH="AARCH64" CONF=""
+ - ARCH="x86_64" CONF=""
 matrix:
   include:
-    - {os: linux, env: ARCH="x86_64" CONF="", services: docker}
+    - {os: linux, env: ARCH="AARCH64" CONF="", services: docker}
     - {os: linux, d: dmd-2.083.0, env: ARCH="x86" CONF="", addons: {apt: {packages: [[gcc-multilib]]}}}
     - {os: linux, d: ldc-1.12.0, env: ARCH="x86" CONF="", addons: {apt: {packages: [[gcc-multilib]]}}}
     - {os: linux, d: ldc-1.12.0, env: ARCH="x86" CONF="-sse42", addons: {apt: {packages: [[gcc-multilib]]}}}
