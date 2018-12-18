@@ -1975,7 +1975,7 @@ Deserializes string value.
 This function allocates new string.
 +/
 void deserializeValue(V)(Asdf data, ref V value)
-	if(is(V : const(char)[]) && !is(V == enum))
+	if(is(V : const(char)[]) && !is(V == enum) && !isNullable!V)
 {
 	auto kind = data.kind;
 	with(Asdf.Kind) switch(kind)
@@ -2006,6 +2006,21 @@ unittest
 	}
 
 	Simple simple = `{"en":"se1"}`.deserialize!(Simple);
+}
+
+/// issue #115
+unittest
+{
+	import asdf;
+	import std.typecons;
+
+	struct Example
+	{
+		Nullable!string field1;
+	}
+
+	assert(`{}`.deserialize!Example == Example());
+	assert(Example().serializeToJson == `{"field1":null}`);
 }
 
 /// Deserialize single char
