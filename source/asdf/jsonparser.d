@@ -105,11 +105,11 @@ Returns:
 +/
 Asdf parseJson(
     Flag!"includingNewLine" includingNewLine = Yes.includingNewLine,
-    Flag!"spaces" spaces = Yes.spaces, 
+    Flag!"spaces" spaces = Yes.spaces,
     Flag!"assumeValid" assumeValid = No.assumeValid,
     Allocator,
     )
-    (in char[] str, Allocator allocator)
+    (in char[] str, ref Allocator allocator)
 {
     auto parser = JsonParser!(includingNewLine, spaces, assumeValid, Allocator, const(char)[])(allocator, str);
     if (parser.parse)
@@ -117,10 +117,21 @@ Asdf parseJson(
     return Asdf(parser.result);
 }
 
+
+///
+@system unittest {
+    import std.experimental.allocator.mallocator: Mallocator;
+    import std.experimental.allocator.showcase: StackFront;
+
+    StackFront!(1024, Mallocator) allocator;
+    auto json = parseJson(`{"ak": {"sub": "subval"} }`, allocator);
+    assert(json["ak", "sub"] == "subval");
+}
+
 /// ditto
 Asdf parseJson(
     Flag!"includingNewLine" includingNewLine = Yes.includingNewLine,
-    Flag!"spaces" spaces = Yes.spaces, 
+    Flag!"spaces" spaces = Yes.spaces,
     Flag!"assumeValid" assumeValid = No.assumeValid,
     )
     (in char[] str)
@@ -222,7 +233,7 @@ auto parseJsonByLine(
             return _empty;
         }
     }
-    ByLineValue ret; 
+    ByLineValue ret;
     if(input.empty)
     {
         ret._empty = ret._nextEmpty = true;
@@ -390,7 +401,7 @@ pure:
 
     void push()(size_t value)
     {
-        version(LDC) 
+        version(LDC)
             pragma(inline, true);
         immutable local = length++ & (Node.length - 1);
         if (local)
@@ -415,7 +426,7 @@ pure:
 
     size_t top()()
     {
-        version(LDC) 
+        version(LDC)
             pragma(inline, true);
         assert(length);
         immutable local = (length - 1) & (Node.length - 1);
@@ -424,7 +435,7 @@ pure:
 
     size_t pop()()
     {
-        version(LDC) 
+        version(LDC)
             pragma(inline, true);
         assert(length);
         immutable local = --length & (Node.length - 1);
@@ -443,7 +454,7 @@ pure:
     pragma(inline, false)
     void free()()
     {
-        version(LDC) 
+        version(LDC)
             pragma(inline, true);
         if (node.buff is null)
             return;
@@ -490,7 +501,7 @@ struct JsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Alloc
 
     enum bool chunked = !is(Input : const(char)[]);
 
-    this(ref Allocator allocator, Input input) 
+    this(ref Allocator allocator, Input input)
 
     {
         this.input = input;
@@ -892,9 +903,9 @@ struct JsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Alloc
                             version(X86_Any)
                             {
                                 enum uint referenceValue =
-                                        (uint(name[$ - 4]) << 0x00) ^ 
-                                        (uint(name[$ - 3]) << 0x08) ^ 
-                                        (uint(name[$ - 2]) << 0x10) ^ 
+                                        (uint(name[$ - 4]) << 0x00) ^
+                                        (uint(name[$ - 3]) << 0x08) ^
+                                        (uint(name[$ - 2]) << 0x10) ^
                                         (uint(name[$ - 1]) << 0x18);
                                 if (*cast(uint*)(strPtr + bool(name.length == 5)) != referenceValue)
                                 {
@@ -917,7 +928,7 @@ struct JsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Alloc
                                 {
                                     if (c[i - 1] != name[i])
                                     {
-                                        
+
                                         static if (name == "true")
                                             goto true_unexpectedValue;
                                         else
@@ -1222,7 +1233,7 @@ unittest
 
 pragma(inline, true)
 void encodeUTF8()(dchar c, ref ubyte* ptr)
-{   
+{
     if (c < 0x80)
     {
         ptr[0] = cast(ubyte) (c);
