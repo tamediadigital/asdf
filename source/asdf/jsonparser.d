@@ -53,11 +53,7 @@ else
 version(X86)
     version = X86_Any;
 
-import std.experimental.allocator.gc_allocator;
-static if (__VERSION__ < 2.080)
-    private alias ASDFGCAllocator = shared GCAllocator;
-else
-    private alias ASDFGCAllocator = shared const GCAllocator;
+private alias ASDFGCAllocator = typeof(GCAllocator.instance);
 
 /++
 Parses json value
@@ -75,14 +71,9 @@ Asdf parseJson(
     (Chunks chunks, size_t initLength = 32)
     if(is(ElementType!Chunks : const(ubyte)[]))
 {
-    import std.format: format;
-    import std.conv: ConvException;
     enum assumeValid = false;
-    ASDFGCAllocator allocator;
-    auto parser = JsonParser!(includingNewLine, spaces, assumeValid, ASDFGCAllocator, Chunks)(allocator, chunks);
-    if (parser.parse)
-        throw new AsdfException(parser.lastError);
-    return Asdf(parser.result);
+    auto parser = jsonParser!(includingNewLine, spaces, assumeValid)(ASDFGCAllocator.instance, chunks);
+    return parseJson(parser);
 }
 
 ///
@@ -111,10 +102,8 @@ Asdf parseJson(
     )
     (in char[] str, ref Allocator allocator)
 {
-    auto parser = JsonParser!(includingNewLine, spaces, assumeValid, Allocator, const(char)[])(allocator, str);
-    if (parser.parse)
-        throw new AsdfException(parser.lastError);
-    return Asdf(parser.result);
+    auto parser = jsonParser!(includingNewLine, spaces, assumeValid)(allocator, str);
+    return parseJson(parser);
 }
 
 
@@ -136,12 +125,8 @@ Asdf parseJson(
     )
     (in char[] str)
 {
-    import std.experimental.allocator;
-    ASDFGCAllocator allocator;
-    auto parser = JsonParser!(includingNewLine, spaces, assumeValid, ASDFGCAllocator, const(char)[])(allocator, str);
-    if (parser.parse)
-        throw new AsdfException(parser.lastError);
-    return Asdf(parser.result);
+    auto parser = jsonParser!(includingNewLine, spaces, assumeValid)(ASDFGCAllocator.instance, str);
+    return parseJson(parser);
 }
 
 ///
@@ -149,6 +134,14 @@ unittest
 {
     assert(`{"ak": {"sub": "subval"} }`.parseJson["ak", "sub"] == "subval");
 }
+
+
+private Asdf parseJson(Parser)(ref Parser parser) {
+    if (parser.parse)
+        throw new AsdfException(parser.lastError);
+    return Asdf(parser.result);
+}
+
 
 deprecated("please remove the initBufferLength argument (latest)")
 auto parseJsonByLine(
@@ -240,8 +233,7 @@ auto parseJsonByLine(
     }
     else
     {
-        ASDFGCAllocator allocator;
-        ret = ByLineValue(Parser(allocator, input));
+        ret = ByLineValue(Parser(ASDFGCAllocator.instance, input));
         ret.popFront;
     }
     return ret;
@@ -485,6 +477,11 @@ unittest
 }
 
 ///
+auto jsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Allocator, Input = const(ubyte)[])(ref Allocator allocator, Input input) {
+    return JsonParser!(includingNewLine, hasSpaces, assumeValid, Allocator, Input)(allocator, input);
+}
+
+///
 struct JsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Allocator, Input = const(ubyte)[])
 {
 
@@ -625,15 +622,7 @@ struct JsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Alloc
                     const valueLength = stringAndNumberShift - dataPtr;
                     import std.algorithm.comparison: max;
                     const len = max(data.length * 2, dataRequiredLength);
-                    static if (is(Unqual!Allocator == GCAllocator))
-                    {
-                        import core.memory: GC;
-                        data = cast(ubyte[]) GC.realloc(data.ptr, len)[0 .. len];
-                    }
-                    else
-                    {
-                        allocator.reallocate(*cast(void[]*)&data, len);
-                    }
+                    allocator.reallocate(*cast(void[]*)&data, len);
                     dataPtr = data.ptr + dataLength;
                     stringAndNumberShift = dataPtr + valueLength;
                 }
@@ -652,28 +641,12 @@ struct JsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Alloc
         auto rl = (strEnd - strPtr) * 6;
         if (data.ptr !is null && data.length < rl)
         {
-            static if (is(Unqual!Allocator == GCAllocator))
-            {
-                import core.memory: GC;
-                GC.free(data.ptr);
-            }
-            else
-            {
-                allocator.deallocate(data);
-            }
+            allocator.deallocate(data);
             data = null;
         }
         if (data.ptr is null)
         {
-            static if (is(Unqual!Allocator == GCAllocator))
-            {
-                import core.memory: GC;
-                data = cast(ubyte[]) GC.malloc(rl)[0 .. rl];
-            }
-            else
-            {
-                data = cast(ubyte[])allocator.allocate(rl);
-            }
+            data = cast(ubyte[])allocator.allocate(rl);
         }
         dataPtr = data.ptr;
 
