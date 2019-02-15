@@ -361,7 +361,8 @@ unittest
 void serializeToJsonPretty(string sep = "\t", V, O)(auto ref V value, ref O output)
 	if(isOutputRange!(O, const(char)[]))
 {
-	auto ser = jsonSerializer!sep(&output.put!(const(char)[]));
+	import std.range.primitives: put;
+	auto ser = jsonSerializer!sep((const(char)[] chars) => put(output, chars));
 	ser.serializeValue(value);
 	ser.flush;
 }
