@@ -4,6 +4,7 @@ $(H3 ASDF and JSON Serialization)
 module asdf.serialization;
 
 import asdf.jsonparser: assumePure;
+import std.range.primitives: isOutputRange;
 
 ///
 pure unittest
@@ -15,7 +16,7 @@ pure unittest
 	enum E : char
 	{
 		a,
-		b, 
+		b,
 		c,
 	}
 
@@ -61,7 +62,7 @@ pure unittest
 	{
 		@serializedAs!DateTimeProxy
 		DateTime time;
-		
+
 		C object;
 
 		string[E] map;
@@ -72,7 +73,7 @@ pure unittest
 
 	enum json = `{"time":"20160304T000000","object":{"foo":14},"map":{"a":"A"},"bar_common":"escaped chars = '\\', '\"', '\t', '\r', '\n'"}`;
 	auto value = S(
-		DateTime(2016, 3, 4), 
+		DateTime(2016, 3, 4),
 		new C,
 		[E.a : "A"],
 		"escaped chars = '\\', '\"', '\t', '\r', '\n'");
@@ -188,7 +189,7 @@ unittest
 			if (my_nullable.isNull != rhs.my_nullable.isNull)
 				return false;
 
-			return my_nullable == rhs.my_nullable && 
+			return my_nullable == rhs.my_nullable &&
 				         field == rhs.field;
 		}
 	}
@@ -220,7 +221,7 @@ unittest
 			if (nullable.isNull != rhs.nullable.isNull)
 				return false;
 
-			return nullable == rhs.nullable && 
+			return nullable == rhs.nullable &&
 				         field == rhs.field;
 		}
 	}
@@ -297,7 +298,7 @@ class DeserializationException: AsdfException
 		string func = __PRETTY_FUNCTION__,
 		string file = __FILE__,
 		size_t line = __LINE__,
-		Throwable next = null) pure nothrow @nogc @safe 
+		Throwable next = null) pure nothrow @nogc @safe
 	{
 		this.kind = kind;
 		this.func = func;
@@ -312,7 +313,7 @@ class DeserializationException: AsdfException
 		string func = __PRETTY_FUNCTION__,
 		string file = __FILE__,
 		size_t line = __LINE__,
-		) pure nothrow @nogc @safe 
+		) pure nothrow @nogc @safe
 	{
 		this(kind, msg, func, file, line, next);
 	}
@@ -337,14 +338,15 @@ unittest
 	assert(serializeToJson(S("str", 4)) == `{"foo":"str","bar":4}`);
 }
 
+
 /// JSON serialization function with pretty formatting.
 string serializeToJsonPretty(string sep = "\t", V)(auto ref V value)
 {
-	import std.array;
+	import std.array: appender;
+	import std.functional: forward;
+
 	auto app = appender!(char[]);
-	auto ser = jsonSerializer!sep(&app.put!(const(char)[]));
-	ser.serializeValue(value);
-	ser.flush;
+	serializeToJsonPretty!sep(forward!value, app);
 	return cast(string) app.data;
 }
 
@@ -354,6 +356,16 @@ unittest
 	static struct S { int a; }
 	assert(S(4).serializeToJsonPretty == "{\n\t\"a\": 4\n}");
 }
+
+/// JSON serialization function with pretty formatting and custom output range.
+void serializeToJsonPretty(string sep = "\t", V, O)(auto ref V value, ref O output)
+	if(isOutputRange!(O, const(char)[]))
+{
+	auto ser = jsonSerializer!sep(&output.put!(const(char)[]));
+	ser.serializeValue(value);
+	ser.flush;
+}
+
 
 /// ASDF serialization function
 Asdf serializeToAsdf(V)(auto ref V value, size_t initialLength = 32)
@@ -376,7 +388,7 @@ unittest
 	assert(serializeToAsdf(S("str", 4)).to!string == `{"foo":"str","bar":4}`);
 }
 
-/// Check if type T has static templated method allowing to 
+/// Check if type T has static templated method allowing to
 /// deserialize instance of T from range R like
 /// ```
 ///     R r;
@@ -395,10 +407,10 @@ private template hasStaticTemplatedDeserialize(T, R)
 	{
 		// this method shall be templated by R type,
 		// takes it as only argument and
-		static assert(is(typeof(T.deserialize(R.init))), 
+		static assert(is(typeof(T.deserialize(R.init))),
 			"To be usable with Asdf library signature of `" ~ T.stringof ~ ".deserialize` shall be the following: `deserialize(" ~ R.stringof ~ ")(" ~ R.stringof ~ " arg)`. (* Now it has " ~ __traits(getMember, T, "deserialize").stringof ~ " *). If it exists check if it compiles.");
 		// returns result of T type);
-		static assert(is(typeof(T.deserialize(R.init)) == T), 
+		static assert(is(typeof(T.deserialize(R.init)) == T),
 			"To be usable with Asdf library method `" ~ T.stringof ~ ".deserialize(" ~ R.stringof ~ ")(" ~ R.stringof ~ " arg)` shall have return type `" ~ T.stringof ~ "` instead of `" ~ typeof(T.deserialize(R.init)).stringof ~ "`");
 		enum hasStaticTemplatedDeserialize = true;
 	}
@@ -864,7 +876,7 @@ foreach(ref value; yourRangeOrContainer)
 }
 ------
 
-`put(value)` method is used for deserialization. 
+`put(value)` method is used for deserialization.
 
 See_also: $(MREF serializationIgnoreOut), $(MREF serializationIgnoreIn)
 +/
@@ -1226,7 +1238,7 @@ unittest
 
 		ser.putEscapedKey("null");
 		ser.putValue(null);
-	
+
 		ser.putEscapedKey("array");
 		auto state1 = ser.arrayBegin();
 			ser.elemBegin; ser.putValue(null);
@@ -1237,7 +1249,7 @@ unittest
 			ser.elemBegin; ser.putValue("\n");
 			ser.elemBegin; ser.putNumberValue(BigInt("1234567890"));
 		ser.arrayEnd(state1);
-	
+
 	ser.objectEnd(state0);
 	ser.flush;
 
@@ -1255,7 +1267,7 @@ unittest
 
 		ser.putEscapedKey("null");
 		ser.putValue(null);
-	
+
 		ser.putEscapedKey("array");
 		auto state1 = ser.arrayBegin();
 			ser.elemBegin; ser.putValue(null);
@@ -1266,11 +1278,11 @@ unittest
 			ser.elemBegin; ser.putValue("\n");
 			ser.elemBegin; ser.putNumberValue(BigInt("1234567890"));
 		ser.arrayEnd(state1);
-	
+
 	ser.objectEnd(state0);
 	ser.flush;
-	
-	assert(app.data == 
+
+	assert(app.data ==
 `{
 	"null": null,
 	"array": [
@@ -1399,7 +1411,7 @@ unittest
 
 		ser.putEscapedKey("null");
 		ser.putValue(null);
-	
+
 		ser.putKey("array");
 		auto state1 = ser.arrayBegin();
 			ser.elemBegin; ser.putValue(null);
@@ -1410,7 +1422,7 @@ unittest
 			ser.elemBegin; ser.putValue("\n");
 			ser.elemBegin; ser.putNumberValue(BigInt("1234567890"));
 		ser.arrayEnd(state1);
-	
+
 	ser.objectEnd(state0);
 
 	assert(ser.app.result.to!string == `{"null":null,"array":[null,123,1.2300000123e+07,"\t","\r","\n",1234567890]}`);
@@ -1435,7 +1447,7 @@ void serializeValue(S, V)(ref S serializer, in V value, FormatSpec!char fmt = Fo
 	static if (isFloatingPoint!V)
 	{
 		import std.math : isNaN, isFinite, signbit;
-		
+
 		if (isFinite(value))
 			serializer.putNumberValue(value, fmt);
 		else if (value.isNaN)
@@ -1535,9 +1547,9 @@ void serializeValue(S, T)(ref S serializer, T[] value)
 }
 
 /// Input range serialization
-void serializeValue(S, R)(ref S serializer, R value) 
-	if ((isInputRange!R) && 
-		!isSomeChar!(ElementType!R) && 
+void serializeValue(S, R)(ref S serializer, R value)
+	if ((isInputRange!R) &&
+		!isSomeChar!(ElementType!R) &&
 		!isDynamicArray!R &&
 		!isNullable!R)
 {
@@ -1561,7 +1573,7 @@ unittest
 	}
 
 	auto ar = [Foo(1), Foo(3), Foo(4), Foo(17)];
-	
+
 	auto filtered1 = ar.filter!"a.i & 1";
 	auto filtered2 = ar.filter!"!(a.i & 1)";
 
@@ -1850,7 +1862,7 @@ void deserializeValue(Asdf data, ref bool value) pure @safe
 			value = true;
 			return;
 		default:
-			throw new DeserializationException(kind); 
+			throw new DeserializationException(kind);
 	}
 }
 
@@ -1915,7 +1927,7 @@ unittest
 	assert(deserialize!float (serializeToJson ("2.40")) == float (2.40));
 	assert(deserialize!double(serializeToJson ("2.40")) == double(2.40));
 	assert(deserialize!double(serializeToAsdf("-2.40")) == double(-2.40));
-	
+
 	import std.math : isNaN, isInfinity;
 	assert(deserialize!float (serializeToJson  ("nan")).isNaN);
 	assert(deserialize!float (serializeToJson  ("inf")).isInfinity);
@@ -2086,7 +2098,7 @@ void deserializeValue(V : T[], T)(Asdf data, ref V value)
 					elems.popFront;
 				}
 			}
-			else 
+			else
 				static assert(0, "Type `" ~ T.stringof ~ "` should have either default ctor or static `T.deserialize(R)(R r)` method!");
 			assert(elems.empty);
 			return;
@@ -2207,7 +2219,7 @@ unittest
 {
 	struct Foo
 	{
-		
+
 	}
 
 	assert (deserialize!(Foo[int])(serializeToJson([1: Foo()])) == [1:Foo()]);
@@ -2581,7 +2593,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 								alias Proxy = getSerializedAs!(__traits(getMember, value, member));
 								enum S = isScoped(V.stringof, member, udas) && __traits(compiles, .deserializeScopedString(d, proxy));
 								alias Fun = Select!(F, Flex, Select!(S, .deserializeScopedString, .deserializeValue));
-						
+
 								Proxy proxy;
 								Fun(d, proxy);
 								__traits(getMember, value, member) = proxy.to!Type;
@@ -2623,7 +2635,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 		foreach(member; __traits(allMembers, RequiredFlags))
 		{
 			if (!__traits(getMember, requiredFlags, member))
-				throw () { 
+				throw () {
 					static immutable exc = new AsdfException(
 				"ASDF deserialisation: Required member '" ~ member ~ "' in " ~ V.stringof ~ " is missing.");
 					return exc;
@@ -2822,7 +2834,7 @@ private string[] keysIn(string type, string member, Serialization[] attrs)
 private bool ignoreOut()(Serialization[] attrs)
 {
 	import std.algorithm.searching: canFind;
-	return attrs.canFind!(a => 
+	return attrs.canFind!(a =>
 			a.args == ["ignore"]
 			||
 			a.args == ["ignore-out"]
@@ -2832,7 +2844,7 @@ private bool ignoreOut()(Serialization[] attrs)
 private bool ignoreIn()(Serialization[] attrs)
 {
 	import std.algorithm.searching: canFind;
-	return attrs.canFind!(a => 
+	return attrs.canFind!(a =>
 			a.args == ["ignore"]
 			||
 			a.args == ["ignore-in"]
