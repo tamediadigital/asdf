@@ -100,7 +100,7 @@ Asdf parseJson(
     Flag!"assumeValid" assumeValid = No.assumeValid,
     Allocator,
     )
-    (in char[] str, ref Allocator allocator)
+    (in char[] str, auto ref Allocator allocator)
 {
     auto parser = jsonParser!(includingNewLine, spaces, assumeValid)(allocator, str);
     return parseJson(parser);
@@ -477,7 +477,7 @@ unittest
 }
 
 ///
-auto jsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Allocator, Input = const(ubyte)[])(ref Allocator allocator, Input input) {
+auto jsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Allocator, Input = const(ubyte)[])(auto ref Allocator allocator, Input input) {
     return JsonParser!(includingNewLine, hasSpaces, assumeValid, Allocator, Input)(allocator, input);
 }
 
