@@ -7,8 +7,6 @@ jobs:
     environment:
       DMD: 2.085.0
       DUB: 1.11.0
-      PATH: "${HOME}/dmd2/linux/bin64:${PATH}"
-      LD_LIBRARY_PATH: "${HOME}/dmd2/linux/lib64:${LD_LIBRARY_PATH}"
     steps:
       - run:
           name: Make DMD executables available globally
@@ -19,6 +17,7 @@ jobs:
       - run:
           name: Install dependencies
           working_directory: /
+          command: |
             echo $PATH
             apt -y -qq update
             apt -y -qq install python3.6-dev
