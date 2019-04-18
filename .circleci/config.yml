@@ -9,6 +9,7 @@ jobs:
       PATH: "${HOME}/dmd2/linux/bin64:${PATH}"
       LD_LIBRARY_PATH: "${HOME}/dmd2/linux/lib64:${LD_LIBRARY_PATH}"
     steps:
+
       - run:
           name: Install dependencies
           working_directory: /
@@ -22,14 +23,14 @@ jobs:
       - checkout
 
       - run: |
-        git submodule sync .
-        git submodule update --recursive --init
+          git submodule sync .
+          git submodule update --recursive --init
 
       - run: |
-        curl -fsSL --retry 3 "http://downloads.dlang.org/releases/2.x/$DMD/dmd.$DMD.linux.tar.xz" | tar -C ~ -Jxf -
-        curl -fsSL --retry 3 http://code.dlang.org/files/dub-${DUB}-linux-x86_64.tar.gz | tar -C ~/dmd2/linux/bin64 -zxf -
-        dmd --version
-        dub --version
+          curl -fsSL --retry 3 "http://downloads.dlang.org/releases/2.x/$DMD/dmd.$DMD.linux.tar.xz" | tar -C ~ -Jxf -
+          curl -fsSL --retry 3 http://code.dlang.org/files/dub-${DUB}-linux-x86_64.tar.gz | tar -C ~/dmd2/linux/bin64 -zxf -
+          dmd --version
+          dub --version
 
       - run: dub test
       
