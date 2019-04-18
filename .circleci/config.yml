@@ -1,0 +1,42 @@
+version: 2.1
+jobs:
+  build:
+    docker:
+      - image: ubuntu:18.04
+    environment:
+      DMD: 2.085.0
+      DUB: 1.11.0
+      PATH: "${HOME}/dmd2/linux/bin64:${PATH}"
+      LD_LIBRARY_PATH: "${HOME}/dmd2/linux/lib64:${LD_LIBRARY_PATH}"
+    steps:
+      - run:
+          name: Install dependencies
+          working_directory: /
+          command: |
+            apt-get -y -qq update
+            apt-get -y -qq install python3.6-dev
+            curl -O https://bootstrap.pypa.io/get-pip.py
+            python3.6 get-pip.py --user
+            pip install awscli --upgrade --user
+
+      - checkout
+
+      - run: |
+        git submodule sync .
+        git submodule update --recursive --init
+
+      - run: |
+        curl -fsSL --retry 3 "http://downloads.dlang.org/releases/2.x/$DMD/dmd.$DMD.linux.tar.xz" | tar -C ~ -Jxf -
+        curl -fsSL --retry 3 http://code.dlang.org/files/dub-${DUB}-linux-x86_64.tar.gz | tar -C ~/dmd2/linux/bin64 -zxf -
+        dmd --version
+        dub --version
+
+      - run: dub test
+      
+      - run: make -f doc/Makefile html
+      
+      - deploy:
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+              AWS_DEFAULT_REGION=eu-central-1 aws s3 sync --acl public-read --delete web s3://docs.asdf.dlang.io/
+            fi
