@@ -20,9 +20,9 @@ jobs:
           command: |
             echo $PATH
             apt -y -qq update
-            apt -y -qq install python3.6-dev curl git
+            apt -y -qq install python3-dev curl git
             curl -O https://bootstrap.pypa.io/get-pip.py
-            python3.6 get-pip.py --user
+            python3 get-pip.py --user
             pip install awscli --upgrade --user
 
       - checkout
