@@ -15,6 +15,7 @@ jobs:
           name: Install dependencies
           working_directory: /
           command: |
+            echo $PATH
             apt -y -qq update
             apt -y -qq install python3.6-dev
             curl -O https://bootstrap.pypa.io/get-pip.py
