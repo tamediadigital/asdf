@@ -5,7 +5,7 @@ jobs:
     docker:
       - image: ubuntu:18.04
     environment:
-      DMD: 2.085.0
+      DMD: 2.085.1
       DUB: 1.11.0
     steps:
       - run:
