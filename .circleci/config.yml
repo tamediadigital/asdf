@@ -3,18 +3,22 @@ jobs:
   build:
 
     docker:
-      - image: ubuntu:18.10
+      - image: ubuntu:18.04
     environment:
       DMD: 2.085.0
       DUB: 1.11.0
       PATH: "${HOME}/dmd2/linux/bin64:${PATH}"
       LD_LIBRARY_PATH: "${HOME}/dmd2/linux/lib64:${LD_LIBRARY_PATH}"
     steps:
+      - run:
+          name: Make DMD executables available globally
+          command: |
+            echo 'export PATH=$HOME/dmd2/linux/bin64:$PATH' >> $BASH_ENV
+            echo 'export LD_LIBRARY_PATH=$HOME/dmd2/linux/lib64:$PATH' >> $BASH_ENV
 
       - run:
           name: Install dependencies
           working_directory: /
-          command: |
             echo $PATH
             apt -y -qq update
             apt -y -qq install python3.6-dev
