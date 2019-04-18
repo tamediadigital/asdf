@@ -43,5 +43,6 @@ jobs:
       - deploy:
           command: |
             if [ "${CIRCLE_BRANCH}" == "master" ]; then
+              echo "Uploading docs..."
               AWS_DEFAULT_REGION=eu-central-1 aws s3 sync --acl public-read --delete web s3://docs.asdf.dlang.io/
             fi
