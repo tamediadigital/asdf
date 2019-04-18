@@ -3,7 +3,7 @@ jobs:
   build:
 
     docker:
-      - image: ubuntu:18.04
+      - image: ubuntu:18.10
     environment:
       DMD: 2.085.0
       DUB: 1.11.0
