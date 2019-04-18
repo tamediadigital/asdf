@@ -15,8 +15,8 @@ jobs:
           name: Install dependencies
           working_directory: /
           command: |
-            apt-get -y -qq update
-            apt-get -y -qq install python3.6-dev
+            apt -y -qq update
+            apt -y -qq install python3.6-dev
             curl -O https://bootstrap.pypa.io/get-pip.py
             python3.6 get-pip.py --user
             pip install awscli --upgrade --user
