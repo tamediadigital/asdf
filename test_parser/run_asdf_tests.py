@@ -16,7 +16,7 @@ if __name__ == '__main__':
     asdf_config = "D ASDF Parser";
 
     run_tests.programs[asdf_config] = {
-       "url":"https://github.com/tamediadigital/asdf",
+       "url":"https://github.com/libmir/asdf",
        "commands":[os.path.join(run_tests.PARSERS_DIR, "../../test_json-asdf")]
    }
 
