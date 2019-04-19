@@ -89,7 +89,7 @@ workflows:
       - build
       - mirci/upload_docs_job:
           paramters:
-            from: web
+            from: 'web'
           requires:
             - build
           filters:
