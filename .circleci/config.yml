@@ -19,9 +19,8 @@ orbs:
       upload_docs_cmd:
         parameters:
           to:
-            description: "Subdomain name at *.libmir.org"
+            description: "S3 domain"
             type: string
-            default: CIRCLE_PROJECT_REPONAME
           from:
             description: "Folder with generated docs"
             type: string
@@ -40,7 +39,6 @@ orbs:
           to:
             description: "Subdomain name at *.libmir.org"
             type: string
-            default: CIRCLE_PROJECT_REPONAME
           from:
             description: "Folder with generated docs"
             type: string
@@ -90,6 +88,7 @@ workflows:
       - mirci/upload_docs_job:
           paramters:
             from: web
+            from: asdf.libmir.org
           requires:
             - build
           filters:
