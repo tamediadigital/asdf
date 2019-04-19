@@ -1,51 +1,7 @@
 version: 2.1
 
 orbs:
-  mirci:
-    orbs:
-      aws-s3: circleci/aws-s3@1.0.7
-    commands:
-      persist_docs:
-        parameters:
-            from:
-              description: "Folder with generated docs"
-              type: string
-        steps:
-          - persist_to_workspace:
-              root: ~/project
-              paths:
-                - <<parameters.from>>
-
-      upload_docs_cmd:
-        parameters:
-          to:
-            description: "S3 domain"
-            type: string
-          from:
-            description: "Folder with generated docs"
-            type: string
-        steps:
-          - attach_workspace:
-              at: ~/project
-          - aws-s3/sync:
-              from: '<<parameters.from>>'
-              to: 's3://<<parameters.to>>'
-              overwrite: true
-    jobs:
-      upload_docs_job:
-        docker:
-          - image: circleci/python:latest
-        parameters:
-          to:
-            description: "S3 domain"
-            type: string
-          from:
-            description: "Folder with generated docs"
-            type: string
-        steps:
-          - upload_docs_cmd:
-              to: '<<parameters.to>>'
-              from: '<<parameters.from>>'
+  mirci: libmir/upload_docs@0.0.0
 
 jobs:
   build:
@@ -55,9 +11,8 @@ jobs:
       - checkout
       - run: git submodule sync && git submodule update --recursive --init
       - run: dub test
-      - run: |
-          meson build
-          ninja -C build test
+      - run: meson build
+      - run: ninja -C build test
       - run: make -f doc/Makefile html
       - mirci/persist_docs:
           from: web
