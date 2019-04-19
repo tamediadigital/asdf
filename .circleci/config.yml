@@ -50,28 +50,8 @@ orbs:
 jobs:
   build:
     docker:
-      - image: circleci/python:latest
-      - image: circleci/buildpack-deps:latest
-    environment:
-      DMD: 2.085.1
-      DUB: 1.11.0
+      - image: libmir/circle-dlang
     steps:
-      - run:
-          name: Install dependencies
-          working_directory: /
-          command: |
-            sudo apt -y -qq update
-            sudo apt -y -qq install gcc make ninja-build
-            sudo pip install meson
-            curl -fsSL --retry 3 "http://downloads.dlang.org/releases/2.x/$DMD/dmd.$DMD.linux.tar.xz" | tar -C ~ -Jxf -
-            curl -fsSL --retry 3 http://code.dlang.org/files/dub-${DUB}-linux-x86_64.tar.gz | tar -C ~/dmd2/linux/bin64 -zxf -
-            echo 'export PATH=$HOME/dmd2/linux/bin64:$PATH' >> $BASH_ENV
-            echo 'export LD_LIBRARY_PATH=$HOME/dmd2/linux/lib64:$PATH' >> $BASH_ENV
-      - run:
-          name: Test executables
-          command: |
-            dmd --version
-            dub --version
       - checkout
       - run: git submodule sync && git submodule update --recursive --init
       - run: dub test
