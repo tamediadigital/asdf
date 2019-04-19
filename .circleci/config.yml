@@ -34,7 +34,7 @@ orbs:
     jobs:
       upload_docs_job:
         docker:
-          - image: circleci/python:stable
+          - image: circleci/python:latest
         parameters:
           to:
             description: "Subdomain name at *.libmir.org"
@@ -50,7 +50,7 @@ orbs:
 jobs:
   build:
     docker:
-      - image: circleci/python:stable
+      - image: circleci/python:latest
       - image: circleci/buildpack-deps:latest
     environment:
       DMD: 2.085.1
