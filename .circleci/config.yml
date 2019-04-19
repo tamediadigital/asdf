@@ -46,8 +46,8 @@ orbs:
             type: string
         steps:
           - upload_docs_cmd:
-            to: '<<parameters.to>>'
-            from: '<<parameters.from>>'
+              to: '<<parameters.to>>'
+              from: '<<parameters.from>>'
 
 jobs:
   build:
@@ -89,7 +89,7 @@ workflows:
       - build
       - mirci/upload_docs_job:
           paramters:
-            from: 'web'
+            from: web
           requires:
             - build
           filters:
