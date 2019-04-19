@@ -88,7 +88,7 @@ workflows:
       - mirci/upload_docs_job:
           paramters:
             from: web
-            from: asdf.libmir.org
+            to: asdf.libmir.org
           requires:
             - build
           filters:
