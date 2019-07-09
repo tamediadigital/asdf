@@ -1,5 +1,11 @@
 /++
 $(H3 ASDF and JSON Serialization)
+
+For aggregate types the order of the (de)serialization is the folowing:
+    1. All public fields of `alias ? this` that are not hidden by members of `this` (recursively).
+    2. All public fields of `this`.
+    3. All public properties of `alias ? this` that are not hidden by members of `this` (recursively).
+    4. All public properties of `this`.
 +/
 module asdf.serialization;
 
@@ -77,7 +83,7 @@ pure unittest
 		new C,
 		[E.a : "A"],
 		"escaped chars = '\\', '\"', '\t', '\r', '\n'");
-	assert(serializeToJson(value) == json);
+	assert(serializeToJson(value) == json, [getAllMembers!C].to!string);
 	assert(serializeToJson(cast(const)value) == json); // check serialization of const data
 	assert(serializeToAsdf(value).to!string == json);
 	assert(deserialize!S(json).serializeToJson == json);
@@ -1821,7 +1827,25 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 	}
 }
 
-///
+/// Alias this support
+unittest
+{
+    struct S
+    {
+        int u;
+    }
+
+    struct C
+    {
+        int b;
+        S s;
+        alias s this; 
+    }
+
+    assert(C(4, S(3)).serializeToJson == `{"u":3,"b":4}`);
+}
+
+/// Custom `serialize`
 unittest
 {
 	struct S
@@ -2754,6 +2778,24 @@ unittest
 	  	.deserialize!(Turtle[]);
 }
 
+/// Alias this support
+unittest
+{
+    struct S
+    {
+        int a;
+    }
+
+    struct C
+    {
+        S s;
+        alias s this; 
+        int b;
+    }
+
+    assert(`{"a":3, "b":4}`.deserialize!C == C(S(3), 4));
+}
+
 private enum bool isSerializedAs(A) = is(A : serializedAs!T, T);
 private enum bool isSerializedAs(alias a) = false;
 
@@ -3030,6 +3072,12 @@ private template isProperty(alias aggregate, string member)
 	else
 		enum bool isProperty = false;
 }
+
+private template isField(alias aggregate, string member)
+{
+    enum bool isField = __traits(compiles, __traits(getMember, aggregate, member).offsetof);
+}
+
 // check if the member is readable
 private enum bool isReadable(alias aggregate, string member) =
     __traits(compiles, { static fun(T)(auto ref T t) {} fun(__traits(getMember, aggregate, member)); });
@@ -3081,7 +3129,18 @@ private template DeserializableMembers(alias value)
 
 private template FieldsAndProperties(alias value)
 {
-	alias AllMembers = AliasSeq!(__traits(allMembers, typeof(value)));
+    alias T = typeof(value);
 	alias isProperty = ApplyLeft!(.isProperty, value);
-    alias FieldsAndProperties = AliasSeq!(FieldNameTuple!(typeof(value)), Filter!(isProperty, AllMembers));
+	alias isField = ApplyLeft!(.isField, value);
+    alias FieldsAndProperties = AliasSeq!(Filter!(isField, getAllMembers!T), Filter!(isProperty, getAllMembers!T));
 }
+
+template getAllMembersImpl(T)
+{
+    static if (__traits(getAliasThis, T).length)
+	    alias getAllMembersImpl = AliasSeq!(getAllMembersImpl!(typeof(__traits(getMember, T.init, __traits(getAliasThis, T)))), Erase!(__traits(getAliasThis, T)[0], __traits(allMembers, T)));
+    else
+        alias getAllMembersImpl = __traits(allMembers, T);
+}
+
+alias getAllMembers(T) = Reverse!(NoDuplicates!(Reverse!(getAllMembersImpl!T)));
