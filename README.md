@@ -109,11 +109,6 @@ Instead of using `-mcpu=native`, you may specify an additional instruction set f
 For example, `-mattr=+sse4.2`. ASDF has specialized code for
 [SSE4.2](https://en.wikipedia.org/wiki/SSE4#SSE4.2 instruction set).
 
-#### Compatibility
-
-- LDC (LLVM D Compiler) >= `1.1.0-beta2` (recommended compiler).
-- DMD (reference D compiler) >= `2.072.1`.
-
 #### Main transformation functions
 
 | uda | function |
