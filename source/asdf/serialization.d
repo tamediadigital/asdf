@@ -3004,6 +3004,20 @@ private bool privateOrPackage()(string protection)
 	return protection == "private" || protection == "package";
 }
 
+unittest
+{
+    struct A {
+        string str;
+    }
+    struct B {
+        A a;
+        string serialize() const {
+            return asdf.serializeToJson(a);
+        }
+    }
+    assert(B(A("2323")).serialize == `{"str":"2323"}`);
+}
+
 /**
  * Converts an input range $(D range) to an alias sequence.
  */
