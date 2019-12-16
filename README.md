@@ -120,6 +120,7 @@ For example, `-mattr=+sse4.2`. ASDF has specialized code for
 | `@serializationIgnore` | ignore this property completely |
 | `@serializationIgnoreIn` | don't read this property |
 | `@serializationIgnoreOut` | don't write this property |
+| `@serializationIgnoreOutIf!condition` | run function `condition` on serialization and don't write this property if the result is true |
 | `@serializationScoped` | Dangerous! non allocating strings. this means data can vanish if the underlying buffer is removed.  |
 | `@serializedAs!string` | call to!string |
 | `@serializationTransformIn!fin` | call function `fin` to transform the data |
@@ -208,6 +209,9 @@ struct S
 	
 	//can be parsed from json
 	@serializationIgnoreOut int b;
+	
+	// ignored if negative
+	@serializationIgnoreOutIf!`a < 0` int c;
 }
 ```
 

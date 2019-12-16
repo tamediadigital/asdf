@@ -817,6 +817,27 @@ unittest
 }
 
 /++
+Attributes to out conditional ignore field during serialization.
++/
+struct serializationIgnoreOutIf(alias fun)
+{
+	alias condition = fun;
+}
+
+///
+unittest
+{
+	static struct S
+	{
+		@serializationIgnoreOutIf!`a < 0`
+		int a;
+	}
+
+	assert(serializeToJson(S(3)) == `{"a":3}`);
+	assert(serializeToJson(S(-3)) == `{}`);
+}
+
+/++
 Can be applied only to strings fields.
 Does not allocate new data when deserializeing. Raw ASDF data is used for strings instead of new memory allocation.
 Use this attributes only for strings that would not be used after ASDF deallocation.
@@ -1759,6 +1780,14 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 			enum udas = [getUDAs!(__traits(getMember, value, member), Serialization)];
 			static if(!ignoreOut(udas))
 			{
+				static if(hasIgnoreOutIf!(__traits(getMember, value, member)))
+				{
+					alias c = unaryFun!(getIgnoreOutIf!(__traits(getMember, value, member)));
+					if (c(__traits(getMember, value, member)))
+					{
+						continue;
+					}
+				}
 				static if(hasTransformOut!(__traits(getMember, value, member)))
 				{
 					alias f = unaryFun!(getTransformOut!(__traits(getMember, value, member)));
@@ -2826,9 +2855,13 @@ unittest
 	static assert(!isTransformIn!(string));
 }
 
+private enum bool isIgnoreOutIf(A) = is(A : serializationIgnoreOutIf!fun, alias fun);
+private enum bool isIgnoreOutIf(alias a) = false;
+
 private alias ProxyList(alias value) = staticMap!(getSerializedAs, Filter!(isSerializedAs, __traits(getAttributes, value)));
 private alias TransformInList(alias value) = staticMap!(getTransformIn, Filter!(isTransformIn, __traits(getAttributes, value)));
 private alias TransformOutList(alias value) = staticMap!(getTransformOut, Filter!(isTransformOut, __traits(getAttributes, value)));
+private alias IgnoreOutIfList(alias value) = staticMap!(getIgnoreOutIf, Filter!(isIgnoreOutIf, __traits(getAttributes, value)));
 
 alias aliasThis(alias value) = value;
 
@@ -2853,6 +2886,13 @@ private template hasTransformOut(alias value)
 	enum bool hasTransformOut = _listLength == 1;
 }
 
+private template hasIgnoreOutIf(alias value)
+{
+	private enum _listLength = IgnoreOutIfList!(value).length;
+	static assert(_listLength <= 1, `Only single condition is allowed`);
+	enum bool hasIgnoreOutIf = _listLength == 1;
+}
+
 unittest
 {
 	@serializedAs!string uint bar;
@@ -2864,6 +2904,7 @@ unittest
 private alias getSerializedAs(T : serializedAs!Proxy, Proxy) = Proxy;
 private alias getTransformIn(T) = T.transform;
 private alias getTransformOut(T) = T.transform;
+private alias getIgnoreOutIf(T) = T.condition;
 
 private template getSerializedAs(alias value)
 {
@@ -2884,6 +2925,13 @@ private template getTransformOut(alias value)
 	private alias _list = TransformOutList!value;
 	static assert(_list.length <= 1, `Only single output transformation is allowed`);
 	alias getTransformOut = _list[0];
+}
+
+private template getIgnoreOutIf(alias value)
+{
+	private alias _list = IgnoreOutIfList!value;
+	static assert(_list.length <= 1, `Only single output condition is allowed`);
+	alias getIgnoreOutIf = _list[0];
 }
 
 private bool isFlexible(string type, string member, Serialization[] attrs)
