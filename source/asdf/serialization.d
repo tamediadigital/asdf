@@ -216,7 +216,6 @@ unittest
 	assert (deserialize!Foo(`{"my_nullable":200,"field":"it's a foo"}`) == Foo(MyNullable(200), "it's a foo"));
 
 	import std.typecons : Nullable;
-	import std.stdio;
 
 	static struct Bar
 	{
@@ -806,7 +805,7 @@ unittest
 		@serializationIgnoreDefault
 		Decor dec = Decor(20); // { 20, inf }
 	}
-	import std.stdio;
+	
 	assert(Cake("Normal Cake").serializeToJson == `{"name":"Normal Cake","slices":8,"flavor":1}`);
 	auto cake = Cake.init;
 	cake.dec = Decor.init;
@@ -1822,7 +1821,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 			return;
 		}
 	}
-	
+
 	static if (hasSerializedAs!V)
 	{{
 		alias Proxy = getSerializedAs!V;
