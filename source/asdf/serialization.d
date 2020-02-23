@@ -788,6 +788,62 @@ Do not use it on void initialized fields or aggregates with void initialized fie
 +/
 enum Serialization serializationIgnoreDefault = serialization("ignore-default");
 
+///
+unittest
+{
+	static struct Decor
+	{
+		int candles; // 0
+		float fluff = float.infinity; // inf 
+	}
+	
+	static struct Cake
+	{
+		@serializationIgnoreDefault
+		string name = "Chocolate Cake";
+		int slices = 8;
+		float flavor = 1;
+		@serializationIgnoreDefault
+		Decor dec = Decor(20); // { 20, inf }
+	}
+	import std.stdio;
+	assert(Cake("Normal Cake").serializeToJson == `{"name":"Normal Cake","slices":8,"flavor":1}`);
+	auto cake = Cake.init;
+	cake.dec = Decor.init;
+	assert(cake.serializeToJson == `{"slices":8,"flavor":1,"dec":{"candles":0,"fluff":"inf"}}`);
+	assert(cake.dec.serializeToJson == `{"candles":0,"fluff":"inf"}`);
+	
+	static struct A
+	{
+		@serializationIgnoreDefault
+		string str = "Banana";
+		int i = 1;
+	}
+	assert(A.init.serializeToJson == `{"i":1}`);
+	
+	static struct S
+	{
+		@serializationIgnoreDefault
+		A a;
+	}
+	assert(S.init.serializeToJson == `{}`);
+	assert(S(A("Berry")).serializeToJson == `{"a":{"str":"Berry","i":1}}`);
+	
+	static struct D
+	{
+		S s;
+	}
+	assert(D.init.serializeToJson == `{"s":{}}`);
+	assert(D(S(A("Berry"))).serializeToJson == `{"s":{"a":{"str":"Berry","i":1}}}`);
+	assert(D(S(A(null, 0))).serializeToJson == `{"s":{"a":{"str":null,"i":0}}}`);
+	
+	static struct F
+	{
+		D d;
+	}
+	assert(F.init.serializeToJson == `{"d":{"s":{}}}`);
+}
+
 /++
 Attribute to ignore field during deserialization.
 +/
