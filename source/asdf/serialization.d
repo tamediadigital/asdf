@@ -783,6 +783,12 @@ unittest
 }
 
 /++
+Attribute to ignore a field when equals to its default value.
+Do not use it on void initialized fields or aggregates with void initialized fields, recursively.
++/
+enum Serialization serializationIgnoreDefault = serialization("ignore-default");
+
+/++
 Attribute to ignore field during deserialization.
 +/
 enum Serialization serializationIgnoreIn = serialization("ignore-in");
