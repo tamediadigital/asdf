@@ -1766,7 +1766,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 			return;
 		}
 	}
-
+	
 	static if (hasSerializedAs!V)
 	{{
 		alias Proxy = getSerializedAs!V;
@@ -1783,9 +1783,16 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 		auto state = serializer.objectBegin();
 		foreach(member; SerializableMembers!value)
 		{
-			enum udas = [getUDAs!(__traits(getMember, value, member), Serialization)];
-			static if(!ignoreOut(udas))
+			enum memberUdas = [getUDAs!(__traits(getMember, value, member), Serialization)];
+			
+			static if(!ignoreOut(memberUdas))
 			{
+				static if (hasIgnoreDefault(memberUdas))
+				{
+					if (__traits(getMember, value, member) == __traits(getMember, V.init, member))
+						continue;
+				}
+				
 				static if(hasIgnoreOutIf!(__traits(getMember, value, member)))
 				{
 					alias c = unaryFun!(getIgnoreOutIf!(__traits(getMember, value, member)));
@@ -1804,10 +1811,10 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 					auto val = __traits(getMember, value, member);
 				}
 
-				enum key = keyOut(S.stringof, member, udas);
+				enum key = keyOut(S.stringof, member, memberUdas);
 				serializer.putEscapedKey(key);
 
-				static if(isLikeArray(V.stringof, member, udas))
+				static if(isLikeArray(V.stringof, member, memberUdas))
 				{
 					alias V = typeof(val);
 					static if(is(V == interface) || is(V == class) || is(V : E[], E))
@@ -1827,7 +1834,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 					serializer.arrayEnd(valState);
 				}
 				else
-				static if(isLikeObject(V.stringof, member, udas))
+				static if(isLikeObject(V.stringof, member, memberUdas))
 				{
 					static if(is(V == interface) || is(V == class) || is(V : E[T], E, T))
 					{
@@ -3046,6 +3053,15 @@ private bool ignoreIn()(Serialization[] attrs)
 			a.args == ["ignore-in"]
 			);
 }
+
+private bool hasIgnoreDefault()(Serialization[] attrs)
+{
+	import std.algorithm.searching: canFind;
+	return attrs.canFind!(a =>
+			a.args == ["ignore-default"]
+			);
+}
+
 
 private bool hasRequired()(Serialization[] attrs)
 {
