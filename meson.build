@@ -1,6 +1,6 @@
 project('asdf', 'd', version : '0.5.5', license: 'BSL-1.0')
 
-description = 'Mir Algorithm - Dlang Core Library'
+description = 'Mir ASDF - JSON Parsing and Serialization'
 
 subprojects = []
 
