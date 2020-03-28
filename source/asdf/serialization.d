@@ -296,7 +296,7 @@ import std.range.primitives;
 import std.functional;
 import std.conv;
 import std.utf;
-import std.format: FormatSpec, formatValue, singleSpec;
+import std.format: FormatSpec, formatValue;
 import std.bigint: BigInt;
 import asdf.asdf;
 
@@ -1368,6 +1368,7 @@ unittest
 
 	import std.array;
 	import std.bigint;
+    import std.format: singleSpec;
 
 	auto app = appender!string;
 	auto ser = jsonSerializer(&app.put!(const(char)[]));
@@ -1397,6 +1398,7 @@ unittest
 {
 	import std.array;
 	import std.bigint;
+    import std.format: singleSpec;
 
 	auto app = appender!string;
 	auto ser = jsonSerializer!"\t"(&app.put!(const(char)[]));
@@ -1544,6 +1546,7 @@ unittest
     import asdf;
     import std.conv: to;
 	import std.bigint;
+    import std.format: singleSpec;
 
 	auto ser = asdfSerializer();
 	auto state0 = ser.objectBegin;
@@ -1605,6 +1608,8 @@ void serializeValue(S, V)(ref S serializer, in V value, FormatSpec!char fmt = Fo
 ///
 unittest
 {
+    import std.bigint;
+
 	assert(serializeToJson(BigInt(123)) == `123`);
 	assert(serializeToJson(2.40f) == `2.4`);
 	assert(serializeToJson(float.nan) == `"nan"`);
@@ -2136,6 +2141,8 @@ void deserializeValue(V)(Asdf data, ref V value)
 ///
 unittest
 {
+    import std.bigint;
+
 	assert(deserialize!ulong (serializeToAsdf(20)) == ulong (20));
 	assert(deserialize!ulong (serializeToJson(20)) == ulong (20));
 	assert(deserialize!double(serializeToAsdf(20)) == double(20));
