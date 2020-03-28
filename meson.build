@@ -4,7 +4,7 @@ description = 'Mir Algorithm - Dlang Core Library'
 
 subprojects = []
 
-has_cpp_headers = true
+has_cpp_headers = false
 
 sources_list = [
     'asdf/asdf',
