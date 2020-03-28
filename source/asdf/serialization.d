@@ -140,6 +140,7 @@ pure unittest
 unittest
 {
     import asdf;
+    import std.conv: to;
 
 	static struct S
 	{
@@ -213,8 +214,6 @@ unittest
 		}
 	}
 
-	static assert(isNullable!MyNullable);
-
 	Foo foo;
 	foo.field = "it's a foo";
 
@@ -244,9 +243,6 @@ unittest
 		}
 	}
 
-	static assert(isNullable!(Nullable!(int)));
-	static assert(isNullable!(Nullable!(bool)));
-
 	Bar bar;
 	bar.field = "it's a bar";
 
@@ -259,6 +255,7 @@ unittest
 /// Support for floating point nan and (partial) infinity
 unittest
 {
+    import std.conv: to;
     import asdf;
 
 	static struct Foo
@@ -511,8 +508,6 @@ V deserialize(V)(in char[] str)
 ///
 unittest
 {
-    import asdf;
-
 	struct S
 	{
 		string foo;
