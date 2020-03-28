@@ -1,5 +1,5 @@
 /++
-Json Parser
+JSON Parsing API
 
 Copyright: Tamedia Digital, 2016-2017
 
@@ -1117,7 +1117,7 @@ struct JsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Alloc
         _lastError = "unexpected end of object key";
         goto unexpectedEnd;
     object_key_start_unexpectedValue:
-        _lastError = "expected '\"' when when start parsing object key";
+        _lastError = "expected '\"' when start parsing object key";
         goto unexpectedValue;
     key_is_to_large:
         _lastError = "key length is limited to 255 characters";
