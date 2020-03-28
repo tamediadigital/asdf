@@ -2383,6 +2383,7 @@ unittest
 			{
 				switch(elem.key)
 				{
+                    import std.conv: to;
 					case "i":
 						int i = elem.value.to!int;
 						return typeof(this)(i);
