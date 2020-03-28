@@ -403,6 +403,7 @@ Asdf serializeToAsdf(V)(auto ref V value, size_t initialLength = 32)
 unittest
 {
     import asdf;
+    import std.conv: to;
 
 	struct S
 	{
@@ -463,6 +464,8 @@ V deserialize(V)(Asdf data)
 /// Serializing struct Foo with disabled default ctor
 unittest
 {
+    import std.conv: to;
+
 	static struct Foo
 	{
 		int i;
@@ -1539,7 +1542,7 @@ auto asdfSerializer(size_t initialLength = 32)
 unittest
 {
     import asdf;
-
+    import std.conv: to;
 	import std.bigint;
 
 	auto ser = asdfSerializer();
@@ -1992,6 +1995,8 @@ unittest
 /// Custom `serialize`
 unittest
 {
+    import std.conv: to;
+
 	struct S
 	{
 		void serialize(S)(ref S serializer)
