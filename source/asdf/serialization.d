@@ -15,6 +15,7 @@ import std.range.primitives: isOutputRange;
 ///
 pure unittest
 {
+    import asdf;
 	import std.bigint;
 	import std.datetime;
 	import std.conv;
@@ -95,6 +96,8 @@ pure unittest
 /// `finalizeSerialization` method
 unittest
 {
+    import asdf;
+
 	static struct S
 	{
 		string a;
@@ -112,6 +115,8 @@ unittest
 /// `finalizeDeserialization` method
 pure unittest
 {
+    import asdf;
+
 	static struct S
 	{
 		string a;
@@ -134,6 +139,8 @@ pure unittest
 /// A user may define setter and/or getter properties.
 unittest
 {
+    import asdf;
+
 	static struct S
 	{
 		@serializationIgnore string str;
@@ -158,6 +165,8 @@ unittest
 /// makes nullable type to null value)
 unittest
 {
+    import asdf;
+
 	static struct MyNullable
 	{
 		long value;
@@ -250,6 +259,8 @@ unittest
 /// Support for floating point nan and (partial) infinity
 unittest
 {
+    import asdf;
+
 	static struct Foo
 	{
 		float f;
@@ -339,6 +350,8 @@ string serializeToJson(V)(auto ref V value)
 ///
 unittest
 {
+    import asdf;
+
 	struct S
 	{
 		string foo;
@@ -363,6 +376,8 @@ string serializeToJsonPretty(string sep = "\t", V)(auto ref V value)
 ///
 unittest
 {
+    import asdf;
+
 	static struct S { int a; }
 	assert(S(4).serializeToJsonPretty == "{\n\t\"a\": 4\n}");
 }
@@ -390,6 +405,8 @@ Asdf serializeToAsdf(V)(auto ref V value, size_t initialLength = 32)
 ///
 unittest
 {
+    import asdf;
+
 	struct S
 	{
 		string foo;
@@ -494,6 +511,8 @@ V deserialize(V)(in char[] str)
 ///
 unittest
 {
+    import asdf;
+
 	struct S
 	{
 		string foo;
@@ -737,6 +756,8 @@ SerializationGroup serializationMultiKeysIn(string[][] keys...) pure @safe
 ///
 unittest
 {
+    import asdf;
+
 	static struct S
 	{
 		@serializationMultiKeysIn(["a", "b", "c"])
@@ -756,6 +777,8 @@ Serialization serializationKeyOut(string key) pure @safe
 ///
 unittest
 {
+    import asdf;
+
 	static struct S
 	{
 		@serializationKeyOut("a")
@@ -772,6 +795,8 @@ enum Serialization serializationIgnore = serialization("ignore");
 ///
 unittest
 {
+    import asdf;
+
 	static struct S
 	{
 		@serializationIgnore
@@ -790,6 +815,8 @@ enum Serialization serializationIgnoreDefault = serialization("ignore-default");
 ///
 unittest
 {
+    import asdf;
+
 	static struct Decor
 	{
 		int candles; // 0
@@ -851,6 +878,8 @@ enum Serialization serializationIgnoreIn = serialization("ignore-in");
 ///
 unittest
 {
+    import asdf;
+
 	static struct S
 	{
 		@serializationIgnoreIn
@@ -888,6 +917,8 @@ struct serializationIgnoreOutIf(alias fun)
 ///
 unittest
 {
+    import asdf;
+
 	static struct S
 	{
 		@serializationIgnoreOutIf!`a < 0`
@@ -908,6 +939,8 @@ enum Serialization serializationScoped = serialization("scoped");
 ///
 unittest
 {
+    import asdf;
+
 	import std.uuid;
 
 	static struct S
@@ -930,6 +963,8 @@ enum Serialization serializationFlexible = serialization("flexible");
 ///
 unittest
 {
+    import asdf;
+
 	import std.uuid;
 
 	static struct S
@@ -946,6 +981,8 @@ unittest
 ///
 unittest
 {
+    import asdf;
+
 	static struct Vector
 	{
 		@serializationFlexible int x;
@@ -979,6 +1016,8 @@ enum Serialization serializationLikeArray = serialization("like-array");
 ///
 unittest
 {
+    import asdf;
+
 	import std.range;
 	import std.uuid;
 
@@ -1027,6 +1066,8 @@ enum Serialization serializationLikeObject = serialization("like-object");
 ///
 unittest
 {
+    import asdf;
+
 	static struct M
 	{
 		private int sum;
@@ -1079,6 +1120,8 @@ struct serializationTransformOut(alias fun)
 ///
 unittest
 {
+    import asdf;
+
 	// global unary function
 	static int fin(int i)
 	{
@@ -1323,6 +1366,8 @@ auto jsonSerializer(string sep = "", Dg)(scope Dg sink)
 ///
 unittest
 {
+    import asdf;
+
 	import std.array;
 	import std.bigint;
 
@@ -1498,6 +1543,8 @@ auto asdfSerializer(size_t initialLength = 32)
 ///
 unittest
 {
+    import asdf;
+
 	import std.bigint;
 
 	auto ser = asdfSerializer();
@@ -1531,6 +1578,8 @@ void serializeValue(S)(ref S serializer, typeof(null))
 ///
 unittest
 {
+    import asdf;
+
 	assert(serializeToJson(null) == `null`);
 }
 
