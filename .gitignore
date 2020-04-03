@@ -50,3 +50,6 @@ benchmarks/sajson/sajson-benchmark
 build/
 test.d
 test
+libmir-ion.a
+mir-ion-test-library
+*.DS_Store

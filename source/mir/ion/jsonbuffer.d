@@ -1,4 +1,4 @@
-module asdf.jsonbuffer;
+module mir.ion.jsonbuffer;
 
 package struct JsonBuffer(Dg)
 {
@@ -31,7 +31,7 @@ package struct JsonBuffer(Dg)
             flush;
             newLength = str.length;
         }
-        import asdf.utility;
+        import mir.ion.utility;
         // compile time loop
         foreach(i; Iota!(0, str.length))
             buffer[length + i] = str[i];
@@ -81,7 +81,7 @@ package struct JsonBuffer(Dg)
         version(SSE42)
         {
             import core.simd;
-            import asdf.simd;
+            import mir.ion.simd;
             import ldc.gccbuiltins_x86;
 
             enum byte16 str2E = [

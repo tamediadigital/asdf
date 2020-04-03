@@ -1,3 +1,11 @@
+
+!!! WIP !!!
+Please use https://github.com/libmir/asdf for now.
+
+-----------
+
+DEPRECATED:
+
 [![Dub version](https://img.shields.io/dub/v/asdf.svg)](http://code.dlang.org/packages/asdf)
 [![Dub downloads](https://img.shields.io/dub/dt/asdf.svg)](http://code.dlang.org/packages/asdf)
 [![License](https://img.shields.io/dub/l/asdf.svg)](http://code.dlang.org/packages/asdf)
@@ -36,7 +44,7 @@ dependency "asdf" version="~>0.2.5"
 #turns on SSE4.2 optimizations when compiled with LDC
 dflags "-mattr=+sse4.2" platform="ldc"
 +/
-import asdf;
+import mir.ion;
 
 struct Simple
 {
@@ -136,7 +144,7 @@ Please also look into the Docs or Unittest for concrete examples!
 ```D
 import std.algorithm;
 import std.stdio;
-import asdf;
+import mir.ion;
 
 void main()
 {

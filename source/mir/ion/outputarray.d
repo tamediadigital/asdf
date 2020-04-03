@@ -1,6 +1,6 @@
-module asdf.outputarray;
+module mir.ion.outputarray;
 
-import asdf.asdf;
+import mir.ion.asdf;
 
 version(X86_64)
     version = X86_Any;

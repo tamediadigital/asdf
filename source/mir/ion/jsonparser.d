@@ -13,10 +13,10 @@ SUBREF = $(LINK2 asdf_$1.html#.$2, $(TT $2))$(NBSP)
 T2=$(TR $(TDNW $(LREF $1)) $(TD $+))
 T4=$(TR $(TDNW $(LREF $1)) $(TD $2) $(TD $3) $(TD $4))
 +/
-module asdf.jsonparser;
+module mir.ion.jsonparser;
 
-import asdf.asdf;
-import asdf.outputarray;
+import mir.ion.asdf;
+import mir.ion.outputarray;
 import std.experimental.allocator.gc_allocator;
 import std.meta;
 import std.range.primitives;
@@ -237,7 +237,7 @@ auto parseJsonByLine(
 ///
 unittest
 {
-    import asdf.jsonparser;
+    import mir.ion.jsonparser;
     import std.range: chunks;
     auto text = cast(const ubyte[])"\t true \r\r\n false\t";
     auto values = text.chunks(3).parseJsonByLine;

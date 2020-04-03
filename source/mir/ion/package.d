@@ -15,14 +15,14 @@ SUBREF = $(LINK2 asdf_$1.html#.$2, $(TT $2))$(NBSP)
 T2=$(TR $(TDNW $(LREF $1)) $(TD $+))
 T4=$(TR $(TDNW $(LREF $1)) $(TD $2) $(TD $3) $(TD $4))
 +/
-module asdf;
+module mir.ion;
 
 ///
 unittest
 {
     import std.stdio;
     import std.algorithm;
-    import asdf;
+    import mir.ion;
 
     size_t femalesCount()
     {
@@ -39,7 +39,7 @@ unittest
     }
 }
 
-public import asdf.asdf;
-public import asdf.jsonparser;
-public import asdf.serialization;
-public import asdf.transform;
+public import mir.ion.asdf;
+public import mir.ion.jsonparser;
+public import mir.ion.serialization;
+public import mir.ion.transform;

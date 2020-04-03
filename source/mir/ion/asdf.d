@@ -13,15 +13,15 @@ SUBREF = $(LINK2 asdf_$1.html#.$2, $(TT $2))$(NBSP)
 T2=$(TR $(TDNW $(LREF $1)) $(TD $+))
 T4=$(TR $(TDNW $(LREF $1)) $(TD $2) $(TD $3) $(TD $4))
 +/
-module asdf.asdf;
+module mir.ion.asdf;
 
 import std.exception;
 import std.range.primitives;
 import std.typecons;
 import std.traits;
 
-import asdf.jsonbuffer;
-import asdf.jsonparser: assumePure;
+import mir.ion.jsonbuffer;
+import mir.ion.jsonparser: assumePure;
 
 version(X86_64)
     version = X86_Any;
@@ -159,7 +159,7 @@ struct Asdf
     unittest
     {
         import std.conv: to;
-        import asdf.jsonparser;
+        import mir.ion.jsonparser;
         assert(Asdf("begin\u000bend").to!string == `"begin\u000Bend"`);
         assert("begin\u000bend" == cast(string) `"begin\u000Bend"`.parseJson, to!string(cast(ubyte[]) cast(string)( `"begin\u000Bend"`.parseJson)));
     }
@@ -175,7 +175,7 @@ struct Asdf
     unittest
     {
         import std.conv: to;
-        import asdf.jsonparser;
+        import mir.ion.jsonparser;
         auto asdfData = `{"foo":"bar","inner":{"a":true,"b":false,"c":"32323","d":null,"e":{}}}`.parseJson;
         asdfData["inner", "d"].remove;
         assert(asdfData.to!string == `{"foo":"bar","inner":{"a":true,"b":false,"c":"32323","e":{}}}`);
@@ -273,7 +273,7 @@ struct Asdf
     unittest
     {
         import std.conv: to;
-        import asdf.jsonparser;
+        import mir.ion.jsonparser;
         auto text = `{"foo":"bar","inner":{"a":true,"b":false,"c":"32323","d":null,"e":{}}}`;
         const asdfData = text.parseJson;
         assert(asdfData.to!string == text);
@@ -290,7 +290,7 @@ struct Asdf
     ///
     unittest
     {
-        import asdf.jsonparser;
+        import mir.ion.jsonparser;
         auto asdfData = `null`.parseJson;
         assert(asdfData == asdfData);
     }
@@ -306,7 +306,7 @@ struct Asdf
     ///
     unittest
     {
-        import asdf.jsonparser;
+        import mir.ion.jsonparser;
         auto asdfData = `null`.parseJson;
         assert(asdfData == null);
     }
@@ -322,7 +322,7 @@ struct Asdf
     ///
     unittest
     {
-        import asdf.jsonparser;
+        import mir.ion.jsonparser;
         auto asdfData = `true`.parseJson;
         assert(asdfData == true);
         assert(asdfData != false);
@@ -339,7 +339,7 @@ struct Asdf
     ///
     unittest
     {
-        import asdf.jsonparser;
+        import mir.ion.jsonparser;
         auto asdfData = `"str"`.parseJson;
         assert(asdfData == "str");
         assert(asdfData != "stR");
@@ -593,7 +593,7 @@ struct Asdf
     ///
     unittest
     {
-        import asdf.jsonparser;
+        import mir.ion.jsonparser;
         auto asdfData = `{"foo":"bar","inner":{"a":true,"b":false,"c":"32323","d":null,"e":{}}}`.parseJson;
         assert(asdfData["inner", "a"] == true);
         assert(asdfData["inner", "b"] == false);
@@ -620,7 +620,7 @@ struct Asdf
     ///
     unittest
     {
-        import asdf.jsonparser;
+        import mir.ion.jsonparser;
         auto asdfData = `{"foo":"bar","inner":{"a":true,"b":false,"c":"32323","d":null,"e":{}}}`.parseJson;
         assert(asdfData["inner", "a"].get(false) == true);
         assert(asdfData["inner", "b"].get(true) == false);
@@ -638,7 +638,7 @@ struct Asdf
         import std.conv: to, ConvException;
         import std.format: format;
         import std.math: trunc;
-        import asdf.serialization;
+        import mir.ion.serialization;
         auto k = kind;
         with(Kind) switch(kind)
         {
@@ -706,7 +706,7 @@ struct Asdf
     unittest
     {
         import std.math;
-        import asdf.serialization;
+        import mir.ion.serialization;
         auto null_ = serializeToAsdf(null);
         interface I {}
         class C {}
@@ -722,7 +722,7 @@ struct Asdf
     unittest
     {
         import std.math;
-        import asdf.serialization;
+        import mir.ion.serialization;
         auto true_ = serializeToAsdf(true);
         auto false_ = serializeToAsdf(false);
         static struct C {
@@ -742,7 +742,7 @@ struct Asdf
     unittest
     {
         import std.bigint;
-        import asdf.serialization;
+        import mir.ion.serialization;
         auto number = serializeToAsdf(1234);
         auto zero = serializeToAsdf(0);
         static struct C
@@ -767,7 +767,7 @@ struct Asdf
     unittest
     {
         import std.bigint;
-        import asdf.serialization;
+        import mir.ion.serialization;
         auto number = serializeToAsdf("1234");
         auto false_ = serializeToAsdf("false");
         auto bar = serializeToAsdf("bar");
@@ -799,7 +799,7 @@ struct Asdf
     unittest
     {
         import std.bigint;
-        import asdf.serialization;
+        import mir.ion.serialization;
         assert(cast(int[]) serializeToAsdf([100, 20]) == [100, 20]);
     }
 
@@ -807,7 +807,7 @@ struct Asdf
     unittest
     {
         import std.datetime;
-        import asdf.serialization;
+        import mir.ion.serialization;
 
         auto num =  serializeToAsdf(0.123456789); // rounding up to usecs
         assert(cast(DateTime) num == DateTime(1970, 1, 1));

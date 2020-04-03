@@ -7,15 +7,15 @@ For aggregate types the order of the (de)serialization is the folowing:
     3. All public properties of `alias ? this` that are not hidden by members of `this` (recursively).
     4. All public properties of `this`.
 +/
-module asdf.serialization;
+module mir.ion.serialization;
 
-import asdf.jsonparser: assumePure;
+import mir.ion.jsonparser: assumePure;
 import std.range.primitives: isOutputRange;
 
 ///
 pure unittest
 {
-    import asdf;
+    import mir.ion;
     import std.bigint;
     import std.datetime;
     import std.conv;
@@ -96,7 +96,7 @@ pure unittest
 /// `finalizeSerialization` method
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct S
     {
@@ -115,7 +115,7 @@ unittest
 /// `finalizeDeserialization` method
 pure unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct S
     {
@@ -139,7 +139,7 @@ pure unittest
 /// A user may define setter and/or getter properties.
 unittest
 {
-    import asdf;
+    import mir.ion;
     import std.conv: to;
 
     static struct S
@@ -166,7 +166,7 @@ unittest
 /// makes nullable type to null value)
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct MyNullable
     {
@@ -256,7 +256,7 @@ unittest
 unittest
 {
     import std.conv: to;
-    import asdf;
+    import mir.ion;
 
     static struct Foo
     {
@@ -298,7 +298,7 @@ import std.conv;
 import std.utf;
 import std.format: FormatSpec, formatValue;
 import std.bigint: BigInt;
-import asdf.asdf;
+import mir.ion.asdf;
 
 ///
 class DeserializationException: AsdfException
@@ -347,7 +347,7 @@ string serializeToJson(V)(auto ref V value)
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     struct S
     {
@@ -373,7 +373,7 @@ string serializeToJsonPretty(string sep = "\t", V)(auto ref V value)
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct S { int a; }
     assert(S(4).serializeToJsonPretty == "{\n\t\"a\": 4\n}");
@@ -402,7 +402,7 @@ Asdf serializeToAsdf(V)(auto ref V value, size_t initialLength = 32)
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
     import std.conv: to;
 
     struct S
@@ -480,7 +480,7 @@ unittest
 
         static auto deserialize(D)(auto ref D deserializer)
         {
-            import asdf : deserialize;
+            import mir.ion : deserialize;
 
             foreach(elem; deserializer.byKeyValue)
             {
@@ -503,7 +503,7 @@ unittest
 /// ditto
 V deserialize(V)(in char[] str)
 {
-    import asdf.jsonparser: parseJson;
+    import mir.ion.jsonparser: parseJson;
     import std.range: only;
     return str.parseJson.deserialize!V;
 }
@@ -754,7 +754,7 @@ SerializationGroup serializationMultiKeysIn(string[][] keys...) pure @safe
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct S
     {
@@ -775,7 +775,7 @@ Serialization serializationKeyOut(string key) pure @safe
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct S
     {
@@ -793,7 +793,7 @@ enum Serialization serializationIgnore = serialization("ignore");
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct S
     {
@@ -813,7 +813,7 @@ enum Serialization serializationIgnoreDefault = serialization("ignore-default");
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct Decor
     {
@@ -876,7 +876,7 @@ enum Serialization serializationIgnoreIn = serialization("ignore-in");
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct S
     {
@@ -915,7 +915,7 @@ struct serializationIgnoreOutIf(alias fun)
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct S
     {
@@ -937,7 +937,7 @@ enum Serialization serializationScoped = serialization("scoped");
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     import std.uuid;
 
@@ -961,7 +961,7 @@ enum Serialization serializationFlexible = serialization("flexible");
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     import std.uuid;
 
@@ -979,7 +979,7 @@ unittest
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct Vector
     {
@@ -1014,7 +1014,7 @@ enum Serialization serializationLikeArray = serialization("like-array");
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     import std.range;
     import std.uuid;
@@ -1064,7 +1064,7 @@ enum Serialization serializationLikeObject = serialization("like-object");
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     static struct M
     {
@@ -1118,7 +1118,7 @@ struct serializationTransformOut(alias fun)
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     // global unary function
     static int fin(int i)
@@ -1141,7 +1141,7 @@ unittest
 /// JSON serialization back-end
 struct JsonSerializer(string sep, Dg)
 {
-    import asdf.jsonbuffer;
+    import mir.ion.jsonbuffer;
 
     static if(sep.length)
     {
@@ -1364,7 +1364,7 @@ auto jsonSerializer(string sep = "", Dg)(scope Dg sink)
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     import std.array;
     import std.bigint;
@@ -1442,8 +1442,8 @@ struct AsdfSerializer
     /// Output buffer
     OutputArray app;
 
-    import asdf.outputarray;
-    import asdf.asdf;
+    import mir.ion.outputarray;
+    import mir.ion.asdf;
     private uint state;
 
 pure:
@@ -1536,14 +1536,14 @@ pure:
 /// Create ASDF serialization back-end
 auto asdfSerializer(size_t initialLength = 32)
 {
-    import asdf.outputarray;
+    import mir.ion.outputarray;
     return AsdfSerializer(OutputArray(initialLength));
 }
 
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
     import std.conv: to;
     import std.bigint;
     import std.format: singleSpec;
@@ -1579,7 +1579,7 @@ void serializeValue(S)(ref S serializer, typeof(null))
 ///
 unittest
 {
-    import asdf;
+    import mir.ion;
 
     assert(serializeToJson(null) == `null`);
 }
@@ -2274,7 +2274,7 @@ unittest
 /// issue #115
 unittest
 {
-    import asdf;
+    import mir.ion;
     import std.typecons;
 
     struct Example
@@ -2384,7 +2384,7 @@ unittest
 
         static auto deserialize(D)(auto ref D deserializer)
         {
-            import asdf : deserialize;
+            import mir.ion : deserialize;
 
             foreach(elem; deserializer.byKeyValue)
             {
@@ -3194,7 +3194,7 @@ unittest
     struct B {
         A a;
         string serialize() const {
-            return asdf.serializeToJson(a);
+            return mir.ion.serializeToJson(a);
         }
     }
     assert(B(A("2323")).serialize == `{"str":"2323"}`);
