@@ -12,7 +12,7 @@ module mir.ion.transform;
 
 import mir.ion.asdf;
 import mir.ion.serialization;
-import std.exception: enforce;
+import mir.exception: enforce;
 
 /++
 Object-tree structure for mutable Asdf representation.
@@ -57,12 +57,12 @@ pure:
         else
         {
             this.data = data;
-            enforce(isLeaf);
+            enforce!"leaf is required"(isLeaf);
         }
     }
 
     ///
-    ref AsdfNode opIndex(scope const(char)[][] keys...) scope return
+    ref AsdfNode opIndex(scope const(char)[][] keys...) scope return @nogc
     {
         if(keys.length == 0)
             return this;
@@ -70,7 +70,7 @@ pure:
         for(;;)
         {
             auto ptr = keys[0] in ret.children;
-            enforce(ptr, "AsdfNode.opIndex: keys do not exist");
+            enforce!"AsdfNode.opIndex: keys do not exist"(ptr);
             keys = keys[1 .. $];
             if(keys.length == 0)
                 return *ptr;
@@ -97,7 +97,7 @@ pure:
             auto ptr = key in root.children;
             if(ptr)
             {
-                enforce(ptr, "AsdfNode.opIndex: keys do not exist");
+                enforce!"AsdfNode.opIndex: keys do not exist"(ptr);
                 keys = keys[1 .. $];
                 root = ptr;
             }
@@ -181,7 +181,6 @@ pure:
         import mir.ion;
         auto text = `{"foo":"bar","inner":{"a":true,"b":false,"c":"32323","d":null,"e":{}}}`;
         auto root = AsdfNode(text.parseJson);
-        import std.stdio;
         Asdf flat = cast(Asdf) root;
         assert(flat["inner", "a"] == true);
     }
@@ -253,7 +252,7 @@ pure:
     /// Removes keys from the object-tree recursively.
     void remove(Asdf data)
     {
-        enforce(children, "AsdfNode.remove: asdf data must be a sub-tree");
+        enforce!"AsdfNode.remove: asdf data must be a sub-tree"(children);
         foreach(kv; data.byKeyValue)
         {
             if(kv.value.kind == Asdf.Kind.object)
@@ -284,9 +283,8 @@ pure:
 
     private void removedImpl(ref AsdfSerializer serializer, AsdfNode node)
     {
-        import std.exception : enforce;
-        enforce(!isLeaf);
-        enforce(!node.isLeaf);
+        enforce!"this must be not be a leaf"(!isLeaf);
+        enforce!"node must be not be a leaf"(!node.isLeaf);
         auto state = serializer.objectBegin;
         foreach(key, ref value; children)
         {
@@ -330,9 +328,8 @@ pure:
 
     void addedImpl(ref AsdfSerializer serializer, AsdfNode node)
     {
-        import std.exception : enforce;
-        enforce(!isLeaf);
-        enforce(!node.isLeaf);
+        enforce!"this must be not be a leaf"(!isLeaf);
+        enforce!"node must be not be a leaf"(!node.isLeaf);
         auto state = serializer.objectBegin;
         foreach(key, ref value; node.children)
         {
