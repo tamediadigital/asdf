@@ -31,7 +31,7 @@ package struct JsonBuffer(Dg)
             flush;
             newLength = str.length;
         }
-        import mir.ion.utility;
+        import mir.internal.utility;
         // compile time loop
         foreach(i; Iota!(0, str.length))
             buffer[length + i] = str[i];
