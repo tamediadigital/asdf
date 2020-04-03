@@ -9,9 +9,6 @@ For aggregate types the order of the (de)serialization is the folowing:
 +/
 module mir.ion.serialization;
 
-import mir.ion.jsonparser: assumePure;
-import std.range.primitives: isOutputRange;
-
 ///
 pure unittest
 {
@@ -290,15 +287,17 @@ unittest
     assert (deserialize!Foo(`{"f":"-inf"}`) == Foo(-float.infinity));
 }
 
-import std.traits;
-import std.meta;
-import std.range.primitives;
-import std.functional;
-import std.conv;
-import std.utf;
-import std.format: FormatSpec, formatValue;
-import std.bigint: BigInt;
+import mir.functional;
 import mir.ion.asdf;
+import mir.ion.jsonparser: assumePure;
+import mir.primitives;
+
+import std.bigint: BigInt;
+import std.conv: to;
+import std.format: FormatSpec, formatValue;
+import std.meta: Filter, ApplyLeft, AliasSeq, Reverse, NoDuplicates, Erase;
+import std.range.primitives: isOutputRange;
+import std.traits;
 
 ///
 class DeserializationException: AsdfException
@@ -944,7 +943,7 @@ unittest
     static struct S
     {
         @serializationScoped
-        @serializedAs!string
+        @serializedAs!(const(char)[])
         UUID id;
     }
     assert(`{"id":"8AB3060E-2cba-4f23-b74c-b52db3bdfb46"}`.deserialize!S.id
@@ -1129,7 +1128,12 @@ unittest
     static struct S
     {
         @serializationTransformIn!fin
-        @serializationTransformOut!`"str".repeat.take(a).joiner("_").to!string`
+        @serializationTransformOut!((a) {
+            import std.range;
+            import std.algorithm: joiner;
+            import std.conv: to;
+            return "str".repeat.take(a).joiner("_").to!string;
+        })
         int a;
     }
 
@@ -1695,8 +1699,8 @@ void serializeValue(S, T)(ref S serializer, T[] value)
 
 /// Input range serialization
 void serializeValue(S, R)(ref S serializer, R value)
-    if ((isInputRange!R) &&
-        !isSomeChar!(ElementType!R) &&
+    if ((isIterable!R) &&
+        !isSomeChar!(ForeachType!R) &&
         !isDynamicArray!R &&
         !isNullable!R)
 {
@@ -1863,7 +1867,7 @@ unittest
 
 /// Struct and class type serialization
 void serializeValue(S, V)(ref S serializer, auto ref V value)
-    if(!isNullable!V && isAggregateType!V && !is(V : BigInt) && !isInputRange!V)
+    if(!isNullable!V && isAggregateType!V && !is(V : BigInt) && !isIterable!V)
 {
     static if(is(V == class) || is(V == interface))
     {
@@ -1902,7 +1906,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
                 
                 static if(hasIgnoreOutIf!(__traits(getMember, value, member)))
                 {
-                    alias c = unaryFun!(getIgnoreOutIf!(__traits(getMember, value, member)));
+                    alias c = naryFun!(getIgnoreOutIf!(__traits(getMember, value, member)));
                     if (c(__traits(getMember, value, member)))
                     {
                         continue;
@@ -1910,7 +1914,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
                 }
                 static if(hasTransformOut!(__traits(getMember, value, member)))
                 {
-                    alias f = unaryFun!(getTransformOut!(__traits(getMember, value, member)));
+                    alias f = naryFun!(getTransformOut!(__traits(getMember, value, member)));
                     auto val = f(__traits(getMember, value, member));
                 }
                 else
@@ -2783,7 +2787,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 
                             static if(hasTransformIn!(__traits(getMember, value, member)))
                             {
-                                alias f = unaryFun!(getTransformIn!(__traits(getMember, value, member)));
+                                alias f = naryFun!(getTransformIn!(__traits(getMember, value, member)));
                                 __traits(getMember, value, member) = f(__traits(getMember, value, member));
                             }
 
@@ -2878,7 +2882,7 @@ void deserializeValue(V)(Asdf data, ref V value)
 
                             static if(hasTransformIn!(__traits(getMember, value, member)))
                             {
-                                alias f = unaryFun!(getTransformIn!(__traits(getMember, value, member)));
+                                alias f = naryFun!(getTransformIn!(__traits(getMember, value, member)));
                                 __traits(getMember, value, member) = f(__traits(getMember, value, member));
                             }
                         }
@@ -3061,8 +3065,8 @@ private template getIgnoreOutIf(alias value)
 
 private bool isFlexible(string type, string member, Serialization[] attrs)
 {
-    import std.algorithm.searching: canFind, find, startsWith, count;
-    alias pred = unaryFun!(a => a.args[0] == "flexible");
+    import mir.algorithm.iteration: count;
+    alias pred = naryFun!(a => a.args[0] == "flexible");
     auto c = attrs.count!pred;
     if(c == 0)
         return false;
@@ -3074,8 +3078,8 @@ private bool isFlexible(string type, string member, Serialization[] attrs)
 
 private bool isLikeArray(string type, string member, Serialization[] attrs)
 {
-    import std.algorithm.searching: canFind, find, startsWith, count;
-    alias pred = unaryFun!(a => a.args[0] == "like-array");
+    import mir.algorithm.iteration: count;
+    alias pred = naryFun!(a => a.args[0] == "like-array");
     auto c = attrs.count!pred;
     if(c == 0)
         return false;
@@ -3087,8 +3091,8 @@ private bool isLikeArray(string type, string member, Serialization[] attrs)
 
 private bool isLikeObject(string type, string member, Serialization[] attrs)
 {
-    import std.algorithm.searching: canFind, find, startsWith, count;
-    alias pred = unaryFun!(a => a.args[0] == "like-object");
+    import mir.algorithm.iteration: count;
+    alias pred = naryFun!(a => a.args[0] == "like-object");
     auto c = attrs.count!pred;
     if(c == 0)
         return false;
@@ -3101,8 +3105,8 @@ private bool isLikeObject(string type, string member, Serialization[] attrs)
 
 private bool isScoped(string type, string member, Serialization[] attrs)
 {
-    import std.algorithm.searching: canFind, find, startsWith, count;
-    alias pred = unaryFun!(a => a.args[0] == "scoped");
+    import mir.algorithm.iteration: count;
+    alias pred = naryFun!(a => a.args[0] == "scoped");
     auto c = attrs.count!pred;
     if(c == 0)
         return false;
@@ -3114,8 +3118,8 @@ private bool isScoped(string type, string member, Serialization[] attrs)
 
 private string keyOut(string type, string member, Serialization[] attrs)
 {
-    import std.algorithm.searching: canFind, find, startsWith, count;
-    alias pred = unaryFun!(a =>
+    import mir.algorithm.iteration: count, find;
+    alias pred = naryFun!(a =>
             a.args[0] == "keys"
             ||
             a.args[0] == "key-out"
@@ -3124,15 +3128,15 @@ private string keyOut(string type, string member, Serialization[] attrs)
     if(c == 0)
         return member;
     if(c == 1)
-        return attrs.find!pred.front.args[1];
+        return attrs[$ - attrs.find!pred].args[1];
     throw new Exception(type ~ "." ~ member ~
         ` : Only single declaration of "keys" / "key-out" serialization attribute is allowed`);
 }
 
 private string[] keysIn(string type, string member, Serialization[] attrs)
 {
-    import std.algorithm.searching: canFind, find, startsWith, count;
-    alias pred = unaryFun!(a =>
+    import mir.algorithm.iteration: count, find;
+    alias pred = naryFun!(a =>
             a.args[0] == "keys"
             ||
             a.args[0] == "keys-in"
@@ -3141,15 +3145,15 @@ private string[] keysIn(string type, string member, Serialization[] attrs)
     if(c == 0)
         return [member];
     if(c == 1)
-        return attrs.find!pred.front.args[1 .. $];
+        return attrs[$ - attrs.find!pred].args[1 .. $];
     throw new Exception(type ~ "." ~ member ~
         ` : Only single declaration of "keys" / "keys-in" serialization attribute is allowed`);
 }
 
 private bool ignoreOut()(Serialization[] attrs)
 {
-    import std.algorithm.searching: canFind;
-    return attrs.canFind!(a =>
+    import mir.algorithm.iteration: any;
+    return attrs.any!(a =>
             a.args == ["ignore"]
             ||
             a.args == ["ignore-out"]
@@ -3158,8 +3162,8 @@ private bool ignoreOut()(Serialization[] attrs)
 
 private bool ignoreIn()(Serialization[] attrs)
 {
-    import std.algorithm.searching: canFind;
-    return attrs.canFind!(a =>
+    import mir.algorithm.iteration: any;
+    return attrs.any!(a =>
             a.args == ["ignore"]
             ||
             a.args == ["ignore-in"]
@@ -3168,8 +3172,8 @@ private bool ignoreIn()(Serialization[] attrs)
 
 private bool hasIgnoreDefault()(Serialization[] attrs)
 {
-    import std.algorithm.searching: canFind;
-    return attrs.canFind!(a =>
+    import mir.algorithm.iteration: any;
+    return attrs.any!(a =>
             a.args == ["ignore-default"]
             );
 }
@@ -3177,8 +3181,8 @@ private bool hasIgnoreDefault()(Serialization[] attrs)
 
 private bool hasRequired()(Serialization[] attrs)
 {
-    import std.algorithm.searching: canFind;
-    return attrs.canFind!(a => a.args == ["required"]);
+    import mir.algorithm.iteration: any;
+    return attrs.any!(a => a.args == ["required"]);
 }
 
 private bool privateOrPackage()(string protection)
@@ -3208,33 +3212,17 @@ private template aliasSeqOf(alias range)
     import std.traits : isArray, isNarrowString;
 
     alias ArrT = typeof(range);
-    static if (isArray!ArrT && !isNarrowString!ArrT)
+    static if (range.length == 0)
     {
-        static if (range.length == 0)
-        {
-            alias aliasSeqOf = AliasSeq!();
-        }
-        else static if (range.length == 1)
-        {
-            alias aliasSeqOf = AliasSeq!(range[0]);
-        }
-        else
-        {
-            alias aliasSeqOf = AliasSeq!(aliasSeqOf!(range[0 .. $/2]), aliasSeqOf!(range[$/2 .. $]));
-        }
+        alias aliasSeqOf = AliasSeq!();
+    }
+    else static if (range.length == 1)
+    {
+        alias aliasSeqOf = AliasSeq!(range[0]);
     }
     else
     {
-        import std.range.primitives : isInputRange;
-        static if (isInputRange!ArrT)
-        {
-            import std.array : array;
-            alias aliasSeqOf = aliasSeqOf!(array(range));
-        }
-        else
-        {
-            static assert(false, "Cannot transform range of type " ~ ArrT.stringof ~ " into a AliasSeq.");
-        }
+        alias aliasSeqOf = AliasSeq!(aliasSeqOf!(range[0 .. $/2]), aliasSeqOf!(range[$/2 .. $]));
     }
 }
 

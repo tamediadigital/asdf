@@ -17,12 +17,14 @@ module mir.ion.jsonparser;
 
 import mir.ion.asdf;
 import mir.ion.outputarray;
-import std.experimental.allocator.gc_allocator;
-import std.meta;
-import std.range.primitives;
-import std.traits;
-import std.typecons;
+import mir.primitives;
 
+import std.experimental.allocator.gc_allocator: GCAllocator;
+import std.range.primitives: ElementType;
+import std.traits;
+import std.typecons: Flag, Yes, No;
+
+private alias AliasSeq(T...) = T;
 
 version(LDC)
 {
@@ -64,7 +66,7 @@ Asdf parseJson(
     Flag!"spaces" spaces = Yes.spaces,
     Chunks)
     (Chunks chunks, size_t initLength = 32)
-    if(is(ElementType!Chunks : const(ubyte)[]))
+    if(is(ForeachType!Chunks : const(ubyte)[]))
 {
     enum assumeValid = false;
     auto parser = jsonParser!(includingNewLine, spaces, assumeValid)(ASDFGCAllocator.instance, chunks);
@@ -615,7 +617,7 @@ struct JsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Alloc
                 if (data.length < dataRequiredLength)
                 {
                     const valueLength = stringAndNumberShift - dataPtr;
-                    import std.algorithm.comparison: max;
+                    import mir.utility: max;
                     const len = max(data.length * 2, dataRequiredLength);
                     allocator.reallocate(*cast(void[]*)&data, len);
                     dataPtr = data.ptr + dataLength;
@@ -889,10 +891,10 @@ struct JsonParser(bool includingNewLine, bool hasSpaces, bool assumeValid, Alloc
                             else
                             {
                                 char[name.length - 1] c = void;
-                                import std.range: iota;
-                                foreach (i; aliasSeqOf!(iota(1, name.length)))
+                                import mir.internal.utility: Iota;
+                                foreach (i; Iota!(1, name.length))
                                     c[i - 1] = strPtr[i];
-                                foreach (i; aliasSeqOf!(iota(1, name.length)))
+                                foreach (i; Iota!(1, name.length))
                                 {
                                     if (c[i - 1] != name[i])
                                     {

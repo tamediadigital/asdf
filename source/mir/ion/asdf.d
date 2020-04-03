@@ -121,10 +121,13 @@ struct Asdf
     }
 
     /// Returns ASDF Kind
-    ubyte kind() const pure @safe
+    ubyte kind() const pure @safe @nogc
     {
         if (!data.length)
-            throw new EmptyAsdfException;
+        {
+            static immutable emptyAsdfException = new EmptyAsdfException;
+            throw emptyAsdfException;
+        }
         return data[0];
     }
 
