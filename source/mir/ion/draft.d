@@ -3,6 +3,335 @@ module mir.ion.draft;
 import mir.checkedint;
 import std.traits: Signed;
 
+alias op_t = ulong;
+import ldc.simd;
+import core.stdc.string;
+import ldc.llvmasm;
+
+private template isFloatingPoint(T)
+{
+    enum isFloatingPoint =
+        is(T == float) ||
+        is(T == double) ||
+        is(T == real);
+}
+
+private template isIntegral(T)
+{
+    enum isIntegral =
+        is(T == byte) ||
+        is(T == ubyte) ||
+        is(T == short) ||
+        is(T == ushort) ||
+        is(T == int) ||
+        is(T == uint) ||
+        is(T == long) ||
+        is(T == ulong);
+}
+
+private template isSigned(T)
+{
+    enum isSigned =
+        is(T == byte) ||
+        is(T == short) ||
+        is(T == int) ||
+        is(T == long);
+}
+
+private template IntOf(T)
+if(isIntegral!T || isFloatingPoint!T)
+{
+    enum n = T.sizeof;
+    static if(n == 1)
+        alias byte IntOf;
+    else static if(n == 2)
+        alias short IntOf;
+    else static if(n == 4)
+        alias int IntOf;
+    else static if(n == 8)
+        alias long IntOf;
+    else
+        static assert(0, "Type not supported");
+}
+
+private template BaseType(V)
+{
+    alias typeof(V.array[0]) BaseType;
+}
+
+private template numElements(V)
+{
+    enum numElements = V.sizeof / BaseType!(V).sizeof;
+}
+
+private template llvmType(T)
+{
+    static if(is(T == float))
+        enum llvmType = "float";
+    else static if(is(T == double))
+        enum llvmType = "double";
+    else static if(is(T == byte) || is(T == ubyte) || is(T == void))
+        enum llvmType = "i8";
+    else static if(is(T == short) || is(T == ushort))
+        enum llvmType = "i16";
+    else static if(is(T == int) || is(T == uint))
+        enum llvmType = "i32";
+    else static if(is(T == long) || is(T == ulong))
+        enum llvmType = "i64";
+    else
+        static assert(0,
+            "Can't determine llvm type for D type " ~ T.stringof);
+}
+
+private template llvmVecType(V)
+{
+    static if(is(V == __vector(void[16])))
+        enum llvmVecType =  "<16 x i8>";
+    else static if(is(V == __vector(void[32])))
+        enum llvmVecType =  "<32 x i8>";
+    else
+    {
+        alias BaseType!V T;
+        enum int n = numElements!V;
+        enum llvmT = llvmType!T;
+        enum llvmVecType = "<"~n.stringof~" x "~llvmT~">";
+    }
+}
+
+enum Cond{ eq, ne, gt, ge }
+
+template cmpMaskB(Cond cond)
+{
+    template cmpMaskB(V)
+    if(is(IntOf!(BaseType!V)))
+    {
+        alias BaseType!V T;
+        enum llvmT = llvmType!T;
+
+        alias IntOf!T Relem;
+
+        enum int n = numElements!V;
+
+        static if (n <= 8)
+            alias R = ubyte;
+        else static if (n <= 16)
+            alias R = ushort;
+        else static if (n <= 32)
+            alias R = uint;
+        else static if (n <= 64)
+            alias R = ulong;
+        else static assert(0);
+
+        enum int rN = R.sizeof * 8;
+
+        enum llvmV = llvmVecType!V;
+        enum sign =
+            (cond == Cond.eq || cond == Cond.ne) ? "" :
+            isSigned!T ? "s" : "u";
+        enum condStr =
+            cond == Cond.eq ? "eq" :
+            cond == Cond.ne ? "ne" :
+            cond == Cond.ge ? "ge" : "gt";
+        enum op =
+            isFloatingPoint!T ? "fcmp o"~condStr : "icmp "~sign~condStr;
+
+        enum ir = `
+            %cmp = `~op~` `~llvmV~` %0, %1
+            %bc = bitcast <`~n.stringof~` x i1> %cmp to i`~rN.stringof~`
+            ret i`~rN.stringof~` %bc`;
+
+        alias __ir_pure!(ir, R, V, V) cmpMaskB;
+    }
+}
+
+// %bc = bitcast <`~n.stringof~` x i1> %cmp to <1 x i`~rN.stringof~`>
+// %rc = extractelement <1 x i`~rN.stringof~`> %bc, i`~rN.stringof~` 0
+
+
+alias cmpMaskB!(Cond.eq) equalMaskB;
+alias cmpMaskB!(Cond.ne) notEqualMaskB; /// Ditto
+alias cmpMaskB!(Cond.gt) greaterMaskB; /// Ditto
+alias cmpMaskB!(Cond.ge) greaterOrEqualMaskB; /// Ditto
+
+
+static auto
+ff (size_t n, __vector(ubyte[16])* vector, ushort[2]* pairedMask,)
+{
+    __vector(ubyte[16]) q = '"';
+    __vector(ubyte[16]) e = '\\';
+    __vector(ubyte[16]) mask = [
+        cast(ubyte)0x01, cast(ubyte)0x02, cast(ubyte)0x04, cast(ubyte)0x08, cast(ubyte)0x10, cast(ubyte)0x20, cast(ubyte)0x40, cast(ubyte)0x80,
+        cast(ubyte)0x01, cast(ubyte)0x02, cast(ubyte)0x04, cast(ubyte)0x08, cast(ubyte)0x10, cast(ubyte)0x20, cast(ubyte)0x40, cast(ubyte)0x80];
+    foreach (i; 0 .. n)
+    {
+        auto v = vector[i];
+        alias fun = equalMask!(__vector(ubyte[16]));
+        auto d = cast(__vector(ubyte[16])) fun(v, q);
+        d &= mask;
+        auto w = cast(__vector(ubyte[8])[2]) d;
+        auto x = w[0] | w[1];
+        auto y = cast(__vector(ubyte[4])[2]) x;
+        auto z = y[0] | y[1];
+        auto a = cast(__vector(ubyte[2])[2]) z;
+        auto b = a[0] | a[1];
+        pairedMask[i][1] = (cast(__vector(ushort[1])) b).array[0];
+    }
+}
+
+// import core.internal.array.comparison: __cmp;
+//extern(C)
+static auto
+ff (size_t n, __vector(ubyte[64])* vector, ulong[2]* pairedMask,)
+{
+    __vector(ubyte[64]) q = '"';
+    __vector(ubyte[64]) e = '\\';
+    foreach (i; 0 .. n)
+    {
+        auto v = vector[i];
+        alias fun = equalMaskB!(__vector(ubyte[64]));
+        pairedMask[i][0] = fun(v, q);
+        pairedMask[i][1] = fun(v, e);
+    }
+}
+
+enum localBufferLength = 4096;
+enum tinyStringSize = 127;
+enum smallStringSize = localBufferLength * 2 - 2;
+enum maxKeyLength = smallStringSize;
+enum maxNumberLength = localBufferLength * 2;
+
+// modes 1: extern memory
+// modes 2: local buffer
+
+/++
+Buffers:
+n - threads number
+
+-------------------------------------------
+| buffer -1 | buffer 0 |  ... | buffer n-1|
+-------------------------------------------
+
+First iteration:
+
+
+            | part 0   | ...  | part n-1  |
+-------------------------------------------
+| buffer -1 | buffer 0 |  ... | buffer n-1|
+-------------------------------------------
+
+          _ part j   | ...  _ part j+n-1 |
+-------------------------------------------
+| buffer -1 | buffer 0 |  ... | buffer n-1|
+-------------------------------------------
+
+2 ^ 14 = 16*1024
+reserve two bytes for small string,
+reserve 
+
+bool masks
+
+First:
+
+equality masks
+" mask (stage 1)
+\ mask (stage 1)
+count " except \" cases (stage 1)
+
+operator mask
+whitespace mask (optional)
++/
+
+
+void dun()()
+{
+    
+}
+
+// before begin:
+// utf8 char
+// \u \x and friends
+// true, false, null (atoms)
+
+// ///
+// bool[] arrayOfQuotes;
+///
+bool[] arrayOfAllStars;
+///
+bool[] arrayOfBackSlashesAndQuotes;
+
+enum JsonParserState
+{
+    error = -1,
+    endOfStream,
+    objectBegin = '{',
+    objectEnd = '}',
+    arrayBegin = '[',
+    arrayEnd = ']',
+    elementsSeparator = ',',
+    keyValueSeparator = ':',
+    string_ = '\"',
+    stringPart_ = 'p', // always ands with the string's END
+    stringEnd_ = 'q',
+    number_ = 'e',
+    true_ = 't',
+    false_ = 'f',
+    null_ = 'n',
+}
+
+align(16)
+struct Node
+{
+    uint keyLengthAndBalance;
+    uint keyPosition;
+    uint left;
+    uint right;
+}
+
+//https://github.com/WojciechMula/simd-string/blob/master/memcmp.cpp
+
+struct Tree
+{
+    char[] stringMem;
+    Node[] nodes;
+    uint[32] path; // path[0] is always root;
+
+    uint insert(scope const(char)[] str)
+    {
+        uint pathLength = 1;
+        auto currentIndex = path[pathLength - 1];
+        for(;;)
+        {
+            if (currentIndex) // the current node isn't null
+            {
+                auto keyLength = nodes[currentIndex - 1].length;
+                if (str.length < keyLength)
+                {L:
+                    path[pathLength++] = currentIndex = nodes.left;
+                    continue;
+                }
+                if (str.length > keyLength)
+                {G:
+                    path[pathLength++] = currentIndex = nodes.right;
+                    continue;
+                }
+                auto mc = memcmp(stringMem.ptr + nodes[currentIndex - 1].keyPosition, str.ptr, str.length);
+                if (mc < 0) goto L;
+                if (mc > 0) goto G;
+                return currentIndex; // key exists
+            }
+            // the current node is null
+
+            // add new node
+            currentIndex = cast(uint)nodes.length + 1;
+            nodes ~= Node(currentIndex, stringMem.length);
+            stringMem ~= str;
+
+            // rotate
+            
+        }
+    }
+}
+
 /++
 +/
 enum Endian
