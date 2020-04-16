@@ -1,12 +1,298 @@
 module mir.ion.draft;
 
+// import mir.bitop;
+import core.bitop: ctpop = popcnt;
+import core.simd;
+import core.stdc.string;
+import ldc.attributes;
+import ldc.llvmasm;
+import ldc.simd;
 import mir.checkedint;
 import std.traits: Signed;
 
-alias op_t = ulong;
-import ldc.simd;
-import core.stdc.string;
-import ldc.llvmasm;
+
+
+version (ARM)
+    version = ARM_Any;
+
+version (AArch64)
+    version = ARM_Any;
+
+version (X86)
+    version = X86_Any;
+
+version (X86_64)
+    version = X86_Any;
+
+version (X86_Any)
+{
+    version (LDC)
+    {
+        pragma(LDC_intrinsic, "llvm.x86.ssse3.pshuf.b.128")
+            private __vector(ubyte[16]) __builtin_ia32_pshufb(__vector(ubyte[16]), __vector(ubyte[16]));
+        pragma(LDC_intrinsic, "llvm.x86.avx2.pshuf.b")
+            private __vector(ubyte[32]) __builtin_ia32_pshufb256(__vector(ubyte[32]), __vector(ubyte[32]));
+        pragma(LDC_intrinsic, "llvm.x86.avx512.pshuf.b.512")
+            private __vector(ubyte[64]) __builtin_ia32_pshufb512(__vector(ubyte[64]), __vector(ubyte[64]));
+    }
+
+    version (GDC)
+    {
+        import gcc.builtins:
+            __builtin_ia32_pshufb,
+            __builtin_ia32_pshufb256,
+            __builtin_ia32_pshufb512;
+    }
+}
+
+version (ARM_Any)
+{
+    version (LDC)
+    {
+        private alias __builtin_vceqq_u8 = equalMask!(__vector(ubyte[16]));
+    }
+
+    version (GDC)
+    {
+        import gcc.builtins: __builtin_vceqq_u8;
+    }
+}
+
+version (AArch64)
+{
+    version (LDC)
+    {
+        pragma(LDC_intrinsic, "llvm.aarch64.neon.addp.v16i8")
+            private __vector(ubyte[16]) __builtin_vpadd_u32(__vector(ubyte[16]), __vector(ubyte[16]));
+    }
+    
+    version (GNU)
+    {
+        import gcc.builtins: __builtin_vpadd_u32;
+    }
+}
+
+version (ARM)
+{
+    version (LDC)
+    {
+        pragma(LDC_intrinsic, "llvm.arm.neon.vpaddlu.v8i16.v16i8")
+            private __vector(ushort[8]) __builtin_vpaddlq_u8(__vector(ubyte[16]));
+        pragma(LDC_intrinsic, "llvm.arm.neon.vpaddlu.v4i32.v8i16")
+            private __vector(uint[4]) __builtin_vpaddlq_u16(__vector(ushort[8]));
+        pragma(LDC_intrinsic, "llvm.arm.neon.vpaddlu.v2i64.v4i32")
+            private __vector(ulong[2]) __builtin_vpaddlq_u32(__vector(uint[4]));
+    }
+
+    version (GNU)
+    {
+        import gcc.builtins:
+            __builtin_vpaddlq_u8,
+            __builtin_vpaddlq_u16,
+            __builtin_vpaddlq_u32;
+    }
+}
+
+// nehalem
+// 
+// @target("arch=westmere")
+// @target("arch=haswell")
+@target("arch=sandybridge")
+size_t stage1_haswell (size_t n,
+    scope const(ubyte[64])* vector,
+    scope ulong[2]* pairedMask,
+    ref scope const ubyte backwardChar,
+    )
+{
+    return stage1_impl(n, vector, pairedMask, backwardChar);
+}
+
+
+void stage2_impl_ssse3(size_t n,
+    scope const(ubyte[64])* vector,
+    scope ulong[2]* pairedMask,
+    )
+{
+    __vector(ubyte[16]) whiteSpaceMask = [
+        ' ', 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, '\t', '\n', 0x80, 0x80, '\r', 0x80, 0x80
+    ];
+    // , 2C : 3A [ 5B ] 5D { 7B } 7D
+    __vector(ubyte[16]) operatorMask = [
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, ':', '{', ',', '}', 0x80, 0x80
+    ];
+
+    alias equal = equalMaskB!(__vector(ubyte[16]));
+
+    do
+    {
+        auto v =  cast(__vector(ubyte[16])[4])*vector++;
+        align(8) ushort[4][2] result;
+        static foreach (i; 0 .. v.length)
+        {
+            result[0][i] = equal(v[i] | ubyte(0x20), __builtin_ia32_pshufb(operatorMask, v[i]));
+            result[1][i] = equal(v[i], __builtin_ia32_pshufb(whiteSpaceMask, v[i]));
+        }
+        *pairedMask++ = cast(ulong[2]) result;
+    } while(--n);
+}
+
+void stage2_impl_avx2(size_t n,
+    scope const(ubyte[64])* vector,
+    scope ulong[2]* pairedMask,
+    )
+{
+    __vector(ubyte[32]) whiteSpaceMask = [
+        ' ', 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, '\t', '\n', 0x80, 0x80, '\r', 0x80, 0x80,
+        ' ', 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, '\t', '\n', 0x80, 0x80, '\r', 0x80, 0x80,
+    ];
+    __vector(ubyte[32]) operatorMask = [
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, ':', '{', ',', '}', 0x80, 0x80,
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, ':', '{', ',', '}', 0x80, 0x80,
+    ];
+
+    alias equal = equalMaskB!(__vector(ubyte[32]));
+
+    do
+    {
+        auto v =  cast(__vector(ubyte[32])[2])*vector++;
+        align(8) uint[v.length][2] result;
+        static foreach (i; 0 .. v.length)
+        {
+            result[0][i] = equal(v[i] | ubyte(0x20), __builtin_ia32_pshufb256(operatorMask, v[i]));
+            result[1][i] = equal(v[i], __builtin_ia32_pshufb256(whiteSpaceMask, v[i]));
+        }
+        *pairedMask++ = cast(ulong[2]) result;
+    } while(--n);
+}
+
+void stage2_impl_avx512(size_t n,
+    scope const(ubyte[64])* vector,
+    scope ulong[2]* pairedMask,
+    )
+{
+    __vector(ubyte[64]) whiteSpaceMask = [
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, '\t', '\n', 0x80, 0x80, '\r', 0x80, 0x80,
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+        ' ', 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+    ];
+    // , 2C : 3A [ 5B ] 5D { 7B } 7D
+    __vector(ubyte[64]) operatorMask = [
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80,
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, '[', 0x80, ']', 0x80, 0x80,
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, ',', 0x80, 0x80, 0x80,
+        0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, ':', '{', 0x80, '}', 0x80, 0x80,
+    ];
+
+    alias equal = equalMaskB!(__vector(ubyte[64]));
+
+    do
+    {
+        auto v =  cast(__vector(ubyte[64]))*vector++;
+        pairedMask[0][0] = equal(v, __builtin_ia32_pshufb512(operatorMask, v));
+        pairedMask[0][1] = equal(v, __builtin_ia32_pshufb512(whiteSpaceMask, v));
+        pairedMask++;
+    } while(--n);
+}
+
+
+size_t stage1_impl(size_t n,
+    scope const(ubyte[64])* vector,
+    scope ulong[2]* pairedMask,
+    ref scope const ubyte backwardChar,
+    )
+{
+    enum quote = '"';
+    enum escape = '\\';
+
+    version (ARM_Any)
+    {
+        const ubyte16 quoteMask = quote;
+        const ubyte16 escapeMask = escape;
+        const ubyte16[2] stringMasks = [quoteMask, escapeMask];
+        const ubyte16 mask = [
+            0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
+        ];
+    }
+    else
+    version (LDC)
+    {
+        alias __vector(ubyte[64]) ubyte64;
+        const ubyte64 quoteMask = quote;
+        const ubyte64 escapeMask = escape;
+    }
+
+    bool backwardEscapeBit = backwardChar == escape;
+    size_t count;
+    assert(n);
+    do
+    {
+        version (ARM_Any)
+        {
+            auto v = cast(ubyte16[4])*vector++;
+            ubyte16[4][2] d;
+            static foreach (i; 0 .. 2)
+            static foreach (j; 0 .. 4)
+                d[i][j] = cast(ubyte16) __builtin_vceqq_u8(v[j], stringMasks[i]);
+            static foreach (i; 0 .. 2)
+            static foreach (j; 0 .. 4)
+                d[i][j] &= mask;
+            version (AArch64)
+            {
+                static foreach (_; 0 .. 3)
+                static foreach (i; 0 .. 2)
+                static foreach (j; 0 .. 4)
+                    d[i][j] = __builtin_vpadd_u32(d[i][j], d[i][j]);
+
+                ushort8 result;
+                static foreach (i; 0 .. 2)
+                static foreach (j; 0 .. 4)
+                    result[i * 4 + j] = extractelement!(ushort8, i * 4 + j)(cast(ushort8) d[i][j]);
+            }
+            else
+            {
+                align(8) ubyte[16] result;
+                static foreach (i; 0 .. 2)
+                static foreach (j; 0 .. 4)
+                {
+                    d[i][j] = d[i][j]
+                        .__builtin_vpaddlq_u8
+                        .__builtin_vpaddlq_u16
+                        .__builtin_vpaddlq_u32;
+                    result[i * 8 + j * 2 + 0] = extractelement!(ubyte16, 0)(d[i][j]);
+                    result[i * 8 + j * 2 + 1] = extractelement!(ubyte16, 8)(d[i][j]);
+                }
+            }
+            ulong[2] maskPair = cast(ulong[2]) result;
+        }
+        else
+        version (LDC) // works well for all X86 and x86_64 targets
+        {
+            auto v = cast(ubyte64) *vector++;
+            ulong[2] maskPair = [
+                equalMaskB!ubyte64(v, quoteMask),
+                equalMaskB!ubyte64(v, escapeMask),
+            ];
+        }
+        else
+        {
+            ulong[2] maskPair;
+            foreach_reverse (b; *vector++)
+            {
+                maskPair[0] <<= 1;
+                maskPair[1] <<= 1;
+                maskPair[0] |= b == quote;
+                maskPair[1] |= b == escape;
+            }
+        }
+        auto m0 = maskPair[0];
+        maskPair[0] &= ~((maskPair[1] << 1) | backwardEscapeBit);
+        *pairedMask++ = maskPair;
+        count += cast(size_t) ctpop(maskPair[0]);
+        backwardEscapeBit = cast(long)maskPair[1] < 0;
+    } while(n--);
+    return count;
+}
 
 private template isFloatingPoint(T)
 {
@@ -278,59 +564,7 @@ enum JsonParserState
     null_ = 'n',
 }
 
-align(16)
-struct Node
-{
-    uint keyLengthAndBalance;
-    uint keyPosition;
-    uint left;
-    uint right;
-}
-
 //https://github.com/WojciechMula/simd-string/blob/master/memcmp.cpp
-
-struct Tree
-{
-    char[] stringMem;
-    Node[] nodes;
-    uint[32] path; // path[0] is always root;
-
-    uint insert(scope const(char)[] str)
-    {
-        uint pathLength = 1;
-        auto currentIndex = path[pathLength - 1];
-        for(;;)
-        {
-            if (currentIndex) // the current node isn't null
-            {
-                auto keyLength = nodes[currentIndex - 1].length;
-                if (str.length < keyLength)
-                {L:
-                    path[pathLength++] = currentIndex = nodes.left;
-                    continue;
-                }
-                if (str.length > keyLength)
-                {G:
-                    path[pathLength++] = currentIndex = nodes.right;
-                    continue;
-                }
-                auto mc = memcmp(stringMem.ptr + nodes[currentIndex - 1].keyPosition, str.ptr, str.length);
-                if (mc < 0) goto L;
-                if (mc > 0) goto G;
-                return currentIndex; // key exists
-            }
-            // the current node is null
-
-            // add new node
-            currentIndex = cast(uint)nodes.length + 1;
-            nodes ~= Node(currentIndex, stringMem.length);
-            stringMem ~= str;
-
-            // rotate
-            
-        }
-    }
-}
 
 /++
 +/
