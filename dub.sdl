@@ -4,6 +4,7 @@ authors "Ilya Yaroshenko" "Yannick Koechlin"
 copyright "Tamedia Digital, 2016-, Symmetry Investments and Kaleidic Associates, 2020-"
 license "BSL-1.0"
 dependency "mir-algorithm" version="*"
+dependency "mir-cpuid" version="*"
 buildType "unittest-cov-sse42" {
     dflags "-mattr=+sse4.2" platform="ldc"
     buildOptions "debugMode" "coverage" "debugInfo" "unittests"
