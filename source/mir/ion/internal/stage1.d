@@ -24,70 +24,62 @@ size_t stage1 (
     ref bool backwardEscapeBit,
     )
 {
-    version (X86_64)
+    alias AliasSeq(T...) = T;
+    alias params = AliasSeq!(n, vector, pairedMask, backwardEscapeBit);
+    version(LDC)
     {
-        import cpuid.x86_any;
-        if (avx512bw)
-            return stage1_impl_impl!"skylake-avx512"(n, vector, pairedMask, backwardEscapeBit);
-        if (avx2)
-            return stage1_impl_impl!"broadwell"(n, vector, pairedMask, backwardEscapeBit);
-        if (avx)
-            return stage1_impl_impl!"sandybridge"(n, vector, pairedMask, backwardEscapeBit);
-        if (sse42) // && popcnt
-            return stage1_impl_impl!"westmere"(n, vector, pairedMask, backwardEscapeBit);
-        assert(0);
+        version (X86_Any)
+        {
+            static if (!__traits(targetHasFeature, "avx512bw"))
+            {
+                import cpuid.x86_any;
+                if (avx512bw)
+                    return stage1_impl_impl!"skylake-avx512"(params);
+                static if (!__traits(targetHasFeature, "avx2"))
+                {
+                    if (avx2)
+                        return stage1_impl_impl!"broadwell"(params);
+                    static if (!__traits(targetHasFeature, "avx"))
+                    {
+                        if (avx)
+                            return stage1_impl_impl!"sandybridge"(params);
+                        static if (!__traits(targetHasFeature, "sse4.2"))
+                        {
+                            if (sse42) // && popcnt
+                                return stage1_impl_impl!"westmere"(params);
+                            return stage1_impl_impl!""(params);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                return stage1_impl_impl!""(params);
+            }
+        }
+        else
+        {
+            return stage1_impl_impl!""(params);
+        }
     }
     else
-        static assert(0);
-}
-
-
-unittest
-{
-    bool backwardEscapeBit = 0;
-    align(64) ubyte[64][4] dataA;
-
-    auto data = dataA.ptr.ptr[0 .. dataA.length * 64];
-
-    foreach (i; 0 .. 256)
-        data[i] = cast(ubyte)i;
-    
-    data[165] = '\\';
-    data[166] = '\"';
-    
-    ulong[2][dataA.length] pairedMasks;
-
-    stage1(pairedMasks.length, dataA.ptr, pairedMasks.ptr, backwardEscapeBit);
-
-    import mir.ndslice;
-    auto maskData = pairedMasks.sliced;
-    auto qbits = maskData.map!"a[0]".bitwise;
-    auto ebits = maskData.map!"a[1]".bitwise;
-    assert(qbits.length == 256);
-    assert(ebits.length == 256);
-
-    foreach (i; 0 .. 128)
     {
-        import std.stdio;
-        writeln(i, " ", qbits[i]);
-        assert (qbits[i] == (i == '\"'));
-        assert (ebits[i] == (i == '\\'));
+        return stage1_impl_impl!""(params);
     }
-
-    foreach (i; 128 .. 256)
-    {
-        import std.stdio;
-        writeln(i, " ", qbits[i]);
-        assert (!qbits[i]);
-        assert (ebits[i] == (i == 165));
-    }
-
-    // TODO check `"\\"` case
 }
 
 private template stage1_impl_impl(string arch)
 {
-    @target("arch=" ~ arch)
+    version(LDC)
+    {
+        enum Target = target("arch=" ~ arch);
+    }
+    else
+    {
+        enum Target;
+    }
+
+    @Target
     size_t stage1_impl_impl(
         size_t n,
         scope const(ubyte[64])* vector,
@@ -181,8 +173,6 @@ private template stage1_impl_impl(string arch)
                     maskPair[1] |= b == escape;
                 }
             }
-            import std.stdio;
-            writefln("%b %b", maskPair[0], maskPair[1]);
             pairedMask[i] = maskPair;
             ++i;
             if (maskPair[1] == ulong.max) //need this
@@ -191,22 +181,23 @@ private template stage1_impl_impl(string arch)
             count += cast(size_t) ctpop(maskPair[0]);
             auto rc = ctlz(maskPair[1]);
             auto m = maskPair[0] & fe;
-            writefln("m = %b", maskPair[0]);
             beb = rc & 1; // even escape count
             if (m == 0)
                 continue;
             auto le = 64;
+            fe = ~fe;
             do
             {
                 auto c = ctlz(m);
                 auto d = c + 1;
-                fe <<= c;
+                fe <<= d;
                 le -= d;
                 auto gf = ctlz(fe);
                 m <<= d;
-                writeln("le = ", le);
                 if (gf & 1) // reset the bit
                 {
+                    auto b = 1UL << le;
+                    assert(maskPair[0] & b);
                     maskPair[0] ^= 1UL << le;
                 }
             }
@@ -215,5 +206,80 @@ private template stage1_impl_impl(string arch)
         }
         backwardEscapeBit = beb & 1;
         return count;
+    }
+}
+
+unittest
+{
+    bool backwardEscapeBit = 0;
+    align(64) ubyte[64][4] dataA;
+
+    auto data = dataA.ptr.ptr[0 .. dataA.length * 64];
+
+    foreach (i; 0 .. 256)
+        data[i] = cast(ubyte)i;
+    
+    ulong[2][dataA.length] pairedMasks;
+
+    stage1(pairedMasks.length, dataA.ptr, pairedMasks.ptr, backwardEscapeBit);
+
+    import mir.ndslice;
+    auto maskData = pairedMasks.sliced;
+    auto qbits = maskData.map!"a[0]".bitwise;
+    auto ebits = maskData.map!"a[1]".bitwise;
+    assert(qbits.length == 256);
+    assert(ebits.length == 256);
+
+    foreach (i; 0 .. 128)
+    {
+        assert (qbits[i] == (i == '\"'));
+        assert (ebits[i] == (i == '\\'));
+    }
+
+    foreach (i; 128 .. 256)
+    {
+        assert (!qbits[i]);
+        assert (!ebits[i]);
+    }
+}
+
+unittest
+{
+    bool backwardEscapeBit = 0;
+    align(64) ubyte[64][4] dataA;
+
+    auto data = dataA.ptr.ptr[0 .. dataA.length * 64];
+
+    data[160] = '\\';
+    data[161] = '\\';
+    data[162] = '\\';
+
+    data[165] = '\\';
+    data[166] = '\"';
+
+    data[63] = '\\';
+    data[64] = '\\';
+    data[65] = '\\';
+    data[66] = '\"';
+
+    data[70] = '\"';
+    data[71] = '\\';
+    data[72] = '\\';
+    data[73] = '\\';
+    data[74] = '\\';
+    data[75] = '\"';
+
+    ulong[2][dataA.length] pairedMasks;
+
+    stage1(pairedMasks.length, dataA.ptr, pairedMasks.ptr, backwardEscapeBit);
+
+    import mir.ndslice;
+    auto maskData = pairedMasks.sliced;
+    auto qbits = maskData.map!"a[0]".bitwise;
+    auto ebits = maskData.map!"a[1]".bitwise;
+
+    foreach (i; 0 .. 68)
+    {
+        assert (qbits[i] == (i == 70 || i == 75));
     }
 }
