@@ -101,14 +101,12 @@ private template stage1_impl(string arch)
 
         size_t count;
         assert(n);
-        size_t i;
         int beb = backwardEscapeBit;
-        while(i < n)
+        do
         {
             version (ARM_Any)
             {
-                auto v = *cast(ubyte16[4]*)vector;
-                vector++;
+                auto v = *cast(ubyte16[4]*)vector++;
                 ubyte16[4][2] d;
                 static foreach (i; 0 .. 2)
                 static foreach (j; 0 .. 4)
@@ -147,7 +145,7 @@ private template stage1_impl(string arch)
             else
             version (LDC) // works well for all X86 and x86_64 targets
             {
-                auto v = (cast(ubyte64*)vector)[i];
+                auto v = *cast(ubyte64*)vector++;
                 ulong[2] maskPair = [
                     equalMaskB!ubyte64(v, quoteMask),
                     equalMaskB!ubyte64(v, escapeMask),
@@ -156,7 +154,7 @@ private template stage1_impl(string arch)
             else
             {
                 ulong[2] maskPair;
-                foreach_reverse (b; vector[i])
+                foreach_reverse (b; *vector++)
                 {
                     maskPair[0] <<= 1;
                     maskPair[1] <<= 1;
@@ -164,8 +162,7 @@ private template stage1_impl(string arch)
                     maskPair[1] |= b == escape;
                 }
             }
-            pairedMask[i] = maskPair;
-            ++i;
+            pairedMask++[0] = maskPair;
             if (maskPair[1] == ulong.max) //need this
                 continue; // preserve backwardEscapeBit 
             auto fe = (maskPair[1] << 1) | beb;
@@ -193,8 +190,9 @@ private template stage1_impl(string arch)
                 }
             }
             while(m);
-            pairedMask[i - 1][0] = maskPair[0];
+            pairedMask[-1][0] = maskPair[0];
         }
+        while(--n);
         backwardEscapeBit = beb & 1;
         return count;
     }
