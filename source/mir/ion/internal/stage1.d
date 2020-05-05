@@ -1,6 +1,6 @@
 module mir.ion.internal.stage1;
 
-import ldc.attributes;
+version(LDC) import ldc.attributes;
 import mir.bitop;
 import mir.ion.internal.simd;
 
@@ -34,45 +34,36 @@ size_t stage1 (
             {
                 import cpuid.x86_any;
                 if (avx512bw)
-                    return stage1_impl_impl!"skylake-avx512"(params);
+                    return stage1_impl!"skylake-avx512"(params);
                 static if (!__traits(targetHasFeature, "avx2"))
                 {
                     if (avx2)
-                        return stage1_impl_impl!"broadwell"(params);
+                        return stage1_impl!"broadwell"(params);
                     static if (!__traits(targetHasFeature, "avx"))
                     {
                         if (avx)
-                            return stage1_impl_impl!"sandybridge"(params);
+                            return stage1_impl!"sandybridge"(params);
                         static if (!__traits(targetHasFeature, "sse4.2"))
                         {
-                            if (sse42) // && popcnt
-                                return stage1_impl_impl!"westmere"(params);
-                            return stage1_impl_impl!""(params);
+                            if (sse42) // && popcnt is assumed to be true
+                                return stage1_impl!"westmere"(params);
                         }
                     }
                 }
             }
-            else
-            {
-                return stage1_impl_impl!""(params);
-            }
-        }
-        else
-        {
-            return stage1_impl_impl!""(params);
         }
     }
-    else
-    {
-        return stage1_impl_impl!""(params);
-    }
+    return stage1_impl!""(params);
 }
 
-private template stage1_impl_impl(string arch)
+private template stage1_impl(string arch)
 {
     version(LDC)
     {
-        enum Target = target("arch=" ~ arch);
+        static if (arch.length)
+            enum Target = target("arch=" ~ arch);
+        else
+            enum Target;
     }
     else
     {
@@ -80,7 +71,7 @@ private template stage1_impl_impl(string arch)
     }
 
     @Target
-    size_t stage1_impl_impl(
+    size_t stage1_impl(
         size_t n,
         scope const(ubyte[64])* vector,
         scope ulong[2]* pairedMask,

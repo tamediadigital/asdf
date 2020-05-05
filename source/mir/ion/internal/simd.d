@@ -1,6 +1,6 @@
 module mir.ion.internal.simd;
 
-import ldc.llvmasm;
+version(LDC) import ldc.llvmasm;
 
 version (ARM)
     version = ARM_Any;
@@ -224,6 +224,7 @@ alias cmpMaskB!(Cond.ne) notEqualMaskB; /// Ditto
 alias cmpMaskB!(Cond.gt) greaterMaskB; /// Ditto
 alias cmpMaskB!(Cond.ge) greaterOrEqualMaskB; /// Ditto
 
+version(LDC)
 unittest
 {
     __vector(ubyte[8]) vec;

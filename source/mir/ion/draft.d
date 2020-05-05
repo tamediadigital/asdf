@@ -4,6 +4,7 @@ module mir.ion.draft;
 import core.bitop: ctpop = popcnt;
 import core.simd;
 import core.stdc.string;
+version(none):
 import ldc.attributes;
 import ldc.llvmasm;
 import ldc.simd;
