@@ -1,5 +1,7 @@
 module mir.ion.value;
 
+import mir.utility: _expect;
+
 /++
 Ion Binary Version Marker
 +/
@@ -53,9 +55,12 @@ struct IonValue
 +/
 enum IonErrorCode
 {
-    none,
+    nop = -1,
+    none = 0,
     illegalTypeDescriptor,
     unexpectedEndOfData,
+    overflowInParseVarUInt,
+    overflowInParseVarInt,
 }
 
 struct IonParsed
@@ -93,9 +98,130 @@ struct IonDescribedValue
     const(ubyte)[] data;
 }
 
+struct VarUIntResult
+{
+    IonErrorCode error;
+    size_t result;
+}
+
+struct VarIntResult
+{
+    IonErrorCode error;
+    sizediff_t result;
+}
+
+struct ParseResult
+{
+    IonErrorCode error;
+    size_t length;
+}
+
 /++
 +/
+@safe pure nothrow @nogc
+IonErrorCode parseVarUInt(scope const(ubyte)[] data, out size_t shift, out size_t result)
+{
+    version(LDC) pragma(inline, true);
+    enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7);
+    for(;;)
+    {
+        if (_expect(data.length <= shift, false))
+            return IonErrorCode.unexpectedEndOfData;
+        ubyte b = data[shift++];
+        result <<= 7;
+        result |= b & 0x7F;
+        if (cast(byte)b < 0)
+            return IonErrorCode.none;
+        if (_expect(result >= mLength, false))
+            return IonErrorCode.overflowInParseVarUInt;
+    }
+}
 
+/++
++/
+@safe pure nothrow @nogc
+IonErrorCode parseVarInt(scope const(ubyte)[] data, out size_t shift, out sizediff_t result)
+{
+    version(LDC) pragma(inline, true);
+    enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7 - 1);
+    size_t length;
+    if (_expect(data.length == 0, false))
+        return IonErrorCode.unexpectedEndOfData;
+    ubyte b = data[0];
+    data = data[1 .. $];
+    bool neg;
+    if (b & 0x40)
+    {
+        neg = true;
+        b ^= 0x40;
+    }
+    length =  b & 0x7F;
+    goto L;
+    for(;;)
+    {
+        if (_expect(data.length == 0, false))
+            return IonErrorCode.unexpectedEndOfData;
+        b = data[0];
+        data = data[1 .. $];
+        length <<= 7;
+        length |= b & 0x7F;
+    L:
+        if (cast(byte)b < 0)
+        {
+            result = neg ? -length : length;
+            return IonErrorCode.none;
+        }
+        if (_expect(length >= mLength, false))
+            return IonErrorCode.overflowInParseVarUInt;
+    }
+}
+
+/++
++/
+@safe pure nothrow @nogc
+ParseResult parseValue(const(ubyte)[] data, out IonDescribedValue describedValue)
+{
+    version(LDC) pragma(inline, false);
+    // import mir.bitop: ctlz;
+
+    size_t shift = 0;
+
+    if (_expect(data.length == 0, false))
+        return typeof(return)(IonErrorCode.unexpectedEndOfData, shift);
+
+    shift = 1;
+    ubyte descriptorData = data[0];
+
+    if (_expect(descriptorData > 0xEE, false))
+        return typeof(return)(IonErrorCode.illegalTypeDescriptor, shift);
+
+    describedValue = IonDescribedValue(IonDescriptor(descriptorData));
+    // if null
+    if (describedValue.descriptor.L == 0xF)
+        return typeof(return)(IonErrorCode.none, shift);
+    // if bool
+    if (describedValue.descriptor.type == IonType.bool_)
+    {
+        if (_expect(describedValue.descriptor.L > 1, false))
+            return typeof(return)(IonErrorCode.illegalTypeDescriptor, shift);
+        return typeof(return)(IonErrorCode.none, shift);
+    }
+    size_t length = describedValue.descriptor.L;
+    // if large
+    if (length == 0xE)
+    {
+        if (auto error = parseVarUInt(data, shift, length))
+            return typeof(return)(error, shift);
+    }
+    auto newShift = length + shift;
+    if (_expect(newShift > data.length, false))
+        return typeof(return)(IonErrorCode.unexpectedEndOfData, shift);
+    describedValue.data = data[shift .. newShift];
+    shift = newShift;
+
+    // NOP Padding
+    return typeof(return)(describedValue.descriptor.type == IonType.null_ ? IonErrorCode.nop : IonErrorCode.none, shift);
+}
 
 /++
 +/
@@ -107,46 +233,16 @@ struct IonList
     +/
     IonErrorCode forEach(alias fun)()
     {
-        auto d = data;
-        while (d.length)
+        size_t shift;
+        while (shift < d.length)
         {
-            ubyte descriptorData = d[0];
-            d = d[1 .. $];
-
-            if (_expect(descriptorData > 0xEE, false))
-                return IonErrorCode.illegalTypeDescriptor;
-
-            auto describedValue = IonDescribedValue(IonDescriptor(descriptorData));
-
-            // if not null
-            if (describedValue.descriptor.L != 0xF)
-            {
-                // if bool
-                if (describedValue.descriptor.type == Type.bool_)
-                {
-                    if (_expect(describedValue.descriptor.L > 1, false))
-                        return IonErrorCode.illegalTypeDescriptor;
-                }
-                else
-                {
-                    size_t length = describedValue.descriptor.L;
-                    // if large
-                    if (length == 0xE)
-                    {
-                        if (auto error = parseVarInt(d, length))
-                            return error;
-                    }
-                    if (_expect(length > d.length, false))
-                        return IonErrorCode.unexpectedEndOfData;
-                    describedValue.data = d[0 .. length];
-                    d = d[length .. $];
-
-                    // NOP Padding
-                    if (describedValue.descriptor.type == Type.null_)
-                        continue;
-                }
-            }
-
+            IonDescribedValue describedValue;
+            auto result = parseValue(data[shift .. $], describedValue);
+            shift += result.length;
+            if (result.error < 0) // NOP
+                continue;
+            if (_expect(result.error, false))
+                return error;
             if (auto error = fun(describedValue))
                 return error;
         }
