@@ -22,6 +22,8 @@ enum IonErrorCode
     overflowInParseVarInt,
     ///
     zeroAnnotations,
+    ///
+    illegalBinaryData,
 }
 
 ///
@@ -38,7 +40,7 @@ Params:
 Returns:
     corresponding error message
 +/
-string ionErrorMsg(IonErrorCode code)
+string ionErrorMsg(IonErrorCode code) @property
 @safe pure nothrow @nogc
 {
     static immutable string[] msgs = [
@@ -49,6 +51,7 @@ string ionErrorMsg(IonErrorCode code)
         "overflow in parseVarUInt",
         "overflow in parseVarInt",
         "at least one annotation is required",
+        "illegal binary data",
     ];
     return msgs[code - IonErrorCode.min];
 }
@@ -82,7 +85,7 @@ Params:
 Returns:
     $(LREF MirIonException)
 +/
-MirIonException ionException(IonErrorCode code)
+MirIonException ionException(IonErrorCode code) @property
 @trusted pure nothrow @nogc
 {
     import mir.array.allocation: array;

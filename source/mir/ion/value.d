@@ -159,6 +159,37 @@ struct IonValue
     ubyte[] data;
 
     /++
+    Describes value (nothrow version).
+    Params:
+        value = (out) $(LREF IonDescribedValue)
+    Returns: $(LREF IonErrorCode)
+    +/
+    IonErrorCode describe(out IonDescribedValue value)
+    {
+        auto result = parseValue(data, value);
+        if (_expect(result.error, false))
+            return result.error;
+        if (_expect(result.length != data.length, false))
+            return IonErrorCode.illegalBinaryData;
+        return IonErrorCode.none;
+    }
+
+    version (D_Exceptions)
+    {
+        /++
+        Describes value.
+        Returns: $(LREF IonDescribedValue)
+        +/
+        IonDescribedValue describe()
+        {
+            IonDescribedValue ret;
+            if (auto error = describe(ret))
+                throw error.ionException;
+            return ret;
+        }
+    }
+
+    /++
     Returns: GC-allocated copy.
     +/
     @safe pure nothrow const
@@ -207,14 +238,32 @@ struct IonDescribedValue
 /++
 Nullable boolean type.
 +/
-enum IonBool : byte
+struct IonBool
 {
     ///
-    null_ = -1,
-    ///
-    false_ = 0,
-    ///
-    true_ = 15,
+    IonDescriptor descriptor;
+
+    /++
+    Returns: true if the boolean is `null.bool`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        assert (descriptor.type == IonTypeCode.bool_);
+        return *descriptor.reference == 0x1F;
+    }
+
+    /++
+    Params:
+        rhs = right hand side value for `==` and `!=` expressions.
+    Returns: true if the boolean isn't `null.bool` and equals to the `rhs`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(bool rhs) const
+    {
+        assert (descriptor.type == IonTypeCode.bool_);
+        return descriptor.L == rhs;
+    }
 }
 
 /++
@@ -226,7 +275,7 @@ struct IonUInt
     ubyte[] data;
 
     /++
-    Returns: true if the integer is `null.int` or `null`.
+    Returns: true if the integer is `null.int`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -244,7 +293,7 @@ struct IonNInt
     ubyte[] data;
 
     /++
-    Returns: true if the integer is `null.int` or `null`.
+    Returns: true if the integer is `null.int`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -262,7 +311,7 @@ struct IonFloat
     ubyte[] data;
 
     /++
-    Returns: true if the float is `null.float` or `null`.
+    Returns: true if the float is `null.float`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -280,7 +329,7 @@ struct IonDecimal
     ubyte[] data;
 
     /++
-    Returns: true if the decimal is `null.decimal` or `null`.
+    Returns: true if the decimal is `null.decimal`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -303,7 +352,7 @@ struct IonTimestamp
     ubyte[] data;
 
     /++
-    Returns: true if the timestamp is `null.timestamp` or `null`.
+    Returns: true if the timestamp is `null.timestamp`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -324,7 +373,7 @@ struct IonSymbol
     ubyte[] data;
 
     /++
-    Returns: true if the symbol is `null.symbol` or `null`.
+    Returns: true if the symbol is `null.symbol`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -344,7 +393,7 @@ struct IonString
     char[] data;
 
     /++
-    Returns: true if the string is `null.string` or `null`.
+    Returns: true if the string is `null.string`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -365,7 +414,7 @@ struct IonClob
     char[] data;
 
     /++
-    Returns: true if the clob is `null.clob` or `null`.
+    Returns: true if the clob is `null.clob`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -385,7 +434,7 @@ struct IonBlob
     ubyte[] data;
 
     /++
-    Returns: true if the blob is `null.blob` or `null`.
+    Returns: true if the blob is `null.blob`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -405,7 +454,7 @@ struct IonList
     private alias EDG = scope int delegate(IonDescribedValue value) @safe pure @nogc;
 
     /++
-    Returns: true if the sexp is `null.sexp` or `null`.
+    Returns: true if the sexp is `null.sexp`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -591,7 +640,7 @@ struct IonSexp
     private alias EDG = IonList.EDG;
 
     /++
-    Returns: true if the sexp is `null.sexp` or `null`.
+    Returns: true if the sexp is `null.sexp`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -750,7 +799,7 @@ struct IonStruct
     private alias EDG = scope int delegate(size_t symbolId, IonDescribedValue value) @safe pure nothrow @nogc;
 
     /++
-    Returns: true if the struct is `null.struct` or `null`.
+    Returns: true if the struct is `null.struct`.
     +/
     @safe pure nothrow @nogc
     bool opEquals(typeof(null)) const
@@ -930,7 +979,21 @@ struct IonAnnotationWrapper
     ubyte[] data;
 
     /++
+    Unwraps Ion annotations (nothrow version).
+    Params:
+        annotations = (out) $(LREF IonAnnotations)
+        value = (out) $(LREF IonDescribedValue) or $(LREF IonValue)
+    Returns: $(LREF IonErrorCode)
     +/
+    IonErrorCode unwrap(out IonAnnotations annotations, out IonDescribedValue value)
+    {
+        IonValue v;
+        if (auto error = unwrap(annotations, v))
+            return error;
+        return v.describe(value);
+    }
+
+    /// ditto
     IonErrorCode unwrap(out IonAnnotations annotations, out IonValue value)
     {
         size_t shift;
@@ -946,6 +1009,31 @@ struct IonAnnotationWrapper
         value = IonValue(d[length .. $]);
         return IonErrorCode.none;
     }
+
+    version (D_Exceptions)
+    {
+        /++
+        Unwraps Ion annotations.
+        Params:
+            annotations = (optional out) $(LREF IonAnnotations)
+        Returns: $(LREF IonDescribedValue)
+        +/
+        IonDescribedValue unwrap(out IonAnnotations annotations)
+        {
+            IonDescribedValue ret;
+            if (auto error = unwrap(annotations, ret))
+                throw error.ionException;
+            return ret;
+        }
+
+        /// ditto
+        IonDescribedValue unwrap()
+        {
+            IonAnnotations annotations;
+            return unwrap(annotations);
+        }
+    }
+
 }
 
 /++
