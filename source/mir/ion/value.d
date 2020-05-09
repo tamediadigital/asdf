@@ -341,52 +341,55 @@ struct IonList
         return data.length == 0;
     }
 
-    /++
-    +/
-    @safe pure @nogc
-    int opApply(scope int delegate(IonDescribedValue value) @safe pure @nogc dg)
+    version (D_Exceptions)
     {
-        return opApply((IonErrorCode error, IonDescribedValue value) {
-            if (_expect(error, false))
-                throw error.ionException;
-            return dg(value);
-        });
+        /++
+        +/
+        @safe pure @nogc
+        int opApply(scope int delegate(IonDescribedValue value) @safe pure @nogc dg)
+        {
+            return opApply((IonErrorCode error, IonDescribedValue value) {
+                if (_expect(error, false))
+                    throw error.ionException;
+                return dg(value);
+            });
+        }
+
+        /// ditto
+        @trusted @nogc
+        int opApply(scope int delegate(IonDescribedValue value)
+        @safe @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @trusted pure
+        int opApply(scope int delegate(IonDescribedValue value)
+        @safe pure dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @trusted
+        int opApply(scope int delegate(IonDescribedValue value)
+        @safe dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system pure @nogc
+        int opApply(scope int delegate(IonDescribedValue value)
+        @system pure @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system @nogc
+        int opApply(scope int delegate(IonDescribedValue value)
+        @system @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system pure
+        int opApply(scope int delegate(IonDescribedValue value)
+        @system pure dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system
+        int opApply(scope int delegate(IonDescribedValue value)
+        @system dg) { return opApply(cast(EDG) dg); }
     }
-
-    /// ditto
-    @trusted @nogc
-    int opApply(scope int delegate(IonDescribedValue value)
-    @safe @nogc dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @trusted pure
-    int opApply(scope int delegate(IonDescribedValue value)
-    @safe pure dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @trusted
-    int opApply(scope int delegate(IonDescribedValue value)
-    @safe dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system pure @nogc
-    int opApply(scope int delegate(IonDescribedValue value)
-    @system pure @nogc dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system @nogc
-    int opApply(scope int delegate(IonDescribedValue value)
-    @system @nogc dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system pure
-    int opApply(scope int delegate(IonDescribedValue value)
-    @system pure dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system
-    int opApply(scope int delegate(IonDescribedValue value)
-    @system dg) { return opApply(cast(EDG) dg); }
 
     /++
     +/
@@ -523,48 +526,51 @@ struct IonSexp
         return data.length == 0;
     }
 
-    /++
-    +/
-    @safe pure @nogc
-    int opApply(scope int delegate(IonDescribedValue value) @safe pure @nogc dg)
+    version (D_Exceptions)
     {
-        return IonList(data).opApply(dg);
+        /++
+        +/
+        @safe pure @nogc
+        int opApply(scope int delegate(IonDescribedValue value) @safe pure @nogc dg)
+        {
+            return IonList(data).opApply(dg);
+        }
+
+        /// ditto
+        @trusted @nogc
+        int opApply(scope int delegate(IonDescribedValue value)
+        @safe @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @trusted pure
+        int opApply(scope int delegate(IonDescribedValue value)
+        @safe pure dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @trusted
+        int opApply(scope int delegate(IonDescribedValue value)
+        @safe dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system pure @nogc
+        int opApply(scope int delegate(IonDescribedValue value)
+        @system pure @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system @nogc
+        int opApply(scope int delegate(IonDescribedValue value)
+        @system @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system pure
+        int opApply(scope int delegate(IonDescribedValue value)
+        @system pure dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system
+        int opApply(scope int delegate(IonDescribedValue value)
+        @system dg) { return opApply(cast(EDG) dg); }
     }
-
-    /// ditto
-    @trusted @nogc
-    int opApply(scope int delegate(IonDescribedValue value)
-    @safe @nogc dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @trusted pure
-    int opApply(scope int delegate(IonDescribedValue value)
-    @safe pure dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @trusted
-    int opApply(scope int delegate(IonDescribedValue value)
-    @safe dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system pure @nogc
-    int opApply(scope int delegate(IonDescribedValue value)
-    @system pure @nogc dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system @nogc
-    int opApply(scope int delegate(IonDescribedValue value)
-    @system @nogc dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system pure
-    int opApply(scope int delegate(IonDescribedValue value)
-    @system pure dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system
-    int opApply(scope int delegate(IonDescribedValue value)
-    @system dg) { return opApply(cast(EDG) dg); }
 
     /++
     +/
@@ -678,52 +684,55 @@ struct IonStruct
         return data.length == 0;
     }
 
-    /++
-    +/
-    @safe pure @nogc
-    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value) @safe pure @nogc dg)
+    version (D_Exceptions)
     {
-        return opApply((IonErrorCode error, size_t symbolId, IonDescribedValue value) {
-            if (_expect(error, false))
-                throw error.ionException;
-            return dg(symbolId, value);
-        });
+        /++
+        +/
+        @safe pure @nogc
+        int opApply(scope int delegate(size_t symbolId, IonDescribedValue value) @safe pure @nogc dg)
+        {
+            return opApply((IonErrorCode error, size_t symbolId, IonDescribedValue value) {
+                if (_expect(error, false))
+                    throw error.ionException;
+                return dg(symbolId, value);
+            });
+        }
+
+        /// ditto
+        @trusted @nogc
+        int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+        @safe @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @trusted pure
+        int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+        @safe pure dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @trusted
+        int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+        @safe dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system pure @nogc
+        int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+        @system pure @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system @nogc
+        int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+        @system @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system pure
+        int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+        @system pure dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system
+        int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+        @system dg) { return opApply(cast(EDG) dg); }
     }
-
-    /// ditto
-    @trusted @nogc
-    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
-    @safe @nogc dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @trusted pure
-    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
-    @safe pure dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @trusted
-    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
-    @safe dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system pure @nogc
-    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
-    @system pure @nogc dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system @nogc
-    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
-    @system @nogc dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system pure
-    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
-    @system pure dg) { return opApply(cast(EDG) dg); }
-
-    /// ditto
-    @system
-    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
-    @system dg) { return opApply(cast(EDG) dg); }
 
     /++
     +/
