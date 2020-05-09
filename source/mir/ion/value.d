@@ -309,6 +309,8 @@ struct IonSymbol
     }
 }
 
+static immutable Exception[] ionExceptions;
+
 /++
 +/
 struct IonList
@@ -316,6 +318,7 @@ struct IonList
     ///
     ubyte[] data;
     private alias DG = scope int delegate(IonErrorCode error, IonDescribedValue value) @safe pure nothrow @nogc;
+    private alias EDG = scope int delegate(IonDescribedValue value) @safe pure @nogc;
 
     /++
     Returns: true if the sexp is `null.sexp` or `null`.
@@ -335,6 +338,56 @@ struct IonList
     {
         return data.length == 0;
     }
+
+    /++
+    +/
+    @safe pure @nogc
+    int opApply(scope int delegate(IonDescribedValue value) @safe pure @nogc dg)
+    {
+        foreach (IonErrorCode error, IonDescribedValue value; this)
+        {
+            if (_expect(error, false))
+                throw ionExceptions[error];
+            if (auto ret = dg(value))
+                return ret;
+        }
+        return 0;
+    }
+
+    /// ditto
+    @trusted @nogc
+    int opApply(scope int delegate(IonDescribedValue value)
+    @safe @nogc dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @trusted pure
+    int opApply(scope int delegate(IonDescribedValue value)
+    @safe pure dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @trusted
+    int opApply(scope int delegate(IonDescribedValue value)
+    @safe dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system pure @nogc
+    int opApply(scope int delegate(IonDescribedValue value)
+    @system pure @nogc dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system @nogc
+    int opApply(scope int delegate(IonDescribedValue value)
+    @system @nogc dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system pure
+    int opApply(scope int delegate(IonDescribedValue value)
+    @system pure dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system
+    int opApply(scope int delegate(IonDescribedValue value)
+    @system dg) { return opApply(cast(EDG) dg); }
 
     /++
     +/
@@ -450,6 +503,7 @@ struct IonSexp
     ubyte[] data;
 
     private alias DG = IonList.DG;
+    private alias EDG = IonList.EDG;
 
     /++
     Returns: true if the sexp is `null.sexp` or `null`.
@@ -469,6 +523,49 @@ struct IonSexp
     {
         return data.length == 0;
     }
+
+    /++
+    +/
+    @safe pure @nogc
+    int opApply(scope int delegate(IonDescribedValue value) @safe pure @nogc dg)
+    {
+        return IonList(data).opApply(dg);
+    }
+
+    /// ditto
+    @trusted @nogc
+    int opApply(scope int delegate(IonDescribedValue value)
+    @safe @nogc dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @trusted pure
+    int opApply(scope int delegate(IonDescribedValue value)
+    @safe pure dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @trusted
+    int opApply(scope int delegate(IonDescribedValue value)
+    @safe dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system pure @nogc
+    int opApply(scope int delegate(IonDescribedValue value)
+    @system pure @nogc dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system @nogc
+    int opApply(scope int delegate(IonDescribedValue value)
+    @system @nogc dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system pure
+    int opApply(scope int delegate(IonDescribedValue value)
+    @system pure dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system
+    int opApply(scope int delegate(IonDescribedValue value)
+    @system dg) { return opApply(cast(EDG) dg); }
 
     /++
     +/
@@ -561,6 +658,7 @@ struct IonStruct
     ///
     ubyte[] data;
     private alias DG = scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value) @safe pure nothrow @nogc;
+    private alias EDG = scope int delegate(size_t symbolId, IonDescribedValue value) @safe pure nothrow @nogc;
 
     /++
     Returns: true if the struct is `null.struct` or `null`.
@@ -580,6 +678,56 @@ struct IonStruct
     {
         return data.length == 0;
     }
+
+    /++
+    +/
+    @safe pure @nogc
+    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value) @safe pure @nogc dg)
+    {
+        foreach (IonErrorCode error, size_t symbolId, IonDescribedValue value; this)
+        {
+            if (_expect(error, false))
+                throw ionExceptions[error];
+            if (auto ret = dg(symbolId, value))
+                return ret;
+        }
+        return 0;
+    }
+
+    /// ditto
+    @trusted @nogc
+    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+    @safe @nogc dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @trusted pure
+    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+    @safe pure dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @trusted
+    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+    @safe dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system pure @nogc
+    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+    @system pure @nogc dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system @nogc
+    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+    @system @nogc dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system pure
+    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+    @system pure dg) { return opApply(cast(EDG) dg); }
+
+    /// ditto
+    @system
+    int opApply(scope int delegate(size_t symbolId, IonDescribedValue value)
+    @system dg) { return opApply(cast(EDG) dg); }
 
     /++
     +/
