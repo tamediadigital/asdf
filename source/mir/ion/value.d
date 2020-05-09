@@ -224,10 +224,25 @@ enum IonBool : byte
 
 /++
 +/
-struct IonInt
+struct IonUInt
 {
     ///
-    bool sign;
+    ubyte[] data;
+
+    /++
+    Returns: true if the integer is `null.int` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+}
+
+/++
++/
+struct IonNInt
+{
     ///
     ubyte[] data;
 
@@ -344,14 +359,11 @@ struct IonList
     @safe pure @nogc
     int opApply(scope int delegate(IonDescribedValue value) @safe pure @nogc dg)
     {
-        foreach (IonErrorCode error, IonDescribedValue value; this)
-        {
+        return opApply((IonErrorCode error, IonDescribedValue value) {
             if (_expect(error, false))
                 throw ionExceptions[error];
-            if (auto ret = dg(value))
-                return ret;
-        }
-        return 0;
+            return dg(value);
+        });
     }
 
     /// ditto
@@ -684,14 +696,11 @@ struct IonStruct
     @safe pure @nogc
     int opApply(scope int delegate(size_t symbolId, IonDescribedValue value) @safe pure @nogc dg)
     {
-        foreach (IonErrorCode error, size_t symbolId, IonDescribedValue value; this)
-        {
+        return opApply((IonErrorCode error, size_t symbolId, IonDescribedValue value) {
             if (_expect(error, false))
                 throw ionExceptions[error];
-            if (auto ret = dg(symbolId, value))
-                return ret;
-        }
-        return 0;
+            return dg(symbolId, value);
+        });
     }
 
     /// ditto
@@ -988,7 +997,7 @@ enum IonType
 
     /++
     Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#2-and-3-int, 2 and 3: int)
-    D_type: $(LREF IonInt)
+    D_type: $(LREF IonUInt) and $(LREF IonNInt)
     +/
     uInt, 
     /// ditto
