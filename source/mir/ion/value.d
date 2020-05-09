@@ -16,7 +16,143 @@ struct IonVersionMarker
 }
 
 /++
+$(HTTP amzn.github.io/ion-docs/docs/binary.html#typed-value-formats, Typed Value Formats)
++/
+enum IonTypeCode
+{
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#0-null, 0: null)
+    D_type: `typeof(null)`.
+    +/
+    null_,
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#1-bool, 1: bool)
+    D_type: $(LREF IonBool)
+    +/
+    bool_,
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#2-and-3-int, 2 and 3: int)
+    D_type: $(LREF IonUInt) and $(LREF IonNInt)
+    +/
+    uInt,
+    /// ditto
+    nInt,
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#4-float, 4: float)
+    D_type: $(LREF IonFloat)
+    +/
+    float_,
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#5-decimal, 5: decimal)
+    D_type: $(LREF IonDecimal)
+    +/
+    decimal,
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#6-timestamp, 6: timestamp)
+    D_type: $(LREF IonTimestamp)
+    +/
+    timestamp,
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#7-symbol, 7: symbol)
+    D_type: $(LREF IonSymbol)
+    +/
+    symbol,
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#8-string, 8: string)
+    D_type: $(LREF IonString)
+    +/
+    string,
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#9-clob, 9: clob)
+    D_type: $(LREF IonClob)
+    +/
+    clob,
+
+    /++
+    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#0-blob, 10: blob)
+    D_type: $(LREF IonBlob)
+    +/
+    blob,
+
+    /++
+    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#1-list, 11: list)
+    D_type: $(LREF IonList)
+    +/
+    list,
+
+    /++
+    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#2-sexp, 12: sexp)
+    D_type: $(LREF IonSexp)
+    +/
+    sexp,
+
+    /++
+    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#3-struct, 13: struct)
+    D_type: $(LREF IonStruct)
+    +/
+    struct_,
+
+    /++
+    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#4-annotations, 14: Annotations)
+    D_type: $(LREF IonAnnotationWrapper)
+    +/
+    annotations,
+}
+
+/// Aliases the $(LREF IonTypeCode) to the corresponding Ion type.
+alias IonType(IonTypeCode code : IonTypeCode.null_) = typeof(null);
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.bool_) = IonBool;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.uInt) = IonUInt;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.nInt) = IonNInt;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.float_) = IonFloat;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.decimal) = IonDecimal;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.timestamp) = IonTimestamp;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.symbol) = IonSymbol;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.string) = IonString;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.clob) = IonClob;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.blob) = IonBlob;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.list) = IonList;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.sexp) = IonSexp;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.struct_) = IonStruct;
+/// ditto
+alias IonType(IonTypeCode code : IonTypeCode.annotations) = IonAnnotations;
+
+/++
 Ion Value
+
+The type descriptor octet has two subfields: a four-bit type code T, and a four-bit length L.
+
+----------
+       7       4 3       0
+      +---------+---------+
+value |    T    |    L    |
+      +---------+---------+======+
+      :     length [VarUInt]     :
+      +==========================+
+      :      representation      :
+      +==========================+
+----------
 +/
 struct IonValue
 {
@@ -33,18 +169,22 @@ struct IonValue
 }
 
 /++
+Ion Type Descriptor
 +/
 struct IonDescriptor
 {
+    /++
+    The type descriptor octet has two subfields: a four-bit type code T, and a four-bit length L.
+    +/
     ubyte* reference;
 
-    ///
-    IonType type() @safe pure nothrow @nogc const @property
+    /// T
+    IonTypeCode type() @safe pure nothrow @nogc const @property
     {
         assert(reference);
         return cast(typeof(return))((*reference) >> 4);
     }
-    ///
+    /// L
     uint L() @safe pure nothrow @nogc const @property
     {
         assert(reference);
@@ -53,149 +193,15 @@ struct IonDescriptor
 }
 
 /++
+Ion Described Value stores type descriptor and rerpresentation.
 +/
+
 struct IonDescribedValue
 {
-    ///
+    /// Type Descriptor
     IonDescriptor descriptor;
-    ///
+    /// Rerpresentation
     ubyte[] data;
-}
-
-struct VarUIntResult
-{
-    IonErrorCode error;
-    size_t result;
-}
-
-struct VarIntResult
-{
-    IonErrorCode error;
-    sizediff_t result;
-}
-
-struct ParseResult
-{
-    IonErrorCode error;
-    size_t length;
-}
-
-/++
-+/
-@safe pure nothrow @nogc
-IonErrorCode parseVarUInt(scope const(ubyte)[] data, ref size_t shift, out size_t result)
-{
-    version(LDC) pragma(inline, true);
-    enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7);
-    for(;;)
-    {
-        if (_expect(data.length <= shift, false))
-            return IonErrorCode.unexpectedEndOfData;
-        ubyte b = data[shift++];
-        result <<= 7;
-        result |= b & 0x7F;
-        if (cast(byte)b < 0)
-            return IonErrorCode.none;
-        if (_expect(result >= mLength, false))
-            return IonErrorCode.overflowInParseVarUInt;
-    }
-}
-
-/++
-+/
-@safe pure nothrow @nogc
-IonErrorCode parseVarInt(scope const(ubyte)[] data, ref size_t shift, out sizediff_t result)
-{
-    version(LDC) pragma(inline, true);
-    enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7 - 1);
-    size_t length;
-    if (_expect(data.length == 0, false))
-        return IonErrorCode.unexpectedEndOfData;
-    ubyte b = data[0];
-    data = data[1 .. $];
-    bool neg;
-    if (b & 0x40)
-    {
-        neg = true;
-        b ^= 0x40;
-    }
-    length =  b & 0x7F;
-    goto L;
-    for(;;)
-    {
-        if (_expect(data.length == 0, false))
-            return IonErrorCode.unexpectedEndOfData;
-        b = data[0];
-        data = data[1 .. $];
-        length <<= 7;
-        length |= b & 0x7F;
-    L:
-        if (cast(byte)b < 0)
-        {
-            result = neg ? -length : length;
-            return IonErrorCode.none;
-        }
-        if (_expect(length >= mLength, false))
-            return IonErrorCode.overflowInParseVarUInt;
-    }
-}
-
-/++
-+/
-@safe pure nothrow @nogc
-ParseResult parseValue(ubyte[] data, out IonDescribedValue describedValue)
-{
-    version(LDC) pragma(inline, false);
-    // import mir.bitop: ctlz;
-
-    size_t shift = 0;
-
-    if (_expect(data.length == 0, false))
-        return typeof(return)(IonErrorCode.unexpectedEndOfData, shift);
-
-    shift = 1;
-    describedValue = IonDescribedValue(IonDescriptor((()@trusted => data.ptr)()));
-    ubyte descriptorData = *describedValue.descriptor.reference;
-
-    if (_expect(descriptorData > 0xEE, false))
-        return typeof(return)(IonErrorCode.illegalTypeDescriptor, shift);
-
-    const L = uint(descriptorData & 0xF);
-    const type = cast(IonType)(descriptorData >> 4);
-    // if null
-    if (L == 0xF)
-        return typeof(return)(IonErrorCode.none, shift);
-    // if bool
-    if (type == IonType.bool_)
-    {
-        if (_expect(L > 1, false))
-            return typeof(return)(IonErrorCode.illegalTypeDescriptor, shift);
-        return typeof(return)(IonErrorCode.none, shift);
-    }
-    size_t length = L;
-    // if large
-    if (length == 0xE)
-    {
-        if (auto error = parseVarUInt(data, shift, length))
-            return typeof(return)(error, shift);
-    }
-    auto newShift = length + shift;
-    if (_expect(newShift > data.length, false))
-        return typeof(return)(IonErrorCode.unexpectedEndOfData, shift);
-    describedValue.data = data[shift .. newShift];
-    shift = newShift;
-
-    // NOP Padding
-    return typeof(return)(type == IonType.null_ ? IonErrorCode.nop : IonErrorCode.none, shift);
-}
-
-
-/++
-+/
-struct IonClobChar
-{
-    ///
-    ubyte code;
 }
 
 /++
@@ -208,10 +214,11 @@ enum IonBool : byte
     ///
     false_ = 0,
     ///
-    true_ = 1,
+    true_ = 15,
 }
 
 /++
+Ion non-negative integer number.
 +/
 struct IonUInt
 {
@@ -229,6 +236,7 @@ struct IonUInt
 }
 
 /++
+Ion negative integer number.
 +/
 struct IonNInt
 {
@@ -246,6 +254,7 @@ struct IonNInt
 }
 
 /++
+Ion floating point number.
 +/
 struct IonFloat
 {
@@ -263,6 +272,7 @@ struct IonFloat
 }
 
 /++
+Ion decimal number.
 +/
 struct IonDecimal
 {
@@ -280,6 +290,12 @@ struct IonDecimal
 }
 
 /++
+Ion Timestamp
+
+Timestamp representations have 7 components, where 5 of these components are optional depending on the precision of the timestamp.
+The 2 non-optional components are offset and year.
+The 5 optional components are (from least precise to most precise): `month`, `day`, `hour` and `minute`, `second`, `fraction_exponent` and `fraction_coefficient`.
+All of these 7 components are in Universal Coordinated Time (UTC).
 +/
 struct IonTimestamp
 {
@@ -297,6 +313,10 @@ struct IonTimestamp
 }
 
 /++
+Ion Symbol Id
+
+In the binary encoding, all Ion symbols are stored as integer symbol IDs whose text values are provided by a symbol table.
+If L is zero then the symbol ID is zero and the length and symbol ID fields are omitted.
 +/
 struct IonSymbol
 {
@@ -314,6 +334,68 @@ struct IonSymbol
 }
 
 /++
+Ion String.
+
+These are always sequences of Unicode characters, encoded as a sequence of UTF-8 octets.
++/
+struct IonString
+{
+    ///
+    char[] data;
+
+    /++
+    Returns: true if the string is `null.string` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+}
+
+/++
+Ion Clob
+
+Values of type clob are encoded as a sequence of octets that should be interpreted as text
+with an unknown encoding (and thus opaque to the application).
++/
+struct IonClob
+{
+    ///
+    char[] data;
+
+    /++
+    Returns: true if the clob is `null.clob` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+}
+
+/++
+Ion Blob
+
+This is a sequence of octets with no interpretation (and thus opaque to the application).
++/
+struct IonBlob
+{
+    ///
+    ubyte[] data;
+
+    /++
+    Returns: true if the blob is `null.blob` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+}
+
+/++
+Ion List (array)
 +/
 struct IonList
 {
@@ -498,6 +580,7 @@ unittest
 }
 
 /++
+Ion Sexp (symbol expression, array)
 +/
 struct IonSexp
 {
@@ -657,6 +740,7 @@ struct IonSexp
 }
 
 /++
+Ion struct (object)
 +/
 struct IonStruct
 {
@@ -838,6 +922,7 @@ struct IonStruct
 }
 
 /++
+Ion Annotation Wrapper
 +/
 struct IonAnnotationWrapper
 {
@@ -974,294 +1059,111 @@ struct IonAnnotations
     @system dg) { return opApply(cast(DG) dg); }
 }
 
-/++
-$(HTTP amzn.github.io/ion-docs/docs/binary.html#typed-value-formats, Typed Value Formats)
-+/
-enum IonType
+@safe pure nothrow @nogc
+private IonErrorCode parseVarUInt(scope const(ubyte)[] data, ref size_t shift, out size_t result)
 {
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#0-null, 0: null)
-    D_type: `typeof(null)`.
-    +/
-    null_,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#1-bool, 1: bool)
-    D_type: $(LREF IonBool)
-    +/
-    bool_,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#2-and-3-int, 2 and 3: int)
-    D_type: $(LREF IonUInt) and $(LREF IonNInt)
-    +/
-    uInt, 
-    /// ditto
-    nInt,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#4-float, 4: float)
-    D_type: $(LREF IonFloat)
-    +/
-    float_,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#5-decimal, 5: decimal)
-    D_type: $(LREF IonDecimal)
-    +/
-    decimal,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#6-timestamp, 6: timestamp)
-    D_type: $(LREF IonTimestamp)
-    +/
-    timestamp,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#7-symbol, 7: symbol)
-    D_type: $(LREF IonSymbol)
-    +/
-    symbol,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#8-string, 8: string)
-    D_type: `char[]`
-    +/
-    string,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#9-clob, 9: clob)
-    D_type: `IonClobChar[]`
-    +/
-    clob,
-
-    /++
-    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#0-blob, 10: blob)
-    D_type: `ubyte[]`
-    +/
-    blob,
-
-    /++
-    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#1-list, 11: list)
-    D_type: $(LREF IonList)
-    +/
-    list,
-
-    /++
-    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#2-sexp, 12: sexp)
-    D_type: $(LREF IonSexp)
-    +/
-    sexp,
-
-    /++
-    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#3-struct, 13: struct)
-    D_type: $(LREF IonStruct)
-    +/
-    struct_,
-
-    /++
-    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#4-annotations, 14: Annotations)
-    D_type: $(LREF IonAnnotationWrapper)
-    +/
-    annotations,
+    version(LDC) pragma(inline, true);
+    enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7);
+    for(;;)
+    {
+        if (_expect(data.length <= shift, false))
+            return IonErrorCode.unexpectedEndOfData;
+        ubyte b = data[shift++];
+        result <<= 7;
+        result |= b & 0x7F;
+        if (cast(byte)b < 0)
+            return IonErrorCode.none;
+        if (_expect(result >= mLength, false))
+            return IonErrorCode.overflowInParseVarUInt;
+    }
 }
 
-/++
-+/
-struct IonSymbolTable
+private @safe pure nothrow @nogc
+IonErrorCode parseVarInt(scope const(ubyte)[] data, ref size_t shift, out sizediff_t result)
 {
-    size_t _maxId;
-    const(char[])[] _symbols;
-    IonSymbolTable* _next;
-
-    /++
-    Returns:
-        empty non-null or non-empty string if the table contains the `id` and null string otherwise.
-    +/
-    @trusted pure nothrow @nogc
-    const(char)[] getSymbol(size_t id) scope const
+    version(LDC) pragma(inline, true);
+    enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7 - 1);
+    size_t length;
+    if (_expect(data.length == 0, false))
+        return IonErrorCode.unexpectedEndOfData;
+    ubyte b = data[0];
+    data = data[1 .. $];
+    bool neg;
+    if (b & 0x40)
     {
-        --id; // overflow is OK
-        scope curr = &this;
-        do
+        neg = true;
+        b ^= 0x40;
+    }
+    length =  b & 0x7F;
+    goto L;
+    for(;;)
+    {
+        if (_expect(data.length == 0, false))
+            return IonErrorCode.unexpectedEndOfData;
+        b = data[0];
+        data = data[1 .. $];
+        length <<= 7;
+        length |= b & 0x7F;
+    L:
+        if (cast(byte)b < 0)
         {
-            import mir.checkedint;
-            bool overflow;
-            auto nextId = subu(id, curr._maxId, overflow);
-            if (overflow)
-            {
-                if (curr._symbols.length < id)
-                    return curr._symbols[id];
-                break;
-            }
-            curr = curr._next;
-            id = nextId;
+            result = neg ? -length : length;
+            return IonErrorCode.none;
         }
-        while(curr);
-        return null;
-    }
-
-    /++
-    Returns: GC-allocated copy.
-    +/
-    @safe pure nothrow const
-    IonSymbolTable gcCopy()
-    {
-        IonSymbolTable ret;
-        scope currentOut = (()@trusted => &ret)();
-        scope currentIn = (()@trusted => &this)();
-        for(;;)
-        {
-            import mir.ndslice.topology: map;
-            import mir.array.allocation: array;
-            *currentOut = IonSymbolTable(currentIn._maxId, currentIn._symbols.map!idup.array);
-            if (currentIn._next is null)
-                break;
-            currentIn = currentIn._next;
-            currentOut = new IonSymbolTable();
-        }
-        return ret;
+        if (_expect(length >= mLength, false))
+            return IonErrorCode.overflowInParseVarUInt;
     }
 }
 
-/++
-+/
-struct IonDeserValue
+private struct IonParseResult
 {
-    /++
-    +/
-    IonValue value;
-    /++
-    +/
-    const(size_t)[] idMap;
+    IonErrorCode error;
+    size_t length;
 }
 
-/++
-+/
-struct IonInverseSymbolTable
+private @safe pure nothrow @nogc
+IonParseResult parseValue(ubyte[] data, out IonDescribedValue describedValue)
 {
-    /++
-    +/
-    struct Node
-    {
-        ///
-        size_t hash;
-        ///
-        size_t id;
-    }
+    version(LDC) pragma(inline, false);
+    // import mir.bitop: ctlz;
 
-    /++
-    +/
-    IonSymbolTable symbolTable;
-    /++
-    Node array length of power of 2.
-    +/
-    const(Node)[] nodes;
+    size_t shift = 0;
 
-    /++
-    Returns: GC-allocated copy.
-    +/
-    @safe pure nothrow const
-    IonInverseSymbolTable gcCopy()
-    {
-        return IonInverseSymbolTable(symbolTable.gcCopy, nodes.dup);
-    }
+    if (_expect(data.length == 0, false))
+        return typeof(return)(IonErrorCode.unexpectedEndOfData, shift);
 
-    /++
-    Returns:
-        non-zero id if the table contains the symbol and zero otherwise.
-    +/
-    @trusted pure nothrow @nogc
-    size_t getId(scope const(char)[] symbol) scope const
+    shift = 1;
+    describedValue = IonDescribedValue(IonDescriptor((()@trusted => data.ptr)()));
+    ubyte descriptorData = *describedValue.descriptor.reference;
+
+    if (_expect(descriptorData > 0xEE, false))
+        return typeof(return)(IonErrorCode.illegalTypeDescriptor, shift);
+
+    const L = uint(descriptorData & 0xF);
+    const type = cast(IonTypeCode)(descriptorData >> 4);
+    // if null
+    if (L == 0xF)
+        return typeof(return)(IonErrorCode.none, shift);
+    // if bool
+    if (type == IonTypeCode.bool_)
     {
-        if  (nodes.length)
-        {
-            // TODO use custom hash function
-            size_t hash = hashOf(symbol);
-            {
-                version(assert)
-                {
-                    import mir.bitop;
-                    assert(size_t(1) << cttz(nodes.length) == nodes.length, "nodes.length must be power of 2");
-                }
-                size_t mask = nodes.length - 1;
-                size_t startIndex = hash & mask;
-                size_t index = startIndex;
-                do
-                {
-                    if (nodes[index].hash != hash)
-                        continue;
-                    auto candidateId = nodes[index].id;
-                    if (symbol != symbolTable.getSymbol(candidateId))
-                        continue;
-                    return candidateId;
-                }
-                while((++index &= mask) != startIndex);
-            }
-        }
-        return 0;
+        if (_expect(L > 1, false))
+            return typeof(return)(IonErrorCode.illegalTypeDescriptor, shift);
+        return typeof(return)(IonErrorCode.none, shift);
     }
+    size_t length = L;
+    // if large
+    if (length == 0xE)
+    {
+        if (auto error = parseVarUInt(data, shift, length))
+            return typeof(return)(error, shift);
+    }
+    auto newShift = length + shift;
+    if (_expect(newShift > data.length, false))
+        return typeof(return)(IonErrorCode.unexpectedEndOfData, shift);
+    describedValue.data = data[shift .. newShift];
+    shift = newShift;
+
+    // NOP Padding
+    return typeof(return)(type == IonTypeCode.null_ ? IonErrorCode.nop : IonErrorCode.none, shift);
 }
-
-/++
-Each version of the Ion specification defines the corresponding system symbol table version.
-Ion 1.0 uses the `"$ion"` symbol table, version 1,
-and future versions of Ion will use larger versions of the `"$ion"` symbol table.
-`$ion_1_1` will probably use version 2, while `$ion_2_0` might use version 5.
-
-Applications and users should never have to care about these symbol table versions,
-since they are never explicit in user data: this specification disallows (by ignoring) imports named `"$ion"`.
-
-Here are the system symbols for Ion 1.0.
-+/
-static immutable string[] IonSystemSymbolTable_v1 = [
-    "$ion",
-    "$ion_1_0",
-    "$ion_symbol_table",
-    "name",
-    "version",
-    "imports",
-    "symbols",
-    "max_id",
-    "$ion_shared_symbol_table",
-];
-
-// deser(IonValue, IonInverseSymbolTable, IonVersionMarker, )
-
-/++
-Ion User Type
-+/
-struct Ion
-{
-    /// $(LREF IonInverseSymbolTable)
-    IonInverseSymbolTable inverseSymbolTable;
-
-    /// $(LREF IonValue)
-    IonValue value;
-
-    // Ion has only one spec version for now.
-    // /// $(LREF IonVersionMarker)
-    // IonVersionMarker versionMarker;
-
-    /++
-    Returns: GC-allocated copy.
-    +/
-    @safe pure nothrow const
-    Ion gcCopy()
-    {
-        return Ion(
-            inverseSymbolTable.gcCopy,
-            value.gcCopy,
-            // versionMarker
-        );
-    }
-}
-
-// pragma(Ion);
-
-// /++
-// +/
-// struct IonStream(IonValueStream, IonSharedTableLoader = void)
-// {
-//     private IonValueStream 
-// }
