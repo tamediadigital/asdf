@@ -18,7 +18,7 @@ Ion Value
 +/
 struct IonValue
 {
-    const(ubyte)[] _data;
+    ubyte[] data;
 
     /++
     Returns: GC-allocated copy.
@@ -26,7 +26,7 @@ struct IonValue
     @safe pure nothrow const
     IonValue gcCopy()
     {
-        return IonValue(_data.dup);
+        return IonValue(data.dup);
     }
 }
 
@@ -43,28 +43,23 @@ enum IonErrorCode
     zeroAnnotations,
 }
 
-struct IonParsed
-{
-    IonType type;
-    uint L;
-    package const(ubyte)[] data;
-}
-
 /++
 +/
 struct IonDescriptor
 {
-    ///
-    IonType type;
-    ///
-    uint L;
+    ubyte* reference;
 
     ///
-    @safe pure nothrow @nogc
-    this(ubyte data)
+    IonType type() @safe pure nothrow @nogc const @property
     {
-        type = cast(IonType) (data >> 4);
-        L = data & 0xF;
+        assert(reference);
+        return cast(typeof(return))((*reference) >> 4);
+    }
+    ///
+    uint L() @safe pure nothrow @nogc const @property
+    {
+        assert(reference);
+        return cast(typeof(return))((*reference) & 0xF);
     }
 }
 
@@ -75,7 +70,7 @@ struct IonDescribedValue
     ///
     IonDescriptor descriptor;
     ///
-    const(ubyte)[] data;
+    ubyte[] data;
 }
 
 struct VarUIntResult
@@ -159,7 +154,7 @@ IonErrorCode parseVarInt(scope const(ubyte)[] data, ref size_t shift, out sizedi
 /++
 +/
 @safe pure nothrow @nogc
-ParseResult parseValue(const(ubyte)[] data, out IonDescribedValue describedValue)
+ParseResult parseValue(ubyte[] data, out IonDescribedValue describedValue)
 {
     version(LDC) pragma(inline, false);
     // import mir.bitop: ctlz;
@@ -170,23 +165,25 @@ ParseResult parseValue(const(ubyte)[] data, out IonDescribedValue describedValue
         return typeof(return)(IonErrorCode.unexpectedEndOfData, shift);
 
     shift = 1;
-    ubyte descriptorData = data[0];
+    describedValue = IonDescribedValue(IonDescriptor((()@trusted => data.ptr)()));
+    ubyte descriptorData = *describedValue.descriptor.reference;
 
     if (_expect(descriptorData > 0xEE, false))
         return typeof(return)(IonErrorCode.illegalTypeDescriptor, shift);
 
-    describedValue = IonDescribedValue(IonDescriptor(descriptorData));
+    const L = uint(descriptorData & 0xF);
+    const type = cast(IonType)(descriptorData >> 4);
     // if null
-    if (describedValue.descriptor.L == 0xF)
+    if (L == 0xF)
         return typeof(return)(IonErrorCode.none, shift);
     // if bool
-    if (describedValue.descriptor.type == IonType.bool_)
+    if (type == IonType.bool_)
     {
-        if (_expect(describedValue.descriptor.L > 1, false))
+        if (_expect(L > 1, false))
             return typeof(return)(IonErrorCode.illegalTypeDescriptor, shift);
         return typeof(return)(IonErrorCode.none, shift);
     }
-    size_t length = describedValue.descriptor.L;
+    size_t length = L;
     // if large
     if (length == 0xE)
     {
@@ -200,7 +197,7 @@ ParseResult parseValue(const(ubyte)[] data, out IonDescribedValue describedValue
     shift = newShift;
 
     // NOP Padding
-    return typeof(return)(describedValue.descriptor.type == IonType.null_ ? IonErrorCode.nop : IonErrorCode.none, shift);
+    return typeof(return)(type == IonType.null_ ? IonErrorCode.nop : IonErrorCode.none, shift);
 }
 
 
@@ -232,7 +229,7 @@ struct IonInt
     ///
     bool sign;
     ///
-    const(ubyte)[] data;
+    ubyte[] data;
 
     /++
     Returns: true if the integer is `null.int` or `null`.
@@ -249,7 +246,7 @@ struct IonInt
 struct IonFloat
 {
     ///
-    const(ubyte)[] data;
+    ubyte[] data;
 
     /++
     Returns: true if the float is `null.float` or `null`.
@@ -266,7 +263,7 @@ struct IonFloat
 struct IonDecimal
 {
     ///
-    const(ubyte)[] data;
+    ubyte[] data;
 
     /++
     Returns: true if the decimal is `null.decimal` or `null`.
@@ -283,7 +280,7 @@ struct IonDecimal
 struct IonTimestamp
 {
     ///
-    const(ubyte)[] data;
+    ubyte[] data;
 
     /++
     Returns: true if the timestamp is `null.timestamp` or `null`.
@@ -300,7 +297,7 @@ struct IonTimestamp
 struct IonSymbol
 {
     ///
-    const(ubyte)[] data;
+    ubyte[] data;
 
     /++
     Returns: true if the symbol is `null.symbol` or `null`.
@@ -317,7 +314,7 @@ struct IonSymbol
 struct IonList
 {
     ///
-    const(ubyte)[] data;
+    ubyte[] data;
     private alias DG = scope int delegate(IonErrorCode error, IonDescribedValue value) @safe pure nothrow @nogc;
 
     /++
@@ -450,7 +447,7 @@ unittest
 struct IonSexp
 {
     /// data view.
-    const(ubyte)[] data;
+    ubyte[] data;
 
     private alias DG = IonList.DG;
 
@@ -562,7 +559,7 @@ struct IonSexp
 struct IonStruct
 {
     ///
-    const(ubyte)[] data;
+    ubyte[] data;
     private alias DG = scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value) @safe pure nothrow @nogc;
 
     /++
@@ -692,7 +689,7 @@ struct IonStruct
 struct IonAnnotationWrapper
 {
     ///
-    const(ubyte)[] data;
+    ubyte[] data;
 
     /++
     +/
@@ -718,7 +715,7 @@ struct IonAnnotationWrapper
 struct IonAnnotations
 {
     ///
-    const(ubyte)[] data;
+    ubyte[] data;
     private alias DG = int delegate(IonErrorCode error, size_t symbolId) @safe pure nothrow @nogc;
 
     /++
@@ -875,19 +872,19 @@ enum IonType
 
     /++
     Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#8-string, 8: string)
-    D_type: `const(char)[]`
+    D_type: `char[]`
     +/
     string,
 
     /++
     Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#9-clob, 9: clob)
-    D_type: `const(IonClobChar)[]`
+    D_type: `IonClobChar[]`
     +/
     clob,
 
     /++
     Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#0-blob, 10: blob)
-    D_type: `const(ubyte)[]`
+    D_type: `ubyte[]`
     +/
     blob,
 
