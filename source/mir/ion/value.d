@@ -18,28 +18,7 @@ Ion Value
 +/
 struct IonValue
 {
-    package const(ubyte)[] _data;
-
-    /++
-    Creates Ion Value value with the binary `data`.
-    Params:
-        data = Ion Value binary data
-    +/
-    @safe pure nothrow @nogc
-    this(const(ubyte)[] data) scope
-    {
-        this._data = data;
-    }
-
-    /++
-    Returns:
-        Binary Data
-    +/
-    @safe pure nothrow @nogc scope const @property
-    const(ubyte)[] data()
-    {
-        return _data;
-    }
+    const(ubyte)[] _data;
 
     /++
     Returns: GC-allocated copy.
@@ -61,6 +40,7 @@ enum IonErrorCode
     unexpectedEndOfData,
     overflowInParseVarUInt,
     overflowInParseVarInt,
+    zeroAnnotations,
 }
 
 struct IonParsed
@@ -119,7 +99,7 @@ struct ParseResult
 /++
 +/
 @safe pure nothrow @nogc
-IonErrorCode parseVarUInt(scope const(ubyte)[] data, out size_t shift, out size_t result)
+IonErrorCode parseVarUInt(scope const(ubyte)[] data, ref size_t shift, out size_t result)
 {
     version(LDC) pragma(inline, true);
     enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7);
@@ -140,7 +120,7 @@ IonErrorCode parseVarUInt(scope const(ubyte)[] data, out size_t shift, out size_
 /++
 +/
 @safe pure nothrow @nogc
-IonErrorCode parseVarInt(scope const(ubyte)[] data, out size_t shift, out sizediff_t result)
+IonErrorCode parseVarInt(scope const(ubyte)[] data, ref size_t shift, out sizediff_t result)
 {
     version(LDC) pragma(inline, true);
     enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7 - 1);
@@ -223,31 +203,625 @@ ParseResult parseValue(const(ubyte)[] data, out IonDescribedValue describedValue
     return typeof(return)(describedValue.descriptor.type == IonType.null_ ? IonErrorCode.nop : IonErrorCode.none, shift);
 }
 
+
+/++
++/
+struct IonClobChar
+{
+    ///
+    ubyte code;
+}
+
+/++
+Nullable boolean type.
++/
+enum IonBool : byte
+{
+    ///
+    null_ = -1,
+    ///
+    false_ = 0,
+    ///
+    true_ = 1,
+}
+
+/++
++/
+struct IonInt
+{
+    ///
+    bool sign;
+    ///
+    const(ubyte)[] data;
+
+    /++
+    Returns: true if the integer is `null.int` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+}
+
+/++
++/
+struct IonFloat
+{
+    ///
+    const(ubyte)[] data;
+
+    /++
+    Returns: true if the float is `null.float` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+}
+
+/++
++/
+struct IonDecimal
+{
+    ///
+    const(ubyte)[] data;
+
+    /++
+    Returns: true if the decimal is `null.decimal` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+}
+
+/++
++/
+struct IonTimestamp
+{
+    ///
+    const(ubyte)[] data;
+
+    /++
+    Returns: true if the timestamp is `null.timestamp` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+}
+
+/++
++/
+struct IonSymbol
+{
+    ///
+    const(ubyte)[] data;
+
+    /++
+    Returns: true if the symbol is `null.symbol` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+}
+
 /++
 +/
 struct IonList
 {
+    ///
     const(ubyte)[] data;
+    private alias DG = scope int delegate(IonErrorCode error, IonDescribedValue value) @safe pure nothrow @nogc;
+
+    /++
+    Returns: true if the sexp is `null.sexp` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+
+    /++
+    Returns: true if the sexp is `null.sexp`, `null`, or `()`.
+    Note: a NOP padding makes in the struct makes it non-empty.
+    +/
+    @safe pure nothrow @nogc
+    bool empty() const @property
+    {
+        return data.length == 0;
+    }
 
     /++
     +/
-    IonErrorCode forEach(alias fun)()
+    @safe pure nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value) @safe pure nothrow @nogc dg)
     {
         size_t shift;
-        while (shift < d.length)
+        while (shift < data.length)
         {
             IonDescribedValue describedValue;
             auto result = parseValue(data[shift .. $], describedValue);
             shift += result.length;
-            if (result.error < 0) // NOP
+            if (result.error == IonErrorCode.nop)
                 continue;
-            if (_expect(result.error, false))
-                return error;
-            if (auto error = fun(describedValue))
-                return error;
+            if (auto ret = dg(result.error, describedValue))
+                return ret;
+            assert(result.error == IonErrorCode.none, "User provided delegate MUST break the iteration when error has non-zero value.");
         }
+        return 0;
+    }
+
+    /// ditto
+    @trusted nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe pure @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure nothrow
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe pure nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe pure dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted nothrow
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system pure nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system pure @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure nothrow
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system pure nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system pure dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system nothrow
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system dg) { return opApply(cast(DG) dg); }
+}
+
+unittest
+{
+    foreach (errorCode, describedValue; IonList.init)
+    {
+        if (errorCode)
+            break;
+        //
+    }
+}
+
+/++
++/
+struct IonSexp
+{
+    /// data view.
+    const(ubyte)[] data;
+
+    private alias DG = IonList.DG;
+
+    /++
+    Returns: true if the sexp is `null.sexp` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+
+    /++
+    Returns: true if the sexp is `null.sexp`, `null`, or `()`.
+    Note: a NOP padding makes in the struct makes it non-empty.
+    +/
+    @safe pure nothrow @nogc
+    bool empty() const @property
+    {
+        return data.length == 0;
+    }
+
+    /++
+    +/
+    @safe pure nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value) @safe pure nothrow @nogc dg)
+    {
+        return IonList(data).opApply(dg);
+    }
+
+    /// ditto
+    @trusted nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe pure @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure nothrow
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe pure nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe pure dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted nothrow
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @safe dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system pure nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system pure @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure nothrow
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system pure nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system @nogc
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system pure dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system nothrow
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system
+    int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
+    @system dg) { return opApply(cast(DG) dg); }
+}
+
+/++
++/
+struct IonStruct
+{
+    ///
+    const(ubyte)[] data;
+    private alias DG = scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value) @safe pure nothrow @nogc;
+
+    /++
+    Returns: true if the struct is `null.struct` or `null`.
+    +/
+    @safe pure nothrow @nogc
+    bool opEquals(typeof(null)) const
+    {
+        return data is null;
+    }
+
+    /++
+    Returns: true if the struct is `null.struct`, `null`, or `()`.
+    Note: a NOP padding makes in the struct makes it non-empty.
+    +/
+    @safe pure nothrow @nogc
+    bool empty() const @property
+    {
+        return data.length == 0;
+    }
+
+    /++
+    +/
+    @safe pure nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value) @safe pure nothrow @nogc dg)
+    {
+        size_t shift;
+        while (shift < data.length)
+        {
+            IonErrorCode error;
+            size_t symbolId;
+            IonDescribedValue describedValue;
+            error = parseVarUInt(data, shift, symbolId);
+            if (!error)
+            {
+                auto result = parseValue(data[shift .. $], describedValue);
+                shift += result.length;
+                error = result.error;
+                if (!error == IonErrorCode.nop)
+                    continue;
+            }
+            if (auto ret = dg(error, symbolId, describedValue))
+                return ret;
+            assert(error == IonErrorCode.none, "User provided delegate MUST break the iteration when error has non-zero value.");
+        }
+        return 0;
+    }
+
+    /// ditto
+    @trusted nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @safe nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @safe pure @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure nothrow
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @safe pure nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @safe @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @safe pure dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted nothrow
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @safe nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @safe dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @system pure nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @system nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @system pure @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure nothrow
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @system pure nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @system @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @system pure dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system nothrow
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @system nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId, IonDescribedValue value)
+    @system dg) { return opApply(cast(DG) dg); }
+}
+
+/++
++/
+struct IonAnnotationWrapper
+{
+    ///
+    const(ubyte)[] data;
+
+    /++
+    +/
+    IonErrorCode unwrap(out IonAnnotations annotations, out IonValue value)
+    {
+        size_t shift;
+        size_t length;
+        if (auto error = parseVarUInt(data, shift, length))
+            return error;
+        auto d = data[shift .. $];
+        if (_expect(length == 0, false))
+            return IonErrorCode.zeroAnnotations;
+        if (_expect(length >= data.length, false))
+            return IonErrorCode.unexpectedEndOfData;
+        annotations = IonAnnotations(d[0 .. length]);
+        value = IonValue(d[length .. $]);
         return IonErrorCode.none;
     }
+}
+
+/++
++/
+struct IonAnnotations
+{
+    ///
+    const(ubyte)[] data;
+    private alias DG = int delegate(IonErrorCode error, size_t symbolId) @safe pure nothrow @nogc;
+
+    /++
+    Returns: true if no annotations provided.
+    +/
+    @safe pure nothrow @nogc
+    bool empty() const @property
+    {
+        return data.length == 0;
+    }
+
+    /++
+    +/
+    @safe pure nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId) @safe pure nothrow @nogc dg)
+    {
+        size_t shift;
+        assert(data.length);
+        while (shift < data.length)
+        {
+            size_t symbolId;
+            auto error = parseVarUInt(data, shift, symbolId);
+            if (auto ret = dg(error, symbolId))
+                return ret;
+            assert(error == IonErrorCode.none, "User provided delegate MUST break the iteration when error has non-zero value.");
+        }
+        return 0;
+    }
+
+    /// ditto
+    @trusted nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @safe nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @safe pure @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure nothrow
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @safe pure nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @safe @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted pure
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @safe pure dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted nothrow
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @safe nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @trusted
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @safe dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @system pure nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system nothrow @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @system nothrow @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @system pure @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure nothrow
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @system pure nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system @nogc
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @system @nogc dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system pure
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @system pure dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system nothrow
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @system nothrow dg) { return opApply(cast(DG) dg); }
+
+    /// ditto
+    @system
+    int opApply(scope int delegate(IonErrorCode error, size_t symbolId)
+    @system dg) { return opApply(cast(DG) dg); }
 }
 
 /++
@@ -255,35 +829,90 @@ $(HTTP amzn.github.io/ion-docs/docs/binary.html#typed-value-formats, Typed Value
 +/
 enum IonType
 {
-    /// $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#0-null, 0: null)
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#0-null, 0: null)
+    D_type: `typeof(null)`.
+    +/
     null_,
-    /// $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#1-bool, 1: bool)
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#1-bool, 1: bool)
+    D_type: $(LREF IonBool)
+    +/
     bool_,
-    /// $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#2-and-3-int, 2 and 3: int)
-    posInt,
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#2-and-3-int, 2 and 3: int)
+    D_type: $(LREF IonInt)
+    +/
+    uInt, 
     /// ditto
-    negInt,
-    /// $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#4-float, 4: float)
+    nInt,
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#4-float, 4: float)
+    D_type: $(LREF IonFloat)
+    +/
     float_,
-    /// $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#5-decimal, 5: decimal)
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#5-decimal, 5: decimal)
+    D_type: $(LREF IonDecimal)
+    +/
     decimal,
-    /// $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#6-timestamp, 6: timestamp)
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#6-timestamp, 6: timestamp)
+    D_type: $(LREF IonTimestamp)
+    +/
     timestamp,
-    /// $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#7-symbol, 7: symbol)
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#7-symbol, 7: symbol)
+    D_type: $(LREF IonSymbol)
+    +/
     symbol,
-    /// $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#8-string, 8: string)
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#8-string, 8: string)
+    D_type: `const(char)[]`
+    +/
     string,
-    /// $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#9-clob, 9: clob)
+
+    /++
+    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#9-clob, 9: clob)
+    D_type: `const(IonClobChar)[]`
+    +/
     clob,
-    /// $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#0-blob, 10: blob)
+
+    /++
+    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#0-blob, 10: blob)
+    D_type: `const(ubyte)[]`
+    +/
     blob,
-    /// $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#1-list, 11: list)
+
+    /++
+    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#1-list, 11: list)
+    D_type: $(LREF IonList)
+    +/
     list,
-    /// $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#2-sexp, 12: sexp)
+
+    /++
+    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#2-sexp, 12: sexp)
+    D_type: $(LREF IonSexp)
+    +/
     sexp,
-    /// $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#3-struct, 13: struct)
+
+    /++
+    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#3-struct, 13: struct)
+    D_type: $(LREF IonStruct)
+    +/
     struct_,
-    /// $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#4-annotations, 14: Annotations)
+
+    /++
+    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#4-annotations, 14: Annotations)
+    D_type: $(LREF IonAnnotationWrapper)
+    +/
     annotations,
 }
 
