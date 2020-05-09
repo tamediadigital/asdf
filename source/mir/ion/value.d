@@ -1,5 +1,7 @@
 module mir.ion.value;
 
+import mir.ion.exception;
+
 import mir.utility: _expect;
 
 /++
@@ -28,19 +30,6 @@ struct IonValue
     {
         return IonValue(data.dup);
     }
-}
-
-/++
-+/
-enum IonErrorCode
-{
-    nop = -1,
-    none = 0,
-    illegalTypeDescriptor,
-    unexpectedEndOfData,
-    overflowInParseVarUInt,
-    overflowInParseVarInt,
-    zeroAnnotations,
 }
 
 /++
@@ -324,8 +313,6 @@ struct IonSymbol
     }
 }
 
-static immutable Exception[] ionExceptions;
-
 /++
 +/
 struct IonList
@@ -361,7 +348,7 @@ struct IonList
     {
         return opApply((IonErrorCode error, IonDescribedValue value) {
             if (_expect(error, false))
-                throw ionExceptions[error];
+                throw error.ionException;
             return dg(value);
         });
     }
@@ -698,7 +685,7 @@ struct IonStruct
     {
         return opApply((IonErrorCode error, size_t symbolId, IonDescribedValue value) {
             if (_expect(error, false))
-                throw ionExceptions[error];
+                throw error.ionException;
             return dg(symbolId, value);
         });
     }
