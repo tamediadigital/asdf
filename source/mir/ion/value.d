@@ -254,40 +254,30 @@ struct IonUIntField
         value = (out) unsigned integer
     Returns: $(SUBREF exception, IonErrorCode)
     +/
-    IonErrorCode getUInt(U)(out U value)
+    IonErrorCode getUInt(U)(ref U value)
         @safe pure nothrow @nogc const
         if (is(U == ubyte) || is(U == ushort) || is(U == uint) || is(U == ulong))
     {
         auto d = cast()data;
+        size_t i;
         U f;
         if (d.length == 0)
             goto R;
-        do
+        for(;;)
         {
-            f = d[0];
-            if (_expect(f, true))
-            {
-                if (_expect(d.length <= U.sizeof, true))
-                {
-                    for(;;)
-                    {
-                        d = d[1 .. $];
-                        if (d.length == 0)
-                        {
-                            value = f;
-                        R:
-                            return IonErrorCode.none;
-                        }
-                        f <<= 8;
-                        f = d[0];
-                    }
-                }
-                return IonErrorCode.overflowInIntegerValue;
-            }
+            f |= d[0];
             d = d[1 .. $];
+            if (d.length == 0)
+            {
+            R:
+                value = f;
+                return IonErrorCode.none;
+            }
+            i += cast(bool)f;
+            f <<= 8;
+            if (_expect(i >= U.sizeof, false))
+                return IonErrorCode.overflowInIntegerValue;
         }
-        while (d.length);
-        goto R;
     }
 }
 
@@ -310,50 +300,39 @@ struct IonIntField
         value = (out) signed integer
     Returns: $(SUBREF exception, IonErrorCode)
     +/
-    IonErrorCode getInt(S)(out S value)
+    IonErrorCode getInt(S)(ref S value)
         @safe pure nothrow @nogc const
         if (is(S == byte) || is(S == short) || is(S == int) || is(S == long))
     {
+
         auto d = cast()data;
+        size_t i;
         S f;
         bool s;
         if (d.length == 0)
             goto R;
         f = d[0] & 0x7F;
         s = d[0] >> 7;
-        goto S;
-        do
+        for(;;)
         {
-            f = d[0];
-        S:
-            if (_expect(f, true))
-            {
-                if (_expect(d.length <= S.sizeof, true))
-                {
-                    for(;;)
-                    {
-                        d = d[1 .. $];
-                        if (d.length == 0)
-                        {
-                            if (_expect(f < 0, false))
-                                goto O;
-                            if (s)
-                                f = cast(S)(0-f);
-                            value = f;
-                        R:
-                            return IonErrorCode.none;
-                        }
-                        f <<= 8;
-                        f = d[0];
-                    }
-                }
-            O:
-                return IonErrorCode.overflowInIntegerValue;
-            }
             d = d[1 .. $];
+            if (d.length == 0)
+            {
+                if (_expect(f < 0, false))
+                    break;
+                if (s)
+                    f = cast(S)(0-f);
+            R:
+                value = f;
+                return IonErrorCode.none;
+            }
+            i += cast(bool)f;
+            f <<= 8;
+            f |= d[0];
+            if (_expect(i >= S.sizeof, false))
+                break;
         }
-        while (d.length);
-        goto R;
+        return IonErrorCode.overflowInIntegerValue;
     }
 }
 
@@ -496,7 +475,6 @@ struct IonNInt
     bool opEquals(long rhs)
         @safe pure nothrow @nogc const
     {
-        assert(field.data.length || this == null);
         if (rhs >= 0)
             return false;
         return IonUInt(IonUIntField((()@trusted => cast(ubyte[])field.data)())) == ulong(rhs);
@@ -562,7 +540,6 @@ struct IonFloat
     +/
     IonErrorCode get(T : double)(out T value)
     {
-        version (LittleEndian) import core.bitop : bswap;
         assert(this != null);
         value = 0;
         if (data.length == 8)
@@ -588,7 +565,6 @@ struct IonFloat
     +/
     IonErrorCode get(T : float)(out T value)
     {
-        version (LittleEndian) import core.bitop : bswap;
         assert(this != null);
         value = 0;
         if (data.length == 4)
@@ -608,6 +584,34 @@ struct IonFloat
 }
 
 /++
++/
+struct IonDescribedDecimal
+{
+    import std.traits: isFloatingPoint;
+
+    ///
+    sizediff_t exponent;
+    ///
+    IonIntField coefficient;
+
+    ///
+    // WIP
+    F getFloat(F)()
+        if (isFloatingPoint!F)
+    {
+        // TODO: more precise algorithm
+        F ret = coefficient.getInt!long;
+        if (ret)
+        {
+            import mir.utility: min, max;
+            import mir.math.common: powi;
+            ret *= pow(F(10), cast(int) exponent.max(int.min).max(int.min));
+        }
+        return ret;
+    }
+}
+
+/++
 Ion described decimal number.
 +/
 struct IonDecimal
@@ -622,6 +626,39 @@ struct IonDecimal
         @safe pure nothrow @nogc const
     {
         return data is null;
+    }
+
+    /++
+    Describes decimal (nothrow version).
+    Params:
+        value = (out) $(LREF IonDescribedDecimal)
+    Returns: $(SUBREF exception, IonErrorCode)
+    +/
+    IonErrorCode describe(ref IonDescribedDecimal value)
+        @safe pure nothrow @nogc
+    {
+        assert(this != null);
+        auto d = data;
+        if (auto error = parseVarInt(d, value.exponent))
+            return error;
+        value.coefficient = IonIntField(d);
+        return IonErrorCode.none;
+    }
+
+    version (D_Exceptions)
+    {
+        /++
+        Describes decimal.
+        Returns: $(LREF IonDescribedDecimal)
+        +/
+        IonDescribedDecimal describe()
+            @safe pure @nogc
+        {
+            IonDescribedDecimal ret;
+            if (auto error = describe(ret))
+                throw error.ionException;
+            return ret;
+        }
     }
 }
 
@@ -1439,6 +1476,25 @@ struct IonAnnotations
     @system dg) { return opApply(cast(DG) dg); }
 }
 
+private IonErrorCode parseVarUInt(ref scope const(ubyte)[] data, out size_t result)
+    @safe pure nothrow @nogc
+{
+    version(LDC) pragma(inline, true);
+    enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7);
+    for(;;)
+    {
+        if (_expect(data.length == 0, false))
+            return IonErrorCode.unexpectedEndOfData;
+        ubyte b = data[0];
+        result <<= 7;
+        result |= b & 0x7F;
+        if (cast(byte)b < 0)
+            return IonErrorCode.none;
+        if (_expect(result >= mLength, false))
+            return IonErrorCode.overflowInParseVarUInt;
+    }
+}
+
 private IonErrorCode parseVarUInt(scope const(ubyte)[] data, ref size_t shift, out size_t result)
     @safe pure nothrow @nogc
 {
@@ -1458,7 +1514,7 @@ private IonErrorCode parseVarUInt(scope const(ubyte)[] data, ref size_t shift, o
     }
 }
 
-private IonErrorCode parseVarInt(scope const(ubyte)[] data, ref size_t shift, out sizediff_t result)
+private IonErrorCode parseVarInt(ref scope ubyte[] data, out sizediff_t result)
     @safe pure nothrow @nogc
 {
     version(LDC) pragma(inline, true);
