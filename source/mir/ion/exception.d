@@ -21,9 +21,25 @@ enum IonErrorCode
     ///
     overflowInParseVarInt,
     ///
+    overflowInIntegerValue,
+    ///
     zeroAnnotations,
     ///
     illegalBinaryData,
+    ///
+    wrongBoolDescriptor,
+    ///
+    wrongIntDescriptor,
+    ///
+    wrongFloatDescriptor,
+    ///
+    nullBool,
+    ///
+    nullInt,
+    ///
+    nullFloat,
+    ///
+    nullTimestamp,
 }
 
 ///
@@ -50,8 +66,16 @@ string ionErrorMsg(IonErrorCode code) @property
         "unexpected end of data",
         "overflow in parseVarUInt",
         "overflow in parseVarInt",
+        "overflow in integer value",
         "at least one annotation is required",
         "illegal binary data",
+        "wrong bool descriptor",
+        "wrong int descriptor",
+        "wrong float descriptor",
+        "null bool",
+        "null int",
+        "null float",
+        "null timestamp",
     ];
     return msgs[code - IonErrorCode.min];
 }

@@ -162,9 +162,10 @@ struct IonValue
     Describes value (nothrow version).
     Params:
         value = (out) $(LREF IonDescribedValue)
-    Returns: $(LREF IonErrorCode)
+    Returns: $(SUBREF exception, IonErrorCode)
     +/
     IonErrorCode describe(out IonDescribedValue value)
+        @safe pure nothrow @nogc
     {
         auto result = parseValue(data, value);
         if (_expect(result.error, false))
@@ -181,6 +182,7 @@ struct IonValue
         Returns: $(LREF IonDescribedValue)
         +/
         IonDescribedValue describe()
+            @safe pure @nogc
         {
             IonDescribedValue ret;
             if (auto error = describe(ret))
@@ -236,7 +238,127 @@ struct IonDescribedValue
 }
 
 /++
-Nullable boolean type.
+Ion non-negative integer field.
++/
+struct IonUIntField
+{
+    ///
+    ubyte[] data;
+
+    alias D = getUInt!ubyte;
+    alias D = getUInt!ushort;
+    alias D = getUInt!uint;
+    alias D = getUInt!ulong;
+    /++
+    Params:
+        value = (out) unsigned integer
+    Returns: $(SUBREF exception, IonErrorCode)
+    +/
+    IonErrorCode getUInt(U)(out U value)
+        @safe pure nothrow @nogc const
+        if (is(U == ubyte) || is(U == ushort) || is(U == uint) || is(U == ulong))
+    {
+        auto d = cast()data;
+        U f;
+        if (d.length == 0)
+            goto R;
+        do
+        {
+            f = d[0];
+            if (_expect(f, true))
+            {
+                if (_expect(d.length <= U.sizeof, true))
+                {
+                    for(;;)
+                    {
+                        d = d[1 .. $];
+                        if (d.length == 0)
+                        {
+                            value = f;
+                        R:
+                            return IonErrorCode.none;
+                        }
+                        f <<= 8;
+                        f = d[0];
+                    }
+                }
+                return IonErrorCode.overflowInIntegerValue;
+            }
+            d = d[1 .. $];
+        }
+        while (d.length);
+        goto R;
+    }
+}
+
+/++
+Ion integer field.
++/
+struct IonIntField
+{
+    ///
+    ubyte[] data;
+
+
+    alias D = getInt!byte;
+    alias D = getInt!short;
+    alias D = getInt!int;
+    alias D = getInt!long;
+
+    /++
+    Params:
+        value = (out) signed integer
+    Returns: $(SUBREF exception, IonErrorCode)
+    +/
+    IonErrorCode getInt(S)(out S value)
+        @safe pure nothrow @nogc const
+        if (is(S == byte) || is(S == short) || is(S == int) || is(S == long))
+    {
+        auto d = cast()data;
+        S f;
+        bool s;
+        if (d.length == 0)
+            goto R;
+        f = d[0] & 0x7F;
+        s = d[0] >> 7;
+        goto S;
+        do
+        {
+            f = d[0];
+        S:
+            if (_expect(f, true))
+            {
+                if (_expect(d.length <= S.sizeof, true))
+                {
+                    for(;;)
+                    {
+                        d = d[1 .. $];
+                        if (d.length == 0)
+                        {
+                            if (_expect(f < 0, false))
+                                goto O;
+                            if (s)
+                                f = cast(S)(0-f);
+                            value = f;
+                        R:
+                            return IonErrorCode.none;
+                        }
+                        f <<= 8;
+                        f = d[0];
+                    }
+                }
+            O:
+                return IonErrorCode.overflowInIntegerValue;
+            }
+            d = d[1 .. $];
+        }
+        while (d.length);
+        goto R;
+    }
+}
+
+/++
+Nullable boolean type. Encodes `false`, `true`, and `null.bool`.
 +/
 struct IonBool
 {
@@ -246,8 +368,8 @@ struct IonBool
     /++
     Returns: true if the boolean is `null.bool`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
         assert (descriptor.type == IonTypeCode.bool_);
         return *descriptor.reference == 0x1F;
@@ -258,11 +380,28 @@ struct IonBool
         rhs = right hand side value for `==` and `!=` expressions.
     Returns: true if the boolean isn't `null.bool` and equals to the `rhs`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(bool rhs) const
+    bool opEquals(bool rhs)
+        @safe pure nothrow @nogc const
     {
         assert (descriptor.type == IonTypeCode.bool_);
         return descriptor.L == rhs;
+    }
+
+    /++
+    Params:
+        value = (out) `bool`
+    Returns: $(SUBREF exception, IonErrorCode)
+    Note: `null.bool` will return `IonErrorCode.nullBool` error.
+    +/
+    IonErrorCode getBool(out bool value)
+    {
+        auto d = *descriptor.reference;
+        value = d == 0x11;
+        if (_expect(d <= 0x11, true))
+            return IonErrorCode.none;
+        if (d == 0x1F)
+            return IonErrorCode.nullBool;
+        return IonErrorCode.wrongBoolDescriptor;
     }
 }
 
@@ -272,15 +411,65 @@ Ion non-negative integer number.
 struct IonUInt
 {
     ///
-    ubyte[] data;
+    IonUIntField field;
 
     /++
     Returns: true if the integer is `null.int`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
-        return data is null;
+        return field.data is null;
+    }
+
+    /++
+    Returns: true if the integer isn't `null.int` and equals to `rhs`.
+    +/
+    bool opEquals(ulong rhs)
+        @safe pure nothrow @nogc const
+    {
+        if (this == null)
+            return false;
+        foreach_reverse(d; field.data)
+        {
+            if (d != (rhs & 0xFF))
+                return false;
+            rhs >>>= 8;
+        }
+        return true;
+    }
+
+    /++
+    Params:
+        value = (out) unsigned integer
+    Returns: $(SUBREF exception, IonErrorCode)
+    Precondition: `this != null`.
+    +/
+    IonErrorCode getUInt(U)(out U value)
+        @safe pure nothrow @nogc const
+        if (is(U == ubyte) || is(U == ushort) || is(U == uint) || is(U == ulong))
+    {
+        assert(this != null);
+        return field.getUInt(value);
+    }
+
+    /++
+    Params:
+        value = (out) signed integer
+    Returns: $(SUBREF exception, IonErrorCode)
+    Precondition: `this != null`.
+    +/
+    IonErrorCode getInt(S)(out S value)
+        @trusted pure nothrow @nogc const
+        if (is(S == byte) || is(S == short) || is(S == int) || is(S == long))
+    {
+        import std.traits: Unsigned;
+        assert(this != null);
+        if (auto error = field.getUInt(*cast(Unsigned!S*)&value))
+            return error;
+        if (_expect(value < 0, false))
+            return IonErrorCode.overflowInIntegerValue;
+        return IonErrorCode.none;
     }
 }
 
@@ -290,15 +479,61 @@ Ion negative integer number.
 struct IonNInt
 {
     ///
-    ubyte[] data;
+    IonUIntField field;
 
     /++
     Returns: true if the integer is `null.int`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
-        return data is null;
+        return field.data is null;
+    }
+
+    /++
+    Returns: true if the integer isn't `null.int` and equals to `rhs`.
+    +/
+    bool opEquals(long rhs)
+        @safe pure nothrow @nogc const
+    {
+        assert(field.data.length || this == null);
+        if (rhs >= 0)
+            return false;
+        return IonUInt(IonUIntField((()@trusted => cast(ubyte[])field.data)())) == ulong(rhs);
+    }
+
+    /++
+    Params:
+        value = (out) unsigned integer
+    Returns: $(SUBREF exception, IonErrorCode)
+    Precondition: `this != null`.
+    +/
+    IonErrorCode getUInt(U)(out U value)
+        @safe pure nothrow @nogc const
+        if (is(U == ubyte) || is(U == ushort) || is(U == uint) || is(U == ulong))
+    {
+        assert(this != null);
+        return IonErrorCode.overflowInIntegerValue;
+    }
+
+    /++
+    Params:
+        value = (out) signed integer
+    Returns: $(SUBREF exception, IonErrorCode)
+    Precondition: `this != null`.
+    +/
+    IonErrorCode getInt(S)(out S value)
+        @trusted pure nothrow @nogc const
+        if (is(S == byte) || is(S == short) || is(S == int) || is(S == long))
+    {
+        import std.traits: Unsigned;
+        assert(this != null);
+        if (auto error = field.getUInt(*cast(Unsigned!S*)&value))
+            return error;
+        value = cast(S)(0-value);
+        if (_expect(value >= 0, false))
+            return IonErrorCode.overflowInIntegerValue;
+        return IonErrorCode.none;
     }
 }
 
@@ -313,15 +548,67 @@ struct IonFloat
     /++
     Returns: true if the float is `null.float`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
         return data is null;
+    }
+
+    /++
+    Params:
+        value = (out) `double`
+    Returns: $(SUBREF exception, IonErrorCode)
+    Precondition: `this != null`.
+    +/
+    IonErrorCode get(T : double)(out T value)
+    {
+        version (LittleEndian) import core.bitop : bswap;
+        assert(this != null);
+        value = 0;
+        if (data.length == 8)
+        {
+            value = parseDouble(data);
+            return IonErrorCode.none;
+        }
+        if (data.length == 4)
+        {
+            value = parseSingle(data);
+            return IonErrorCode.none;
+        }
+        if (_expect(data.length, false))
+            return IonErrorCode.wrongFloatDescriptor;
+        return IonErrorCode.none;
+    }
+
+    /++
+    Params:
+        value = (out) `float`
+    Returns: $(SUBREF exception, IonErrorCode)
+    Precondition: `this != null`.
+    +/
+    IonErrorCode get(T : float)(out T value)
+    {
+        version (LittleEndian) import core.bitop : bswap;
+        assert(this != null);
+        value = 0;
+        if (data.length == 4)
+        {
+            value = parseSingle(data);
+            return IonErrorCode.none;
+        }
+        if (data.length == 8)
+        {
+            value = parseDouble(data);
+            return IonErrorCode.none;
+        }
+        if (_expect(data.length, false))
+            return IonErrorCode.wrongFloatDescriptor;
+        return IonErrorCode.none;
     }
 }
 
 /++
-Ion decimal number.
+Ion described decimal number.
 +/
 struct IonDecimal
 {
@@ -331,12 +618,13 @@ struct IonDecimal
     /++
     Returns: true if the decimal is `null.decimal`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
         return data is null;
     }
 }
+
 
 /++
 Ion Timestamp
@@ -354,8 +642,8 @@ struct IonTimestamp
     /++
     Returns: true if the timestamp is `null.timestamp`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
         return data is null;
     }
@@ -375,8 +663,8 @@ struct IonSymbol
     /++
     Returns: true if the symbol is `null.symbol`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
         return data is null;
     }
@@ -395,8 +683,8 @@ struct IonString
     /++
     Returns: true if the string is `null.string`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
         return data is null;
     }
@@ -416,8 +704,8 @@ struct IonClob
     /++
     Returns: true if the clob is `null.clob`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
         return data is null;
     }
@@ -436,8 +724,8 @@ struct IonBlob
     /++
     Returns: true if the blob is `null.blob`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
         return data is null;
     }
@@ -456,8 +744,8 @@ struct IonList
     /++
     Returns: true if the sexp is `null.sexp`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
         return data is null;
     }
@@ -466,8 +754,8 @@ struct IonList
     Returns: true if the sexp is `null.sexp`, `null`, or `()`.
     Note: a NOP padding makes in the struct makes it non-empty.
     +/
-    @safe pure nothrow @nogc
     bool empty() const @property
+        @safe pure nothrow @nogc
     {
         return data.length == 0;
     }
@@ -642,8 +930,8 @@ struct IonSexp
     /++
     Returns: true if the sexp is `null.sexp`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
         return data is null;
     }
@@ -652,8 +940,8 @@ struct IonSexp
     Returns: true if the sexp is `null.sexp`, `null`, or `()`.
     Note: a NOP padding makes in the struct makes it non-empty.
     +/
-    @safe pure nothrow @nogc
     bool empty() const @property
+        @safe pure nothrow @nogc
     {
         return data.length == 0;
     }
@@ -801,8 +1089,8 @@ struct IonStruct
     /++
     Returns: true if the struct is `null.struct`.
     +/
-    @safe pure nothrow @nogc
-    bool opEquals(typeof(null)) const
+    bool opEquals(typeof(null))
+        @safe pure nothrow @nogc const
     {
         return data is null;
     }
@@ -811,8 +1099,8 @@ struct IonStruct
     Returns: true if the struct is `null.struct`, `null`, or `()`.
     Note: a NOP padding makes in the struct makes it non-empty.
     +/
-    @safe pure nothrow @nogc
     bool empty() const @property
+        @safe pure nothrow @nogc
     {
         return data.length == 0;
     }
@@ -983,9 +1271,10 @@ struct IonAnnotationWrapper
     Params:
         annotations = (out) $(LREF IonAnnotations)
         value = (out) $(LREF IonDescribedValue) or $(LREF IonValue)
-    Returns: $(LREF IonErrorCode)
+    Returns: $(SUBREF exception, IonErrorCode)
     +/
     IonErrorCode unwrap(out IonAnnotations annotations, out IonDescribedValue value)
+        @safe pure nothrow @nogc
     {
         IonValue v;
         if (auto error = unwrap(annotations, v))
@@ -995,6 +1284,7 @@ struct IonAnnotationWrapper
 
     /// ditto
     IonErrorCode unwrap(out IonAnnotations annotations, out IonValue value)
+        @safe pure nothrow @nogc
     {
         size_t shift;
         size_t length;
@@ -1019,6 +1309,7 @@ struct IonAnnotationWrapper
         Returns: $(LREF IonDescribedValue)
         +/
         IonDescribedValue unwrap(out IonAnnotations annotations)
+            @safe pure @nogc
         {
             IonDescribedValue ret;
             if (auto error = unwrap(annotations, ret))
@@ -1028,6 +1319,7 @@ struct IonAnnotationWrapper
 
         /// ditto
         IonDescribedValue unwrap()
+            @safe pure @nogc
         {
             IonAnnotations annotations;
             return unwrap(annotations);
@@ -1047,8 +1339,8 @@ struct IonAnnotations
     /++
     Returns: true if no annotations provided.
     +/
-    @safe pure nothrow @nogc
     bool empty() const @property
+        @safe pure nothrow @nogc
     {
         return data.length == 0;
     }
@@ -1147,8 +1439,8 @@ struct IonAnnotations
     @system dg) { return opApply(cast(DG) dg); }
 }
 
-@safe pure nothrow @nogc
 private IonErrorCode parseVarUInt(scope const(ubyte)[] data, ref size_t shift, out size_t result)
+    @safe pure nothrow @nogc
 {
     version(LDC) pragma(inline, true);
     enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7);
@@ -1166,8 +1458,8 @@ private IonErrorCode parseVarUInt(scope const(ubyte)[] data, ref size_t shift, o
     }
 }
 
-private @safe pure nothrow @nogc
-IonErrorCode parseVarInt(scope const(ubyte)[] data, ref size_t shift, out sizediff_t result)
+private IonErrorCode parseVarInt(scope const(ubyte)[] data, ref size_t shift, out sizediff_t result)
+    @safe pure nothrow @nogc
 {
     version(LDC) pragma(inline, true);
     enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7 - 1);
@@ -1209,8 +1501,8 @@ private struct IonParseResult
     size_t length;
 }
 
-private @safe pure nothrow @nogc
-IonParseResult parseValue(ubyte[] data, out IonDescribedValue describedValue)
+private IonParseResult parseValue(ubyte[] data, out IonDescribedValue describedValue)
+    @safe pure nothrow @nogc
 {
     version(LDC) pragma(inline, false);
     // import mir.bitop: ctlz;
@@ -1254,4 +1546,26 @@ IonParseResult parseValue(ubyte[] data, out IonDescribedValue describedValue)
 
     // NOP Padding
     return typeof(return)(type == IonTypeCode.null_ ? IonErrorCode.nop : IonErrorCode.none, shift);
+}
+
+private double parseDouble(scope const(ubyte)[] data)
+    @trusted pure nothrow @nogc
+{
+    version (LittleEndian) import core.bitop : bswap;
+    assert(data.length == 8);
+    double value;
+    *cast(ubyte[8]*) &value = cast(ubyte[8]) data[0 .. 8];
+    version (LittleEndian) *cast(ulong*)&value = bswap(*cast(ulong*)&value);
+    return value;
+}
+
+private float parseSingle(scope const(ubyte)[] data)
+    @trusted pure nothrow @nogc
+{
+    version (LittleEndian) import core.bitop : bswap;
+    assert(data.length == 4);
+    float value;
+    *cast(ubyte[4]*) &value = cast(ubyte[4]) data[0 .. 4];
+    version (LittleEndian) *cast(uint*)&value = bswap(*cast(uint*)&value);
+    return value;
 }
