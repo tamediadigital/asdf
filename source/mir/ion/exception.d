@@ -27,6 +27,8 @@ enum IonErrorCode
     ///
     illegalBinaryData,
     ///
+    illegalTimeStamp,
+    ///
     wrongBoolDescriptor,
     ///
     wrongIntDescriptor,
@@ -69,6 +71,7 @@ string ionErrorMsg(IonErrorCode code) @property
         "overflow in integer value",
         "at least one annotation is required",
         "illegal binary data",
+        "illegal timestamp",
         "wrong bool descriptor",
         "wrong int descriptor",
         "wrong float descriptor",
