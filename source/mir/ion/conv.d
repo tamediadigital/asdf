@@ -31,7 +31,7 @@ Switch:
         case IonTypeCode.decimal:
         {
             IonDescribedDecimal decimal;
-            if (auto error = value.trustedGet!IonDecimal.describe(decimal))
+            if (auto error = value.trustedGet!IonDecimal.get(decimal))
                 return error;
             result = checkData(decimal.coefficient.data);
             return IonErrorCode.none;

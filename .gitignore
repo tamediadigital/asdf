@@ -53,3 +53,4 @@ test
 libmir-ion.a
 mir-ion-test-library
 *.DS_Store
+.VSCodeCounter
