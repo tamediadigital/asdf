@@ -2,12 +2,11 @@
 module mir.ion.value;
 
 import mir.ion.exception;
+import mir.utility: _expect;
 import std.traits: isIntegral, isSigned, isUnsigned, Unsigned, Signed, isFloatingPoint;
 
-import mir.utility: _expect;
-
 /++
-Ion Binary Version Marker
+Ion Version Marker
 +/
 struct IonVersionMarker
 {
@@ -1308,7 +1307,6 @@ unittest
             IonDescribedTimestamp(2000, 7, 8, 2, 3, 4, -3, 16));
 }
 
-
 /++
 Ion Described Timestamp
 
@@ -1420,7 +1418,6 @@ struct IonDescribedTimestamp
             ));
         }
     }
-
 
     ///
     @safe pure nothrow @nogc
@@ -2265,6 +2262,43 @@ const:
     @system dg) { return opApply(cast(DG) dg); }
 }
 
+///
+@safe pure
+unittest
+{
+    // null.struct
+    assert(IonValue([0xDF]).describe.get!IonStruct == null);
+
+    // empty struct
+    auto ionStruct = IonValue([0xD0]).describe.get!IonStruct;
+    size_t i;
+    assert(ionStruct != null);
+    foreach (symbolID, elem; ionStruct)
+        i++;
+    assert(i == 0);
+
+    // added two 2-bytes NOP padings 0x8F 0x00
+    ionStruct = IonValue([0xDE, 0x91, 0x8F, 0x00, 0x8A, 0x21, 0x0C, 0x8B, 0x48, 0x43, 0x0C, 0x6B, 0xF5, 0x26, 0x34, 0x00, 0x00, 0x8F, 0x00])
+        .describe
+        .get!IonStruct;
+
+    foreach (symbolID, elem; ionStruct)
+    {
+        if (i == 0)
+        {
+            assert(symbolID == 10);
+            assert(elem.get!IonUInt.get!int == 12);
+        }
+        if (i == 1)
+        {
+            assert(symbolID == 11);
+            assert(elem.get!IonFloat.get!double == 100e13);
+        }
+        i++;
+    }
+    assert(i == 2);
+}
+
 /++
 Ion Annotation Wrapper
 +/
@@ -2335,13 +2369,44 @@ struct IonAnnotationWrapper
 
 }
 
+///
+@safe pure
+unittest
+{
+    // null.struct
+    IonAnnotations annotations;
+    assert(IonValue([0xE7, 0x82, 0x8A, 0x8B, 0x53, 0xC3, 0x04, 0x65])
+        .describe
+        .get!IonAnnotationWrapper
+        .unwrap(annotations)
+        .get!IonDecimal
+        .get!double == 1.125);
+
+    size_t i;
+    foreach (symbolID; annotations)
+    {
+        if (i == 0)
+        {
+            assert(symbolID == 10);
+        }
+        if (i == 1)
+        {
+            assert(symbolID == 11);
+        }
+        i++;
+    }
+    assert(i == 2);
+}
+
 /++
+List of annotations represented as symbol IDs.
 +/
 struct IonAnnotations
 {
     ///
     const(ubyte)[] data;
     private alias DG = int delegate(IonErrorCode error, size_t symbolID) @safe pure nothrow @nogc;
+    private alias EDG = int delegate(size_t symbolID) @safe pure @nogc;
 
     /++
     Returns: true if no annotations provided.
@@ -2353,6 +2418,56 @@ struct IonAnnotations
     }
 
 const:
+
+    version (D_Exceptions)
+    {
+        /++
+        +/
+        @safe pure @nogc
+        int opApply(scope int delegate(size_t symbolID) @safe pure @nogc dg)
+        {
+            return opApply((IonErrorCode error, size_t symbolID) {
+                if (_expect(error, false))
+                    throw error.ionException;
+                return dg(symbolID);
+            });
+        }
+
+        /// ditto
+        @trusted @nogc
+        int opApply(scope int delegate(size_t symbolID)
+        @safe @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @trusted pure
+        int opApply(scope int delegate(size_t symbolID)
+        @safe pure dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @trusted
+        int opApply(scope int delegate(size_t symbolID)
+        @safe dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system pure @nogc
+        int opApply(scope int delegate(size_t symbolID)
+        @system pure @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system @nogc
+        int opApply(scope int delegate(size_t symbolID)
+        @system @nogc dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system pure
+        int opApply(scope int delegate(size_t symbolID)
+        @system pure dg) { return opApply(cast(EDG) dg); }
+
+        /// ditto
+        @system
+        int opApply(scope int delegate(size_t symbolID)
+        @system dg) { return opApply(cast(EDG) dg); }
+    }
 
     /++
     +/
