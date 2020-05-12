@@ -17,6 +17,8 @@ enum IonErrorCode
     ///
     unexpectedEndOfData,
     ///
+    unexpectedIonType,
+    ///
     overflowInParseVarUInt,
     ///
     overflowInParseVarInt,
@@ -66,6 +68,7 @@ string ionErrorMsg(IonErrorCode code) @property
         "unexpected NOP Padding",
         "illegal type descriptor",
         "unexpected end of data",
+        "unexpected Ion type",
         "overflow in parseVarUInt",
         "overflow in parseVarInt",
         "overflow in integer value",

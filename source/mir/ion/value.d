@@ -2,6 +2,7 @@
 module mir.ion.value;
 
 import mir.ion.exception;
+import std.traits: isIntegral, isSigned, isUnsigned, Unsigned, Signed, isFloatingPoint;
 
 import mir.utility: _expect;
 
@@ -196,7 +197,7 @@ enum isIonType(T : IonString) = true;
 /// ditto
 enum isIonType(T : IonClob) = true;
 /// ditto
-enum isIonType(T : IonBool) = true;
+enum isIonType(T : IonBlob) = true;
 /// ditto
 enum isIonType(T : IonList) = true;
 /// ditto
@@ -312,21 +313,43 @@ struct IonDescribedValue
         return descriptor.L != 0xF;
     }
 
-    ///
-    IonBool getTrustedIon(T : bool)()
+    /++
+    Gets typed value (nothrow version).
+    Params:
+        value = (out) Ion Typed Value
+    Returns: $(SUBREF exception, IonErrorCode)
+    +/
+    IonErrorCode get(T)(ref T value)
         @safe pure nothrow @nogc const
+        if (isIonType!T)
     {
-        assert(descriptor.type == IonTypeCode.bool_);
-        return IonBool(descriptor);
+        if (_expect(descriptor.type != IonTypeCodeOf!T, false))
+            return IonErrorCode.unexpectedIonType;
+        value = trustedGet!T;
+        return IonErrorCode.none;
     }
 
     /++
+    Gets typed value.
+    Returns: Ion Typed Value
+    +/
+    T get(T)()
+        @safe pure @nogc const
+        if (isIonType!T)
+    {
+        if (_expect(descriptor.type != IonTypeCodeOf!T, false))
+            throw IonErrorCode.unexpectedIonType.ionException;
+        return trustedGet!T;
+    }
+
+    /++
+    Gets typed value (nothrow internal version).
     Returns:
         Ion Typed Value
     Note:
         This function doesn't check the encoded value type.
     +/
-    T trustedGetTypedValue(T)()
+    T trustedGet(T)()
         @safe pure nothrow @nogc const
         if (isIonType!T)
     {
@@ -351,6 +374,11 @@ struct IonDescribedValue
             return T(cast(const(char)[])data);
         }
         else
+        static if (is(T == IonUInt) || is(T == IonNInt))
+        {
+            return T(IonUIntField(data));
+        }
+        else
         {
             return T(data);
         }
@@ -370,8 +398,9 @@ struct IonUIntField
         value = (out) unsigned integer
     Returns: $(SUBREF exception, IonErrorCode)
     +/
-    IonErrorCode getImpl(U)(scope ref U value)
+    IonErrorCode get(U)(scope ref U value)
         @safe pure nothrow @nogc const
+        if (isUnsigned!U)
     {
         auto d = cast()data;
         size_t i;
@@ -394,15 +423,6 @@ struct IonUIntField
                 return IonErrorCode.overflowInIntegerValue;
         }
     }
-
-    /// ditto
-    alias get = getImpl!ubyte;
-    /// ditto
-    alias get = getImpl!ushort;
-    /// ditto
-    alias get = getImpl!uint;
-    /// ditto
-    alias get = getImpl!ulong;
 }
 
 /++
@@ -418,10 +438,10 @@ struct IonIntField
         value = (out) signed integer
     Returns: $(SUBREF exception, IonErrorCode)
     +/
-    IonErrorCode getImpl(S)(scope ref S value)
+    IonErrorCode get(S)(scope ref S value)
         @safe pure nothrow @nogc const
+        if (isSigned!S)
     {
-
         auto d = cast()data;
         size_t i;
         S f;
@@ -451,15 +471,6 @@ struct IonIntField
         }
         return IonErrorCode.overflowInIntegerValue;
     }
-
-    /// ditto
-    alias get = getImpl!byte;
-    /// ditto
-    alias get = getImpl!short;
-    /// ditto
-    alias get = getImpl!int;
-    /// ditto
-    alias get = getImpl!long;
 }
 
 /++
@@ -494,7 +505,7 @@ struct IonBool
 
     /++
     Returns: `bool`
-    Note: value must not be equal to `null.bool`.
+    Precondition: `this != null`.
     +/
     bool get()
         @safe pure nothrow @nogc const
@@ -502,8 +513,17 @@ struct IonBool
         assert(descriptor.reference);
         auto d = *descriptor.reference;
         assert((d | 1) == 0x11);
-        return cast(bool)(d | 1);
+        return d & 1;
     }
+}
+
+///
+@safe pure
+unittest
+{
+    assert(IonValue([0x1F]).describe.get!IonBool == null);
+    assert(IonValue([0x10]).describe.get!IonBool.get == false);
+    assert(IonValue([0x11]).describe.get!IonBool.get == true);
 }
 
 /++
@@ -546,43 +566,102 @@ struct IonUInt
     Returns: $(SUBREF exception, IonErrorCode)
     Precondition: `this != null`.
     +/
-    IonErrorCode getImplSigned(U)(scope ref U value)
-        @safe pure nothrow @nogc const
-    {
-        assert(this != null);
-        return field.getImpl(value);
-    }
-
-    /// ditto
-    IonErrorCode getImplUnsigned(S)(scope ref S value)
+    IonErrorCode get(T)(scope ref T value)
         @trusted pure nothrow @nogc const
+        if (isIntegral!T)
     {
-        import std.traits: Unsigned;
         assert(this != null);
-        if (auto error = field.getImpl(*cast(Unsigned!S*)&value))
-            return error;
-        if (_expect(value < 0, false))
-            return IonErrorCode.overflowInIntegerValue;
-        return IonErrorCode.none;
+        static if (isUnsigned!T)
+        {
+            return field.get(value);
+        }
+        else
+        {
+            if (auto error = field.get(*cast(Unsigned!T*)&value))
+                return error;
+            if (_expect(value < 0, false))
+                return IonErrorCode.overflowInIntegerValue;
+            return IonErrorCode.none;
+        }
     }
 
-    /// ditto
-    alias get = getImplUnsigned!ubyte;
-    /// ditto
-    alias get = getImplUnsigned!ushort;
-    /// ditto
-    alias get = getImplUnsigned!uint;
-    /// ditto
-    alias get = getImplUnsigned!ulong;
-    /// ditto
-    alias get = getImplSigned!byte;
-    /// ditto
-    alias get = getImplSigned!short;
-    /// ditto
-    alias get = getImplSigned!int;
-    /// ditto
-    alias get = getImplSigned!long;
+    /++
+    Returns: unsigned or signed integer
+    Precondition: `this != null`.
+    +/
+    T get(T)()
+        @safe pure @nogc const
+        if (isIntegral!T)
+    {
+        T ret;
+        if (auto error = get(ret))
+            throw error.ionException;
+        return ret;
+    }
+
+    /++
+    Returns: $(SUBREF exception, IonErrorCode)
+    Precondition: `this != null`.
+    +/
+    IonErrorCode getErrorCode(T)()
+        @trusted pure nothrow @nogc const
+        if (isIntegral!T)
+    {
+        T value;
+        return get!T(value);
+    }
 }
+
+///
+@safe pure
+unittest
+{
+    assert(IonValue([0x2F]).describe.get!IonUInt == null);
+    assert(IonValue([0x21, 0x07]).describe.get!IonUInt.get!int == 7);
+
+    int v;
+    assert(IonValue([0x22, 0x01, 0x04]).describe.get!IonUInt.get(v) == IonErrorCode.none);
+    assert(v == 260);
+}
+
+@safe pure
+unittest
+{
+    // IonNInt can't store zero according to the Ion Binary format specification.
+    alias AliasSeq(T...) = T;
+    foreach (T; AliasSeq!(byte, short, int, long, ubyte, ushort, uint, ulong))
+    {
+        // IonNInt can't store zero according to the Ion Binary format specification.
+        assert(IonValue([0x20]).describe.get!IonUInt.getErrorCode!T == 0);
+        assert(IonValue([0x21, 0x00]).describe.get!IonUInt.getErrorCode!T == 0);
+
+        assert(IonValue([0x21, 0x07]).describe.get!IonUInt.get!T == 7);
+        assert(IonValue([0x2E, 0x81, 0x07]).describe.get!IonUInt.get!T == 7);
+        assert(IonValue([0x2A, 0,0,0, 0,0,0, 0,0,0, 0x07]).describe.get!IonUInt.get!T == 7);
+    }
+
+    assert(IonValue([0x21, 0x7F]).describe.get!IonUInt.get!byte == byte.max);
+    assert(IonValue([0x22, 0x7F, 0xFF]).describe.get!IonUInt.get!short == short.max);
+    assert(IonValue([0x24, 0x7F, 0xFF,0xFF,0xFF]).describe.get!IonUInt.get!int == int.max);
+    assert(IonValue([0x28, 0x7F, 0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF]).describe.get!IonUInt.get!long == long.max);
+    assert(IonValue([0x2A, 0,0, 0x7F, 0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF]).describe.get!IonUInt.get!long == long.max);
+
+    assert(IonValue([0x21, 0xFF]).describe.get!IonUInt.get!ubyte == ubyte.max);
+    assert(IonValue([0x22, 0xFF, 0xFF]).describe.get!IonUInt.get!ushort == ushort.max);
+    assert(IonValue([0x24, 0xFF, 0xFF,0xFF,0xFF]).describe.get!IonUInt.get!uint == uint.max);
+    assert(IonValue([0x28, 0xFF, 0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF]).describe.get!IonUInt.get!ulong == ulong.max);
+    assert(IonValue([0x2A, 0,0, 0xFF, 0xFF,0xFF,0xFF, 0xFF,0xFF,0xFF,0xFF]).describe.get!IonUInt.get!ulong == ulong.max);
+
+    assert(IonValue([0x21, 0x80]).describe.get!IonUInt.getErrorCode!byte == IonErrorCode.overflowInIntegerValue);
+    assert(IonValue([0x22, 0x80, 0]).describe.get!IonUInt.getErrorCode!short == IonErrorCode.overflowInIntegerValue);
+    assert(IonValue([0x24, 0x80, 0,0,0]).describe.get!IonUInt.getErrorCode!int == IonErrorCode.overflowInIntegerValue);
+
+    assert(IonValue([0x22, 1, 0]).describe.get!IonUInt.getErrorCode!ubyte == IonErrorCode.overflowInIntegerValue);
+    assert(IonValue([0x23, 1, 0,0]).describe.get!IonUInt.getErrorCode!ushort == IonErrorCode.overflowInIntegerValue);
+    assert(IonValue([0x25, 1, 0,0,0,0]).describe.get!IonUInt.getErrorCode!uint == IonErrorCode.overflowInIntegerValue);
+    assert(IonValue([0x29, 1, 0,0,0,0,0,0,0,0]).describe.get!IonUInt.getErrorCode!ulong == IonErrorCode.overflowInIntegerValue);
+}
+
 
 /++
 Ion negative integer number.
@@ -614,52 +693,106 @@ struct IonNInt
 
     /++
     Params:
-        value = (out) unsigned integer
+        value = (out) signed or unsigned integer
     Returns: $(SUBREF exception, IonErrorCode)
     Precondition: `this != null`.
     +/
-    IonErrorCode getImplUnsigned(U)(scope ref U value)
-        @safe pure nothrow @nogc const
+    IonErrorCode get(T)(scope ref T value)
+        @trusted pure nothrow @nogc const
+        if (isIntegral!T)
     {
         assert(this != null);
-        return IonErrorCode.overflowInIntegerValue;
+        static if (isUnsigned!T)
+        {
+            return IonErrorCode.overflowInIntegerValue;
+        }
+        else
+        {
+            if (auto error = field.get(*cast(Unsigned!T*)&value))
+                return error;
+            value = cast(T)(0-value);
+            if (_expect(value >= 0, false))
+                return IonErrorCode.overflowInIntegerValue;
+            return IonErrorCode.none;
+        }
     }
 
     /++
-    Params:
-        value = (out) signed integer
+    Returns: unsigned or signed integer
+    Precondition: `this != null`.
+    +/
+    T get(T)()
+        @safe pure @nogc const
+        if (isIntegral!T)
+    {
+        T ret;
+        if (auto error = get(ret))
+            throw error.ionException;
+        return ret;
+    }
+
+    /++
     Returns: $(SUBREF exception, IonErrorCode)
     Precondition: `this != null`.
     +/
-    IonErrorCode getImplSigned(S)(scope ref S value)
+    IonErrorCode getErrorCode(T)()
         @trusted pure nothrow @nogc const
+        if (isIntegral!T)
     {
-        import std.traits: Unsigned;
-        assert(this != null);
-        if (auto error = field.get(*cast(Unsigned!S*)&value))
-            return error;
-        value = cast(S)(0-value);
-        if (_expect(value >= 0, false))
-            return IonErrorCode.overflowInIntegerValue;
-        return IonErrorCode.none;
+        T value;
+        return get!T(value);
+    }
+}
+
+///
+@safe pure
+unittest
+{
+    assert(IonValue([0x3F]).describe.get!IonNInt == null);
+    assert(IonValue([0x31, 0x07]).describe.get!IonNInt.get!int == -7);
+
+    long v;
+    assert(IonValue([0x32, 0x01, 0x04]).describe.get!IonNInt.get(v) == IonErrorCode.none);
+    assert(v == -260);
+
+    // IonNInt can't store zero according to the Ion Binary format specification.
+    assert(IonValue([0x30]).describe.get!IonNInt.getErrorCode!byte == IonErrorCode.overflowInIntegerValue);
+}
+
+@safe pure
+unittest
+{
+    // IonNInt can't store zero according to the Ion Binary format specification.
+    alias AliasSeq(T...) = T;
+    foreach (T; AliasSeq!(byte, short, int, long, ubyte, ushort, uint, ulong))
+    {
+        // IonNInt can't store zero according to the Ion Binary format specification.
+        assert(IonValue([0x30]).describe.get!IonNInt.getErrorCode!T == IonErrorCode.overflowInIntegerValue);
+        assert(IonValue([0x31, 0x00]).describe.get!IonNInt.getErrorCode!T == IonErrorCode.overflowInIntegerValue);
+
+        static if (!__traits(isUnsigned, T))
+        {   // signed
+            assert(IonValue([0x31, 0x07]).describe.get!IonNInt.get!T == -7);
+            assert(IonValue([0x3E, 0x81, 0x07]).describe.get!IonNInt.get!T == -7);
+            assert(IonValue([0x3A, 0,0,0, 0,0,0, 0,0,0, 0x07]).describe.get!IonNInt.get!T == -7);
+        }
+        else
+        {   // unsigned integers can't represent negative numbers
+            assert(IonValue([0x31, 0x07]).describe.get!IonNInt.getErrorCode!T == IonErrorCode.overflowInIntegerValue);
+            assert(IonValue([0x3E, 0x81, 0x07]).describe.get!IonNInt.getErrorCode!T == IonErrorCode.overflowInIntegerValue);
+            assert(IonValue([0x3A, 0,0,0, 0,0,0, 0,0,0, 0x07]).describe.get!IonNInt.getErrorCode!T == IonErrorCode.overflowInIntegerValue);
+        }
     }
 
-    /// ditto
-    alias get = getImplUnsigned!ubyte;
-    /// ditto
-    alias get = getImplUnsigned!ushort;
-    /// ditto
-    alias get = getImplUnsigned!uint;
-    /// ditto
-    alias get = getImplUnsigned!ulong;
-    /// ditto
-    alias get = getImplSigned!byte;
-    /// ditto
-    alias get = getImplSigned!short;
-    /// ditto
-    alias get = getImplSigned!int;
-    /// ditto
-    alias get = getImplSigned!long;
+    assert(IonValue([0x31, 0x80]).describe.get!IonNInt.get!byte == byte.min);
+    assert(IonValue([0x32, 0x80, 0]).describe.get!IonNInt.get!short == short.min);
+    assert(IonValue([0x34, 0x80, 0,0,0]).describe.get!IonNInt.get!int == int.min);
+    assert(IonValue([0x38, 0x80, 0,0,0, 0,0,0,0]).describe.get!IonNInt.get!long == long.min);
+
+    assert(IonValue([0x31, 0x81]).describe.get!IonNInt.getErrorCode!byte == IonErrorCode.overflowInIntegerValue);
+    assert(IonValue([0x32, 0x80, 1]).describe.get!IonNInt.getErrorCode!short == IonErrorCode.overflowInIntegerValue);
+    assert(IonValue([0x34, 0x80, 0,0,1]).describe.get!IonNInt.getErrorCode!int == IonErrorCode.overflowInIntegerValue);
+    assert(IonValue([0x38, 0x80, 0,0,0, 0,0,0,1]).describe.get!IonNInt.getErrorCode!long == IonErrorCode.overflowInIntegerValue);
 }
 
 /++
@@ -685,67 +818,68 @@ struct IonFloat
     Returns: $(SUBREF exception, IonErrorCode)
     Precondition: `this != null`.
     +/
-    IonErrorCode get(scope ref float value)
+    IonErrorCode get(T)(scope ref T value)
         @safe pure nothrow @nogc const
+        if (isFloatingPoint!T)
     {
         assert(this != null);
-        value = 0;
-        if (data.length == 4)
-        {
-            value = parseSingle(data);
-            return IonErrorCode.none;
-        }
         if (data.length == 8)
         {
             value = parseDouble(data);
             return IonErrorCode.none;
         }
+        if (data.length == 4)
+        {
+            value = parseSingle(data);
+            return IonErrorCode.none;
+        }
         if (_expect(data.length, false))
+        {
             return IonErrorCode.wrongFloatDescriptor;
+        }
+        value = 0;
         return IonErrorCode.none;
     }
 
-    /// ditto
-    IonErrorCode get(scope ref double value)
-        @safe pure nothrow @nogc const
+    /++
+    Returns: floating point number
+    Precondition: `this != null`.
+    +/
+    T get(T)()
+        @safe pure @nogc const
+        if (isFloatingPoint!T)
     {
-        assert(this != null);
-        value = 0;
-        if (data.length == 8)
-        {
-            value = parseDouble(data);
-            return IonErrorCode.none;
-        }
-        if (data.length == 4)
-        {
-            value = parseSingle(data);
-            return IonErrorCode.none;
-        }
-        if (_expect(data.length, false))
-            return IonErrorCode.wrongFloatDescriptor;
-        return IonErrorCode.none;
+        T ret;
+        if (auto error = get(ret))
+            throw error.ionException;
+        return ret;
     }
+}
 
-    /// ditto
-    IonErrorCode get(scope ref real value)
-        @safe pure nothrow @nogc const
-    {
-        assert(this != null);
-        value = 0;
-        if (data.length == 8)
-        {
-            value = parseDouble(data);
-            return IonErrorCode.none;
-        }
-        if (data.length == 4)
-        {
-            value = parseSingle(data);
-            return IonErrorCode.none;
-        }
-        if (_expect(data.length, false))
-            return IonErrorCode.wrongFloatDescriptor;
-        return IonErrorCode.none;
-    }
+///
+@safe pure
+unittest
+{
+    // null
+    assert(IonValue([0x4F]).describe.get!IonFloat == null);
+
+    // zero
+    auto ionFloat = IonValue([0x40]).describe.get!IonFloat;
+    assert(ionFloat.get!float == 0);
+    assert(ionFloat.get!double == 0);
+    assert(ionFloat.get!real == 0);
+
+    // single
+    ionFloat = IonValue([0x44, 0x42, 0xAA, 0x40, 0x00]).describe.get!IonFloat;
+    assert(ionFloat.get!float == 85.125);
+    assert(ionFloat.get!double == 85.125);
+    assert(ionFloat.get!real == 85.125);
+
+    // double
+    ionFloat = IonValue([0x48, 0x40, 0x55, 0x48, 0x00, 0x00, 0x00, 0x00, 0x00]).describe.get!IonFloat;
+    assert(ionFloat.get!float == 85.125);
+    assert(ionFloat.get!double == 85.125);
+    assert(ionFloat.get!real == 85.125);
 }
 
 /++
@@ -761,34 +895,42 @@ struct IonDescribedDecimal
 
     /++
     Params:
-        value = (out) `float`, `double`, or `real`
+        value = (out) floating point number
     Returns: $(SUBREF exception, IonErrorCode)
     Precondition: `this != null`.
     +/
-    IonErrorCode getImpl(F)(scope ref F value)
+    IonErrorCode get(T)(scope ref T value)
         @safe pure nothrow @nogc const
+        if (isFloatingPoint!T)
     {
         // TODO: more precise algorithm
         long coeff;
         if (auto error = coefficient.get(coeff))
             return error;
-        F v = coeff;
+        T v = coeff;
         if (v)
         {
             import mir.utility: min, max;
             import mir.math.common: powi;
-            v *= powi(F(10), cast(int) exponent.max(int.min).max(int.min));
+            v *= powi(T(10), cast(int) exponent.max(int.min).max(int.min));
         }
         value = v;
         return IonErrorCode.none;
     }
 
-    ///ditto
-    alias get = getImpl!float;
-    ///ditto
-    alias get = getImpl!double;
-    ///ditto
-    alias get = getImpl!real;
+    /++
+    Returns: floating point number
+    Precondition: `this != null`.
+    +/
+    T get(T)()
+        @safe pure @nogc const
+        if (isFloatingPoint!T)
+    {
+        T ret;
+        if (auto error = get(ret))
+            throw error.ionException;
+        return ret;
+    }
 }
 
 /++
@@ -1127,7 +1269,7 @@ struct IonSymbolID
         @safe pure nothrow @nogc const
     {
         assert(this != null);
-        return representation.getImpl(value);
+        return representation.get(value);
     }
 }
 
@@ -1925,6 +2067,7 @@ private IonErrorCode parseVarUInt(U)(scope ref const(ubyte)[] data, scope out U 
         if (_expect(data.length == 0, false))
             return IonErrorCode.unexpectedEndOfData;
         ubyte b = data[0];
+        data = data[1 .. $];
         result <<= 7;
         result |= b & 0x7F;
         if (cast(byte)b < 0)
@@ -1980,7 +2123,7 @@ private IonErrorCode parseValue(ref const(ubyte)[] data, scope ref IonDescribedV
     if (_expect(data.length == 0, false))
         return IonErrorCode.unexpectedEndOfData;
     auto descriptorPtr = &data[0];
-    data = data[1 .. 0];
+    data = data[1 .. $];
     ubyte descriptorData = *descriptorPtr;
 
     if (_expect(descriptorData > 0xEE, false))
