@@ -423,6 +423,35 @@ struct IonUIntField
                 return IonErrorCode.overflowInIntegerValue;
         }
     }
+
+    version (D_Exceptions)
+    {
+        /++
+        Returns: unsigned integer
+        Precondition: `this != null`.
+        +/
+        T get(T)()
+            @safe pure @nogc const
+            if (isUnsigned!T)
+        {
+            T ret;
+            if (auto error = get(ret))
+                throw error.ionException;
+            return ret;
+        }
+    }
+
+    /++
+    Returns: $(SUBREF exception, IonErrorCode)
+    Precondition: `this != null`.
+    +/
+    IonErrorCode getErrorCode(T)()
+        @trusted pure nothrow @nogc const
+        if (isUnsigned!T)
+    {
+        T value;
+        return get!T(value);
+    }
 }
 
 /++
@@ -438,13 +467,13 @@ struct IonIntField
         value = (out) signed integer
     Returns: $(SUBREF exception, IonErrorCode)
     +/
-    IonErrorCode get(S)(scope ref S value)
+    IonErrorCode get(T)(scope ref T value)
         @safe pure nothrow @nogc const
-        if (isSigned!S)
+        if (isSigned!T)
     {
         auto d = cast()data;
         size_t i;
-        S f;
+        T f;
         bool s;
         if (d.length == 0)
             goto R;
@@ -458,7 +487,7 @@ struct IonIntField
                 if (_expect(f < 0, false))
                     break;
                 if (s)
-                    f = cast(S)(0-f);
+                    f = cast(T)(0-f);
             R:
                 value = f;
                 return IonErrorCode.none;
@@ -466,10 +495,39 @@ struct IonIntField
             i += cast(bool)f;
             f <<= 8;
             f |= d[0];
-            if (_expect(i >= S.sizeof, false))
+            if (_expect(i >= T.sizeof, false))
                 break;
         }
         return IonErrorCode.overflowInIntegerValue;
+    }
+
+    version (D_Exceptions)
+    {
+        /++
+        Returns: signed integer
+        Precondition: `this != null`.
+        +/
+        T get(T)()
+            @safe pure @nogc const
+            if (isSigned!T)
+        {
+            T ret;
+            if (auto error = get(ret))
+                throw error.ionException;
+            return ret;
+        }
+    }
+
+    /++
+    Returns: $(SUBREF exception, IonErrorCode)
+    Precondition: `this != null`.
+    +/
+    IonErrorCode getErrorCode(T)()
+        @trusted pure nothrow @nogc const
+        if (isSigned!T)
+    {
+        T value;
+        return get!T(value);
     }
 }
 
@@ -584,7 +642,6 @@ struct IonUInt
             return IonErrorCode.none;
         }
     }
-
 
     version (D_Exceptions)
     {
@@ -941,7 +998,7 @@ struct IonDescribedDecimal
         Returns: floating point number
         Precondition: `this != null`.
         +/
-        T get(T)()
+        T get(T = double)()
             @safe pure @nogc const
             if (isFloatingPoint!T)
         {
@@ -956,7 +1013,7 @@ struct IonDescribedDecimal
     Returns: $(SUBREF exception, IonErrorCode)
     Precondition: `this != null`.
     +/
-    IonErrorCode getErrorCode(T)()
+    IonErrorCode getErrorCode(T = double)()
         @trusted pure nothrow @nogc const
         if (isFloatingPoint!T)
     {
@@ -993,10 +1050,33 @@ struct IonDecimal
     {
         assert(this != null);
         const(ubyte)[] d = data;
-        if (auto error = parseVarInt(d, value.exponent))
-            return error;
-        value.coefficient = IonIntField(d);
+        if (data.length)
+        {
+            if (auto error = parseVarInt(d, value.exponent))
+                return error;
+            value.coefficient = IonIntField(d);
+        }
+        else
+        {
+            value = T.init;
+        }
         return IonErrorCode.none;
+    }
+
+    /++
+    Params:
+        value = (out) floating point number
+    Returns: $(SUBREF exception, IonErrorCode)
+    Precondition: `this != null`.
+    +/
+    IonErrorCode get(T)(scope ref T value)
+        @safe pure nothrow @nogc const
+        if (isFloatingPoint!T)
+    {
+        IonDescribedDecimal decimal;
+        if (auto error = get(decimal))
+            return error;
+        return decimal.get(value);
     }
 
     version (D_Exceptions)
@@ -1025,6 +1105,19 @@ struct IonDecimal
         T value;
         return get!T(value);
     }
+}
+
+///
+@safe pure
+unittest
+{
+    // null.decimal
+    assert(IonValue([0x5F]).describe.get!IonDecimal == null);
+
+    auto describedDecimal = IonValue([0x56, 0x50, 0xcb, 0x80, 0xbc, 0x2d, 0x86]).describe.get!IonDecimal.get;
+    assert(describedDecimal.exponent == -2123);
+    assert(describedDecimal.coefficient.get!int == -12332422);
+    assert(IonValue([0x50]).describe.get!IonDecimal.get!double == 0);
 }
 
 /++
@@ -1184,6 +1277,9 @@ struct IonTimestamp
 @safe pure
 unittest
 {
+    // null.timestamp
+    assert(IonValue([0x6F]).describe.get!IonTimestamp == null);
+
     ubyte[][] set = [
         [0x68, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84,         ], // 2000-07-08T02:03:04Z with no fractional seconds
         [0x69, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84, 0x80,   ], // The same instant with 0d0 fractional seconds and implicit zero coefficient
@@ -1521,6 +1617,19 @@ struct IonString
     }
 }
 
+///
+@safe pure
+unittest
+{
+    // null.string
+    assert(IonValue([0x8F]).describe.get!IonString == null);
+    // empty string
+    assert(IonValue([0x80]).describe.get!IonString != null);
+    assert(IonValue([0x80]).describe.get!IonString.data == "");
+
+    assert(IonValue([0x85, 0x63, 0x6f, 0x76, 0x69, 0x64]).describe.get!IonString.data == "covid");
+}
+
 /++
 Ion Clob
 
@@ -1542,6 +1651,19 @@ struct IonClob
     }
 }
 
+///
+@safe pure
+unittest
+{
+    // null.string
+    assert(IonValue([0x9F]).describe.get!IonClob == null);
+    // empty string
+    assert(IonValue([0x90]).describe.get!IonClob != null);
+    assert(IonValue([0x90]).describe.get!IonClob.data == "");
+
+    assert(IonValue([0x95, 0x63, 0x6f, 0x76, 0x69, 0x64]).describe.get!IonClob.data == "covid");
+}
+
 /++
 Ion Blob
 
@@ -1560,6 +1682,19 @@ struct IonBlob
     {
         return data is null;
     }
+}
+
+///
+@safe pure
+unittest
+{
+    // null.string
+    assert(IonValue([0xAF]).describe.get!IonBlob == null);
+    // empty string
+    assert(IonValue([0xA0]).describe.get!IonBlob != null);
+    assert(IonValue([0xA0]).describe.get!IonBlob.data == "");
+
+    assert(IonValue([0xA5, 0x63, 0x6f, 0x76, 0x69, 0x64]).describe.get!IonBlob.data == "covid");
 }
 
 /++
@@ -1738,14 +1873,23 @@ const:
     @system dg) { return opApply(cast(DG) dg); }
 }
 
+///
 unittest
 {
-    foreach (errorCode, describedValue; IonList.init)
+    // check parsing with NOP padding:
+    // [NOP, int, NOP, double, NOP]
+    auto list = IonValue([0xbe, 0x91, 0x00, 0x00, 0x21, 0x0c, 0x00, 0x00, 0x48, 0x43, 0x0c, 0x6b, 0xf5, 0x26, 0x34, 0x00, 0x00, 0x00, 0x00])
+        .describe.get!IonList;
+    size_t i;
+    foreach (elem; list)
     {
-        if (errorCode)
-            break;
-        //
+        if (i == 0)
+            assert(elem.get!IonUInt.get!int == 12);
+        if (i == 1)
+            assert(elem.get!IonFloat.get!double == 100e13);
+        i++;
     }
+    assert(i == 2);
 }
 
 /++
@@ -1908,6 +2052,25 @@ const:
     @system
     int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
     @system dg) { return opApply(cast(DG) dg); }
+}
+
+///
+unittest
+{
+    // check parsing with NOP padding:
+    // (NOP int NOP double NOP)
+    auto list = IonValue([0xce, 0x91, 0x00, 0x00, 0x21, 0x0c, 0x00, 0x00, 0x48, 0x43, 0x0c, 0x6b, 0xf5, 0x26, 0x34, 0x00, 0x00, 0x00, 0x00])
+        .describe.get!IonSexp;
+    size_t i;
+    foreach (elem; list)
+    {
+        if (i == 0)
+            assert(elem.get!IonUInt.get!int == 12);
+        if (i == 1)
+            assert(elem.get!IonFloat.get!double == 100e13);
+        i++;
+    }
+    assert(i == 2);
 }
 
 /++
