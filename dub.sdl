@@ -5,6 +5,8 @@ copyright "Tamedia Digital, 2016-, Symmetry Investments and Kaleidic Associates,
 license "BSL-1.0"
 dependency "mir-algorithm" version="*"
 dependency "mir-cpuid" version="*"
+dependency "mir-core" version=">=1.1.4"
+
 buildType "unittest-cov-sse42" {
     dflags "-mattr=+sse4.2" platform="ldc"
     buildOptions "debugMode" "coverage" "debugInfo" "unittests"

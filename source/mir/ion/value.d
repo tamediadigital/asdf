@@ -1117,6 +1117,7 @@ unittest
     assert(describedDecimal.exponent == -2123);
     assert(describedDecimal.coefficient.get!int == -12332422);
     assert(IonValue([0x50]).describe.get!IonDecimal.get!double == 0);
+    assert(IonValue([0x51, 0x83]).describe.get!IonDecimal.get!double == 0);
 }
 
 /++
@@ -2567,7 +2568,7 @@ private IonErrorCode parseVarUInt(U)(scope ref const(ubyte)[] data, scope out U 
     if (is(U == ubyte) || is(U == ushort) || is(U == uint) || is(U == ulong))
 {
     version(LDC) pragma(inline, true);
-    enum mLength = size_t(1) << (size_t.sizeof * 8 / 7 * 7);
+    enum mLength = U(1) << (U.sizeof * 8 / 7 * 7);
     for(;;)
     {
         if (_expect(data.length == 0, false))
