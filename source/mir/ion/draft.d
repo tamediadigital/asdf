@@ -152,66 +152,6 @@ struct VarUIntView(UInt, Endian endian = Endian.big)
 }
 
 /++
-Arbitrary length unsigned integer view.
-+/
-struct BigUIntView(UInt, Endian endian = MachineEndian)
-    if (isUnsigned!UInt)
-{
-    /++
-    A group of coefficients for a radix `UInt.max + 1`.
-
-    The order corresponds to endianness.
-    +/
-    UInt[] coefficients;
-
-    /++
-    Retrurns: signed integer view using the same data payload
-    +/
-    BigIntView!(Signed!UInt) signed() @safe pure nothrow @nogc @property
-    {
-        return typeof(return)(this);
-    }
-}
-
-/++
-Arbitrary length signed integer view.
-+/
-struct BigIntView(Int, Endian endian = MachineEndian)
-    if (isSigned!Int)
-{
-    /++
-    Self-assigned to unsigned integer view $(MREF BigUIntView).
-
-    Sign is stored in the most significant bit.
-
-    The number is encoded in two's-complement number system the same way
-    as common fixed length signed intgers.
-    +/
-    BigUIntView!(Unsigned!Int) unsigned;
-    /// ditto
-    alias unsigned this;
-
-    /++
-    Extracts sign bit
-    +/
-    bool sign() @safe pure nothrow @nogc const @property
-    {
-        return unsigned.coefficients.length && sign_assumeNonEmpty;
-    }
-
-    /++
-    Extracts sign bit
-
-    Assumes that coefficients aren't empty.
-    +/
-    bool sign_assumeNonEmpty() @safe pure nothrow @nogc const @property
-    {
-        assert(coefficients.length);
-        return cast(Int)coefficientsFromMostSignificant.front < 0;
-    }
-}
-
-/++
 Arbitrary length signed binary floating-point view with `sign` member.
 
 Note: this templated structure is represented by two templates with different payloads.
@@ -728,38 +668,6 @@ BigDecimalUIntView!UInt toBigDecimalUIntView(UInt)(DecimalReaderFellow!UInt num)
         return BigDecimalUIntView!UInt(num.coefficients[num.current .. $]);
     else
         return BigDecimalUIntView!UInt(num.coefficients[0 .. num.current + 1]);
-}
-
-@safe pure nothrow @nogc
-auto coefficientsFromLeastSignificant(T)(T num)
-    // if (is(UInt == uint) || is(UInt == ulong))
-{
-    import mir.ndslice.slice: sliced;
-    version (LittleEndian)
-    {
-        return num.coefficients.sliced;
-    }
-    else
-    {
-        import mir.ndslice.topology: retro;
-        return num.coefficients.sliced.retro;
-    }
-}
-
-@safe pure nothrow @nogc
-auto coefficientsFromLeastSignificant(T)(T num)
-    // if (is(UInt == uint) || is(UInt == ulong))
-{
-    import mir.ndslice.slice: sliced;
-    version (LittleEndian)
-    {
-        import mir.ndslice.topology: retro;
-        return num.coefficients.sliced;
-    }
-    else
-    {
-        return num.coefficients.sliced;
-    }
 }
 
 @safe pure nothrow @nogc
