@@ -3,6 +3,8 @@ module mir.bigint.utilities;
 import std.traits;
 import mir.checkedint;
 
+private enum inverseSign(string op) = op == "+" ? "-" : "+";
+
 /++
 +/
 enum WordEndian
@@ -35,19 +37,16 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
     +/
     UInt[] coefficients;
 
-    ///
-    alias ConstThis = BigUIntView!(const UInt, endian);
-
     /++
     Retrurns: signed integer view using the same data payload
     +/
-    BigIntView!(Signed!UInt, endian) signed() @safe pure nothrow @nogc @property
+    BigIntView!(UInt, endian) signed() @safe pure nothrow @nogc @property
     {
         return typeof(return)(this);
     }
 
     ///
-    ConstThis lightConst()
+    BigUIntView!(const UInt, endian) lightConst()
         const @safe pure nothrow @nogc @property
     {
         return typeof(return)(coefficients);
@@ -57,16 +56,16 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
 
     /++
     +/
-    sizediff_t opCmp(ConstThis rhs) const @safe pure nothrow @nogc
+    sizediff_t opCmp(BigUIntView!(const UInt, endian) rhs) const @safe pure nothrow @nogc
     {
         import mir.algorithm.iteration: cmp;
         if (auto d = this.coefficients.length - rhs.coefficients.length)
             return d;
-        return cmp(coefficientsFromMostSignificant(normalize(this.lightConst)), coefficientsFromMostSignificant(normalize(rhs)));
+        return cmp(this.lightConst.normalized.coefficientsFromMostSignificant, rhs.lightConst.normalized.coefficientsFromMostSignificant);
     }
 
     ///
-    bool opEquals(ConstThis rhs) const @safe pure nothrow @nogc @property
+    bool opEquals(BigUIntView!(const UInt, endian) rhs) const @safe pure nothrow @nogc @property
     {
         return this.coefficients == rhs.coefficients;
     }
@@ -92,7 +91,7 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
     }
 
     /++
-    Performs `big+=big` operatrion.
+    Performs `big+=big`, `big-=big` operatrion.
     Params:
         additive = value to add with non-empty coefficients
         overflow = (overflow) initial iteration overflow
@@ -100,8 +99,9 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
     Returns:
         true in case of unsigned overflow
     +/
-    bool opOpAssign(string op : "+")(ConstThis rhs, bool overflow = false)
-        @safe pure nothrow @nogc
+    bool opOpAssign(string op)(BigUIntView!(const UInt, endian) rhs, bool overflow = false)
+    @safe pure nothrow @nogc
+        if (op == "+" || op == "-")
     {
         assert(this.coefficients.length > 0);
         assert(rhs.coefficients.length <= this.coefficients.length);
@@ -110,17 +110,32 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
         do
         {
             bool overflowM;
-            ls.front = addu(ls.front, ls.front, overflowM);
-            ls.front = addu(ls.front, overflow, overflow);
+            static if (op == "+")
+            {
+                ls.front = addu(addu(ls.front, rs.front, overflowM), overflow, overflow);
+            }
+            else
+            {
+                ls.front = subu(subu(ls.front, rs.front, overflowM), overflow, overflow);
+            }
             overflow |= overflowM;
             ls.popFront;
             rs.popFront;
         }
         while(rs.length);
         if (overflow && ls.length)
-            return topMostSignificantPart(ls.length) += overflow;
-        else
-            return overflow;
+            return topMostSignificantPart(ls.length).opOpAssign!op(overflow);
+        return overflow;
+    }
+
+    /// ditto
+    bool opOpAssign(string op)(BigIntView!(const UInt, endian) rhs, bool overflow = false)
+    @safe pure nothrow @nogc
+        if (op == "+" || op == "-")
+    {
+        return rhs.sign == false ?
+            opOpAssign!op(rhs.unsigned):
+            opOpAssign!(inverseSign!op)(cast(UInt)(rhs.unsigned));
     }
 
     /++
@@ -131,21 +146,37 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
     Returns:
         true in case of unsigned overflow
     +/
-    bool opOpAssign(string op : "+")(UInt additive)
+    bool opOpAssign(string op, T)(const T rhs)
         @safe pure nothrow @nogc
+        if ((op == "+" || op == "-") && is(T == UInt))
     {
         assert(this.coefficients.length > 0);
         auto ns = this.coefficientsFromLeastSignificant;
+        UInt additive = rhs;
         do
         {
-            ns.front = addu(ns.front, additive, overflow);
+            bool overflow;
+            static if (op == "+")
+                ns.front = addu(ns.front, additive, overflow);
+            else
+                ns.front = subu(ns.front, additive, overflow);
             if (!overflow)
                 return overflow;
             additive = overflow;
             ns.popFront;
         }
         while (ns.length);
-        return true; // number is zero
+        return true;
+    }
+
+    /// ditto
+    bool opOpAssign(string op, T)(const T rhs)
+        @safe pure nothrow @nogc
+        if ((op == "+" || op == "-") && is(T == Signed!UInt))
+    {
+        return rhs >= 0 ?
+            opOpAssign!op(cast(UInt)rhs):
+            opOpAssign!(inverseSign!op)(cast(UInt)(-rhs));
     }
 
     /++
@@ -155,96 +186,135 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
     {
         return typeof(return)(unsigned, true);
     }
-}
 
-alias MyBitUint = BigUIntView!ulong;
-
-/++
-Strips zero most significant coefficients.
-+/
-BigUIntView!(T, endian) normalize(T, WordEndian endian)(BigUIntView!(T, endian) number)
-{
-    if (number.coefficients.length) do
+    static if (isMutable!UInt)
+    /++
+    +/
+    void bitwiseNotInPlace()
     {
-        static if (endian == WordEndian.big)
+        foreach(coefficient; this.coefficients)
+            coefficient = ~coefficient;
+    }
+
+    static if (isMutable!UInt)
+    /++
+    Performs `number=-number` operatrion.
+    Precondition: non-empty coefficients
+    Returns:
+        true if 'number=-number=0' and false otherwise
+    +/
+    bool twoComplementInPlace()
+    {
+        assert(coefficients.length);
+        bitwiseNotInPlace();
+        return this.opOpAssign!"+"(UInt(1));
+    }
+
+    /++
+    Returns: a slice of coefficients starting from the least significant.
+    +/
+    auto coefficientsFromLeastSignificant()
+        @safe pure nothrow @nogc
+    {
+        import mir.ndslice.slice: sliced;
+        static if (endian == WordEndian.little)
         {
-            if (number.coefficients[0])
-                break;
-            number.coefficients = number.coefficients[1 .. $];
+            return coefficients.sliced;
         }
         else
         {
-            if (number.coefficients[$ - 1])
-                break;
-            number.coefficients = number.coefficients[0 .. $ - 1];
+            import mir.ndslice.topology: retro;
+            return coefficients.sliced.retro;
         }
     }
-    while (number.coefficients.length);
-    return number;
+
+    /++
+    Returns: a slice of coefficients starting from the most significant.
+    +/
+    auto coefficientsFromMostSignificant()
+        @safe pure nothrow @nogc
+    {
+        import mir.ndslice.slice: sliced;
+        static if (endian == WordEndian.big)
+        {
+            return coefficients.sliced;
+        }
+        else
+        {
+            import mir.ndslice.topology: retro;
+            return coefficients.sliced.retro;
+        }
+    }
+
+    /++
+    Strips zero most significant coefficients.
+    +/
+    BigUIntView normalized()
+    {
+        auto number = this;
+        if (number.coefficients.length) do
+        {
+            static if (endian == WordEndian.big)
+            {
+                if (number.coefficients[0])
+                    break;
+                number.coefficients = number.coefficients[1 .. $];
+            }
+            else
+            {
+                if (number.coefficients[$ - 1])
+                    break;
+                number.coefficients = number.coefficients[0 .. $ - 1];
+            }
+        }
+        while (number.coefficients.length);
+        return number;
+    }
 }
 
-/++
-Strips zero most significant coefficients.
-Sets sign to zero if no coefficients were left.
-+/
-BigIntView!(T, endian) normalize(T, WordEndian endian)(BigIntView!(T, endian) number)
+unittest
 {
-    number.unsigned = normalize(number.unsigned);
-    number.sign = number.unsigned.coefficients.length == 0 ? false : number.sign;
-    return number;
+    alias UBig = BigUIntView!(ulong, WordEndian.little);
+
+    ulong[] data = [1, ulong.max-1, 0];
+
+    auto num = UBig(data).normalized;
+    assert(num.coefficientsFromLeastSignificant == [1, ulong.max-1]);
+    assert(num.coefficientsFromMostSignificant == [ulong.max-1, 1]);
+    assert((num += ulong.max) == false);
+    assert(num.coefficientsFromLeastSignificant == [0, ulong.max]);
+    assert((num += ulong.max) == false);
+    assert((num += ulong.max) == true); // overflow bit
+    assert(num.coefficientsFromLeastSignificant == [ulong.max-1, 0]);
+    assert((num -= ulong(1)) == false);
+    assert(num.coefficientsFromLeastSignificant == [ulong.max-2, 0]);
+    assert((num -= ulong.max) == true); // underflow bit
+    assert(num.coefficientsFromLeastSignificant == [ulong.max-1, ulong.max]);
+    assert((num -= long(-4)) == true); // overflow bit
+    assert(num.coefficientsFromLeastSignificant == [2, 0]);
+    // assert((num -= ulong.max - 3) == false);
+    // assert(num.coefficientsFromLeastSignificant == [3, ulong.max-1]);
 }
 
-/++
-Returns: a slice of coefficients starting from the least significant.
-+/
-auto coefficientsFromLeastSignificant(T, WordEndian endian)(BigUIntView!(T, endian) number)
-    @safe pure nothrow @nogc
-{
-    import mir.ndslice.slice: sliced;
-    static if (endian == WordEndian.little)
-    {
-        return number.coefficients.sliced;
-    }
-    else
-    {
-        import mir.ndslice.topology: retro;
-        return number.coefficients.sliced.retro;
-    }
-}
-
-/++
-Returns: a slice of coefficients starting from the most significant.
-+/
-auto coefficientsFromMostSignificant(UInt, WordEndian endian)(BigUIntView!(UInt, endian) number)
-    @safe pure nothrow @nogc
-{
-    import mir.ndslice.slice: sliced;
-    static if (endian == WordEndian.big)
-    {
-        return number.coefficients.sliced;
-    }
-    else
-    {
-        import mir.ndslice.topology: retro;
-        return number.coefficients.sliced.retro;
-    }
-}
+alias MyBitUint1 = BigUIntView!(const ulong);
+alias MyBitUint2 = BigUIntView!ulong;
+alias MyBitInt1 = BigIntView!(const ulong);
+alias MyBitInt2 = BigIntView!ulong;
 
 /++
 Arbitrary length signed integer view.
 +/
-struct BigIntView(Int, WordEndian endian = MachineEndian)
-    if (isSigned!Int)
+struct BigIntView(UInt, WordEndian endian = MachineEndian)
+    if (isUnsigned!UInt)
 {
     /++
     Self-assigned to unsigned integer view $(MREF BigUIntView).
 
     Sign is stored in the most significant bit.
 
-    The number is encoded in two's-complement number system the same way
-    as common fixed length signed intgers.
+    The number is encoded as pair of `unsigned` and `sign`.
     +/
-    BigUIntView!(Unsigned!Int, endian) unsigned;
+    BigUIntView!(UInt, endian) unsigned;
 
     /++
     Sign bit
@@ -252,11 +322,7 @@ struct BigIntView(Int, WordEndian endian = MachineEndian)
     bool sign;
 
     ///
-    alias ConstThis = BigIntView!(const Int, endian);
-    alias ConstUThis = BigUIntView!(const Unsigned!Int, endian);;
-
-    ///
-    ConstThis lightConst()
+    BigIntView!(const UInt, endian) lightConst()
         const @safe pure nothrow @nogc @property
     {
         return typeof(return)(unsigned.lightConst, sign);
@@ -266,7 +332,7 @@ struct BigIntView(Int, WordEndian endian = MachineEndian)
 
     /++
     +/
-    sizediff_t opCmp(ConstThis rhs) const @safe pure nothrow @nogc
+    sizediff_t opCmp(BigIntView!(const UInt, endian) rhs) const @safe pure nothrow @nogc
     {
         import mir.algorithm.iteration: cmp;
         if (auto s = rhs.sign - this.sign)
@@ -278,7 +344,7 @@ struct BigIntView(Int, WordEndian endian = MachineEndian)
     }
 
     ///
-    bool opEquals(ConstThis rhs) const @safe pure nothrow @nogc @property
+    bool opEquals(BigIntView!(const UInt, endian) rhs) const @safe pure nothrow @nogc @property
     {
         return this.sign == rhs.sign && this.unsigned == rhs.unsigned;
     }
@@ -298,60 +364,6 @@ struct BigIntView(Int, WordEndian endian = MachineEndian)
     }
 
     /++
-    Performs `big-=big` operatrion.
-    Params:
-        additive = unsigned value to add with non-empty coefficients
-        overflow = (overflow) initial iteration overflow
-    Precondition: non-empty coefficients length of greater or equal to the `rhs` coefficients length.
-    Returns:
-        true in case of unsigned overflow
-    +/
-    bool opOpAssign(string op : "-")(ConstUThis rhs, bool overflow = false)
-        @safe pure nothrow @nogc
-    {
-        assert(rhs.unsigned.coefficients.length > 0);
-        assert(this.unsigned.coefficients.length >= rhs.unsigned.coefficients.length);
-        if (sign)
-            return unsigned.opOpAssign!"+"(additive, overflow);
-        do
-        {
-            bool overflowM;
-            ls.front = subu(ls.front, ls.front, overflowM);
-            ls.front = subu(ls.front, overflow, overflow);
-            overflow |= overflowM;
-            ls.popFront;
-            rs.popFront;
-        }
-        while(rs.length);
-        if (overflow)
-        {
-            if (ls.length) do
-            {
-                ls.front = subu(ls.front, additive, overflow);
-                if (!overflow)
-                    return overflow;
-                additive = overflow;
-                ls.popFront;
-            }
-            while (ls.length);
-            sign = !sign;
-            applyNegative_assumeNonEmpty(unsigned);
-        }
-        return false;
-    }
-
-    bool opOpAssign(string op : "+")(ConstUThis rhs, bool overflow = false)
-        @safe pure nothrow @nogc
-    {
-        assert(rhs.unsigned.coefficients.length > 0);
-        assert(this.unsigned.coefficients.length >= rhs.unsigned.coefficients.length);
-        sign = !sign;
-        auto ret = this.opOpAssign!"-"(rhs, overflow);
-        sign = !sign;
-        return ret;
-    }
-
-    /++
     Performs `big+=big` operatrion.
     Params:
         additive = unsigned value to add with non-empty coefficients
@@ -360,79 +372,111 @@ struct BigIntView(Int, WordEndian endian = MachineEndian)
     Returns:
         true in case of unsigned overflow
     +/
-    bool opOpAssign(string op : "-")(ConstThis rhs, bool overflow = false)
-        @safe pure nothrow @nogc
+    bool opOpAssign(string op)(BigIntView!(const UInt, endian) rhs, bool overflow = false)
+    @safe pure nothrow @nogc
+        if (op == "+" || op == "-")
     {
         assert(rhs.unsigned.coefficients.length > 0);
         assert(this.unsigned.coefficients.length >= rhs.unsigned.coefficients.length);
-        return rhs.sign
-            ? this.opOpAssign!(op == "+" ? "-" : "+")(rhs.unsigned, overflow)
-            : this.opOpAssign!op(rhs.unsigned, overflow);
+        enum sum = op == "+";
+        // pos += pos
+        // neg += neg
+        // neg -= pos
+        // pos -= neg
+        if ((sign == rhs.sign) == sum)
+            return unsigned.opOpAssign!"+"(rhs.unsigned, overflow);
+        // pos -= pos
+        // pos += neg
+        // neg += pos
+        // neg -= neg
+        if (unsigned.opOpAssign!"-"(rhs.unsigned, overflow))
+        {
+            sign = !sign;
+            twoComplementInPlace;
+        }
+        return false;
     }
 
-    bool opOpAssign(string op)(Int rhs)
-        @safe pure nothrow @nogc
+    bool opOpAssign(string op)(BigUIntView!(const UInt, endian) rhs, bool overflow = false)
+    @safe pure nothrow @nogc
         if (op == "+" || op == "-")
     {
-        assert(this.coefficients.length > 0);
-        return additive < 0
-            ? this.opOpAssign!(op == "+" ? "-" : "+")(cast(UInt)(-rhs))
-            : this.opOpAssign!op(cast(UInt)(rhs));
+        return opOpAssign!op(rhs.signed, overflow);
     }
 
     /++
-    Performs `big-=scalar` operatrion.
+    Performs `big+=scalar` or `big-=scalar` operatrion.
     Precondition: non-empty coefficients
     Params:
         additive = unsigned value to add
     Returns:
         true in case of unsigned overflow
     +/
-    bool opOpAssign(string op : "-")(UInt additive)
+    bool opOpAssign(string op, T)(const T rhs)
         @safe pure nothrow @nogc
+        if ((op == "+" || op == "-") && is(T == Signed!UInt))
     {
         assert(this.coefficients.length > 0);
-        if (sign)
-            return unsigned += additive;
-        auto ns = this.coefficientsFromLeastSignificant;
-        do
+        enum sum = op == "+";
+        // pos += pos
+        // neg += neg
+        // neg -= pos
+        // pos -= neg
+        auto urhs = cast(UInt) (rhs < 0 ? -rhs : rhs);
+        if ((sign == (rhs < 0)) == sum)
+            return unsigned.opOpAssign!"+"(urhs, overflow);
+        // pos -= pos
+        // pos += neg
+        // neg += pos
+        // neg -= neg
+        if (unsigned.opOpAssign!"-"(urhs, overflow))
         {
-            ns.front = subu(ns.front, additive, overflow);
-            if (!overflow)
-                return overflow;
-            additive = overflow;
-            ns.popFront;
+            sign = !sign;
+            twoComplementInPlace;
         }
-        while (ns.length);
-        sign != sign;
-        applyNegative_assumeNonEmpty(unsigned);
+        return false;
+    }
+
+    /// ditto
+    bool opOpAssign(string op, T)(const T rhs)
+        @safe pure nothrow @nogc
+        if ((op == "+" || op == "-") && is(T == UInt))
+    {
+        assert(this.coefficients.length > 0);
+        enum sum = op == "+";
+        // pos += pos
+        // neg -= pos
+        if ((sign == false) == sum)
+            return unsigned.opOpAssign!"+"(rhs, overflow);
+        // pos -= pos
+        // neg += pos
+        if (unsigned.opOpAssign!"-"(rhs, overflow))
+        {
+            sign = !sign;
+            twoComplementInPlace;
+        }
         return false;
     }
 
     /++
     Returns: the same intger view with inversed sign
     +/
-    BigIntView opUnary(string op : "-")(ConstThis rhs, bool overflow = false)
+    BigIntView opUnary(string op : "-")()
     {
         return BigIntView(unsigned, !sign);
     }
-}
 
-/++
-Performs `number=-number` operatrion.
-Params:
-    number = (un)signed number view with non-empty coefficients
-Returns:
-    true if 'number=-number=0' and false otherwise
-+/
-bool applyNegative_assumeNonEmpty(UInt)(BigUIntView!UInt number)
-    if (is(UInt == uint) || is(UInt == ulong))
-in {
-    assert(number.coeffeicients.length);
-}
-do {
-    applyBitwiseNot_assumeNonEmpty(number);
-    return applyUnsignedAdd_assumeNonEmpty(number, 1);
+    /++
+    Strips zero most significant coefficients.
+    Sets sign to zero if no coefficients were left.
+    +/
+    BigIntView normalized()
+    {
+        auto number = this;
+        number.unsigned = number.unsigned.normalized;
+        number.sign = number.unsigned.coefficients.length == 0 ? false : number.sign;
+        return number;
+    }
 }
 
 /++
@@ -490,33 +534,5 @@ struct BigUIntAccumulator(UInt, WordEndian endian = MachineEndian)
             coefficients[length++] = coeffecient;
         else
             coefficients[$ - ++length] = coeffecient;
-    }
-}
-
-/++
-An utility type to wrap a local buffer to accumulate unsigned numbers.
-+/
-struct BigIntAccumulator(Int, WordEndian endian = MachineEndian)
-    if (isSigned!Int)
-{
-    /++
-    Self-assigned to unsigned integer accumulator $(MREF BigUIntAccumulator).
-
-    Sign is stored in the most significant bit of the current mist significant coeffecient.
-
-    The number is encoded in two's-complement number system the same way
-    as common fixed length signed intgers.
-    +/
-    BigUIntView!(Unsigned!Int) unsigned;
-    /// Sign
-    bool sign;
-
-    /++
-    Returns:
-        Current signed integer view.
-    +/
-    BigIntView!Int view() @safe pure nothrow @nogc @property
-    {
-        return typeof(return)(unsigned.view, sign);
     }
 }
