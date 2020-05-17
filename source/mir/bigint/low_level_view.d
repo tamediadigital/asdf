@@ -1,4 +1,9 @@
-module mir.bigint.utilities;
+/++
+Low-level betterC utilities for big integer arithmetic libraries.
+
+The module provides $(REF BigUIntAccumulator), $(REF BigUIntView), and $(LREF BigIntView).
++/
+module mir.bigint.low_level_view;
 
 import mir.checkedint;
 import std.traits;
@@ -758,10 +763,10 @@ unittest
     foreach (T; AliasSeq!(uint, ulong))
     foreach (endian; AliasSeq!(WordEndian.little, WordEndian.big))
     {
-        T[16 / T.sizeof] data;
-        auto accumulator = BigUIntAccumulator!(T, endian)(data);
+        T[16 / T.sizeof] buffer;
+        auto accumulator = BigUIntAccumulator!(T, endian)(buffer);
         assert(accumulator.length == 0);
-        assert(accumulator.coefficients.length == data.length);
+        assert(accumulator.coefficients.length == buffer.length);
         assert(accumulator.view.coefficients.length == 0);
         // needs to put a number before any operations on `.view`
         accumulator.put(1);
