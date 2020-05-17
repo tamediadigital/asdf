@@ -1,15 +1,19 @@
 module mir.bigint.utilities;
 
-import std.traits;
 import mir.checkedint;
+import std.traits;
 
+private alias cop(string op : "-") = subu;
+private alias cop(string op : "+") = addu;
 private enum inverseSign(string op) = op == "+" ? "-" : "+";
 
 /++
 +/
 enum WordEndian
 {
+    ///
     little,
+    ///
     big,
 }
 
@@ -17,18 +21,20 @@ version(LittleEndian)
 {
     /++
     +/
-    enum MachineEndian = WordEndian.little;
+    enum TargetEndian = WordEndian.little;
 }
 else
 {
-    enum MachineEndian = WordEndian.big;
+    /++
+    +/
+    enum TargetEndian = WordEndian.big;
 }
 
 /++
 Arbitrary length unsigned integer view.
 +/
-struct BigUIntView(UInt, WordEndian endian = MachineEndian)
-    if (isUnsigned!UInt)
+struct BigUIntView(UInt, WordEndian endian = TargetEndian)
+    if (is(Unqual!UInt == uint) || is(Unqual!UInt == ulong))
 {
     /++
     A group of coefficients for a radix `UInt.max + 1`.
@@ -61,7 +67,7 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
         import mir.algorithm.iteration: cmp;
         if (auto d = this.coefficients.length - rhs.coefficients.length)
             return d;
-        return cmp(this.lightConst.normalized.coefficientsFromMostSignificant, rhs.lightConst.normalized.coefficientsFromMostSignificant);
+        return cmp(this.lightConst.normalized.mostSignificantFirst, rhs.lightConst.normalized.mostSignificantFirst);
     }
 
     ///
@@ -90,10 +96,11 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
             return BigUIntView(coefficients[$ - length .. $]);
     }
 
+    static if (isMutable!UInt)
     /++
-    Performs `big+=big`, `big-=big` operatrion.
+    Performs `bool overflow = big +(-)= big` operatrion.
     Params:
-        additive = value to add with non-empty coefficients
+        rhs = value to add with non-empty coefficients
         overflow = (overflow) initial iteration overflow
     Precondition: non-empty coefficients length of greater or equal to the `rhs` coefficients length.
     Returns:
@@ -105,44 +112,39 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
     {
         assert(this.coefficients.length > 0);
         assert(rhs.coefficients.length <= this.coefficients.length);
-        auto ls = this.coefficientsFromLeastSignificant;
-        auto rs = rhs.coefficientsFromLeastSignificant;
+        auto ls = this.leastSignificantFirst;
+        auto rs = rhs.leastSignificantFirst;
         do
         {
             bool overflowM;
-            static if (op == "+")
-            {
-                ls.front = addu(addu(ls.front, rs.front, overflowM), overflow, overflow);
-            }
-            else
-            {
-                ls.front = subu(subu(ls.front, rs.front, overflowM), overflow, overflow);
-            }
+            ls.front = ls.front.cop!op(rs.front, overflowM).cop!op(overflow, overflow);
             overflow |= overflowM;
             ls.popFront;
             rs.popFront;
         }
         while(rs.length);
         if (overflow && ls.length)
-            return topMostSignificantPart(ls.length).opOpAssign!op(overflow);
+            return topMostSignificantPart(ls.length).opOpAssign!op(UInt(overflow));
         return overflow;
     }
 
+    static if (isMutable!UInt)
     /// ditto
     bool opOpAssign(string op)(BigIntView!(const UInt, endian) rhs, bool overflow = false)
     @safe pure nothrow @nogc
         if (op == "+" || op == "-")
     {
         return rhs.sign == false ?
-            opOpAssign!op(rhs.unsigned):
-            opOpAssign!(inverseSign!op)(cast(UInt)(rhs.unsigned));
+            opOpAssign!op(rhs.unsigned, overflow):
+            opOpAssign!(inverseSign!op)(rhs.unsigned, overflow);
     }
 
+    static if (isMutable!UInt)
     /++
-    Performs `big+=scalar` operatrion.
+    Performs `bool Overflow = big +(-)= scalar` operatrion.
     Precondition: non-empty coefficients
     Params:
-        additive = value to add
+        rhs = value to add
     Returns:
         true in case of unsigned overflow
     +/
@@ -151,15 +153,12 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
         if ((op == "+" || op == "-") && is(T == UInt))
     {
         assert(this.coefficients.length > 0);
-        auto ns = this.coefficientsFromLeastSignificant;
+        auto ns = this.leastSignificantFirst;
         UInt additive = rhs;
         do
         {
             bool overflow;
-            static if (op == "+")
-                ns.front = addu(ns.front, additive, overflow);
-            else
-                ns.front = subu(ns.front, additive, overflow);
+            ns.front = ns.front.cop!op(additive, overflow);
             if (!overflow)
                 return overflow;
             additive = overflow;
@@ -169,6 +168,7 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
         return true;
     }
 
+    static if (isMutable!UInt)
     /// ditto
     bool opOpAssign(string op, T)(const T rhs)
         @safe pure nothrow @nogc
@@ -179,12 +179,48 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
             opOpAssign!(inverseSign!op)(cast(UInt)(-rhs));
     }
 
+    static if (isMutable!UInt)
+    /++
+    Performs `UInt overflow = big *= scalar` operatrion.
+    Precondition: non-empty coefficients
+    Params:
+        rhs = unsigned value to multiply by
+    Returns:
+        unsigned overflow value
+    +/
+    UInt opOpAssign(string op : "*")(UInt rhs, UInt overflow = 0u)
+        @safe pure nothrow @nogc
+    {
+        assert(coefficients.length);
+        auto ns = this.leastSignificantFirst;
+        do
+        {
+            import mir.utility: extMul;
+            bool overflowM;
+            static if (is(UInt == uint))
+            {
+                auto ext = ulong(ns.front) * ulong(rhs);
+                ns.front = (cast(uint)(ext)).cop!"+"(overflow, overflowM);
+                overflow = cast(uint)(ext >>> 32) + overflowM;
+            }
+            else
+            {
+                auto ext = ns.front.extMul(rhs);
+                ns.front = ext.low.cop!"+"(overflow, overflowM);
+                overflow = ext.high + overflowM;
+            }
+            ns.popFront;
+        }
+        while (ns.length);
+        return overflow;
+    }
+
     /++
     Returns: the same intger view with inversed sign
     +/
     BigIntView!(UInt, endian) opUnary(string op : "-")()
     {
-        return typeof(return)(unsigned, true);
+        return typeof(return)(this, true);
     }
 
     static if (isMutable!UInt)
@@ -192,7 +228,7 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
     +/
     void bitwiseNotInPlace()
     {
-        foreach(coefficient; this.coefficients)
+        foreach (ref coefficient; this.coefficients)
             coefficient = ~coefficient;
     }
 
@@ -213,8 +249,8 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
     /++
     Returns: a slice of coefficients starting from the least significant.
     +/
-    auto coefficientsFromLeastSignificant()
-        @safe pure nothrow @nogc
+    auto leastSignificantFirst()
+        @safe pure nothrow @nogc @property
     {
         import mir.ndslice.slice: sliced;
         static if (endian == WordEndian.little)
@@ -231,8 +267,8 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
     /++
     Returns: a slice of coefficients starting from the most significant.
     +/
-    auto coefficientsFromMostSignificant()
-        @safe pure nothrow @nogc
+    auto mostSignificantFirst()
+        @safe pure nothrow @nogc @property
     {
         import mir.ndslice.slice: sliced;
         static if (endian == WordEndian.big)
@@ -247,7 +283,7 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
     }
 
     /++
-    Strips zero most significant coefficients.
+    Strips most significant zero coefficients.
     +/
     BigUIntView normalized()
     {
@@ -270,42 +306,85 @@ struct BigUIntView(UInt, WordEndian endian = MachineEndian)
         while (number.coefficients.length);
         return number;
     }
+
+    ///
+    BigIntView!(UInt, endian) withSign(bool sign)
+    {
+        return typeof(return)(this, sign);
+    }
 }
 
+///
+@safe pure nothrow
 unittest
 {
-    alias UBig = BigUIntView!(ulong, WordEndian.little);
+    import std.traits;
+    alias AliasSeq(T...) = T;
 
-    ulong[] data = [1, ulong.max-1, 0];
+    foreach (T; AliasSeq!(uint, ulong))
+    foreach (endian; AliasSeq!(WordEndian.little, WordEndian.big))
+    {
+        static if (endian == WordEndian.little)
+        {
+            T[3] lhsData = [1, T.max-1, 0];
+            T[3] rhsData = [T.max, T.max, 0];
+        }
+        else
+        {
+            T[3] lhsData = [0, T.max-1, 1];
+            T[3] rhsData = [0, T.max, T.max];
+        }
 
-    auto num = UBig(data).normalized;
-    assert(num.coefficientsFromLeastSignificant == [1, ulong.max-1]);
-    assert(num.coefficientsFromMostSignificant == [ulong.max-1, 1]);
-    assert((num += ulong.max) == false);
-    assert(num.coefficientsFromLeastSignificant == [0, ulong.max]);
-    assert((num += ulong.max) == false);
-    assert((num += ulong.max) == true); // overflow bit
-    assert(num.coefficientsFromLeastSignificant == [ulong.max-1, 0]);
-    assert((num -= ulong(1)) == false);
-    assert(num.coefficientsFromLeastSignificant == [ulong.max-2, 0]);
-    assert((num -= ulong.max) == true); // underflow bit
-    assert(num.coefficientsFromLeastSignificant == [ulong.max-1, ulong.max]);
-    assert((num -= long(-4)) == true); // overflow bit
-    assert(num.coefficientsFromLeastSignificant == [2, 0]);
-    // assert((num -= ulong.max - 3) == false);
-    // assert(num.coefficientsFromLeastSignificant == [3, ulong.max-1]);
+        auto lhs = BigUIntView!(T, endian)(lhsData).normalized;
+
+        /// bool overflow = bigUInt op= scalar
+        assert(lhs.leastSignificantFirst == [1, T.max-1]);
+        assert(lhs.mostSignificantFirst == [T.max-1, 1]);
+        assert((lhs += T.max) == false);
+        assert(lhs.leastSignificantFirst == [0, T.max]);
+        assert((lhs += T.max) == false);
+        assert((lhs += T.max) == true); // overflow bit
+        assert(lhs.leastSignificantFirst == [T.max-1, 0]);
+        assert((lhs -= T(1)) == false);
+        assert(lhs.leastSignificantFirst == [T.max-2, 0]);
+        assert((lhs -= T.max) == true); // underflow bit
+        assert(lhs.leastSignificantFirst == [T.max-1, T.max]);
+        assert((lhs -= Signed!T(-4)) == true); // overflow bit
+        assert(lhs.leastSignificantFirst == [2, 0]);
+        assert((lhs += Signed!T.max) == false); // overflow bit
+        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0]);
+
+        ///  bool overflow = bigUInt op= bigUInt/bigInt
+        lhs = BigUIntView!(T, endian)(lhsData);
+        auto rhs = BigUIntView!(T, endian)(rhsData).normalized;
+        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+        assert(rhs.leastSignificantFirst == [T.max, T.max]);
+        assert((lhs += rhs) == false);
+        assert(lhs.leastSignificantFirst == [Signed!T.max + 1, 0, 1]);
+        assert((lhs -= rhs) == false);
+        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+        assert((lhs += -rhs) == true);
+        assert(lhs.leastSignificantFirst == [Signed!T.max + 3, 0, T.max]);
+        assert((lhs += -(-rhs)) == true);
+        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+
+        /// UInt overflow = bigUInt *= scalar
+        assert((lhs *= T.max) == 0);
+        assert((lhs += T(Signed!T.max + 2)) == false);
+        assert(lhs.leastSignificantFirst == [0, Signed!T.max + 2, 0]);
+        lhs = lhs.normalized;
+        lhs.leastSignificantFirst[1] = T.max / 2 + 3;
+        assert(lhs.leastSignificantFirst == [0, T.max / 2 + 3]);
+        assert((lhs *= 8u) == 4);
+        assert(lhs.leastSignificantFirst == [0, 16]);
+    }
 }
-
-alias MyBitUint1 = BigUIntView!(const ulong);
-alias MyBitUint2 = BigUIntView!ulong;
-alias MyBitInt1 = BigIntView!(const ulong);
-alias MyBitInt2 = BigIntView!ulong;
 
 /++
 Arbitrary length signed integer view.
 +/
-struct BigIntView(UInt, WordEndian endian = MachineEndian)
-    if (isUnsigned!UInt)
+struct BigIntView(UInt, WordEndian endian = TargetEndian)
+    if (is(Unqual!UInt == uint) || is(Unqual!UInt == ulong))
 {
     /++
     Self-assigned to unsigned integer view $(MREF BigUIntView).
@@ -320,6 +399,25 @@ struct BigIntView(UInt, WordEndian endian = MachineEndian)
     Sign bit
     +/
     bool sign;
+
+    ///
+    inout(UInt)[] coefficients() inout @property
+    {
+        return unsigned.coefficients;
+    }
+
+    ///
+    this(UInt[] coefficients, bool sign = false)
+    {
+        this(BigUIntView!(UInt, endian)(coefficients), sign);
+    }
+
+    ///
+    this(BigUIntView!(UInt, endian) unsigned, bool sign = false)
+    {
+        this.unsigned = unsigned;
+        this.sign = sign;
+    }
 
     ///
     BigIntView!(const UInt, endian) lightConst()
@@ -364,9 +462,9 @@ struct BigIntView(UInt, WordEndian endian = MachineEndian)
     }
 
     /++
-    Performs `big+=big` operatrion.
+    Performs `bool overflow = big +(-)= big` operatrion.
     Params:
-        additive = unsigned value to add with non-empty coefficients
+        rhs = value to add with non-empty coefficients
         overflow = (overflow) initial iteration overflow
     Precondition: non-empty coefficients length of greater or equal to the `rhs` coefficients length.
     Returns:
@@ -376,8 +474,8 @@ struct BigIntView(UInt, WordEndian endian = MachineEndian)
     @safe pure nothrow @nogc
         if (op == "+" || op == "-")
     {
-        assert(rhs.unsigned.coefficients.length > 0);
-        assert(this.unsigned.coefficients.length >= rhs.unsigned.coefficients.length);
+        assert(rhs.coefficients.length > 0);
+        assert(this.coefficients.length >= rhs.coefficients.length);
         enum sum = op == "+";
         // pos += pos
         // neg += neg
@@ -392,11 +490,12 @@ struct BigIntView(UInt, WordEndian endian = MachineEndian)
         if (unsigned.opOpAssign!"-"(rhs.unsigned, overflow))
         {
             sign = !sign;
-            twoComplementInPlace;
+            unsigned.twoComplementInPlace;
         }
         return false;
     }
 
+    /// ditto
     bool opOpAssign(string op)(BigUIntView!(const UInt, endian) rhs, bool overflow = false)
     @safe pure nothrow @nogc
         if (op == "+" || op == "-")
@@ -405,10 +504,10 @@ struct BigIntView(UInt, WordEndian endian = MachineEndian)
     }
 
     /++
-    Performs `big+=scalar` or `big-=scalar` operatrion.
+    Performs `bool overflow = big +(-)= scalar` operatrion.
     Precondition: non-empty coefficients
     Params:
-        additive = unsigned value to add
+        rhs = value to add
     Returns:
         true in case of unsigned overflow
     +/
@@ -424,15 +523,15 @@ struct BigIntView(UInt, WordEndian endian = MachineEndian)
         // pos -= neg
         auto urhs = cast(UInt) (rhs < 0 ? -rhs : rhs);
         if ((sign == (rhs < 0)) == sum)
-            return unsigned.opOpAssign!"+"(urhs, overflow);
+            return unsigned.opOpAssign!"+"(urhs);
         // pos -= pos
         // pos += neg
         // neg += pos
         // neg -= neg
-        if (unsigned.opOpAssign!"-"(urhs, overflow))
+        if (unsigned.opOpAssign!"-"(urhs))
         {
             sign = !sign;
-            twoComplementInPlace;
+            unsigned.twoComplementInPlace;
         }
         return false;
     }
@@ -447,15 +546,30 @@ struct BigIntView(UInt, WordEndian endian = MachineEndian)
         // pos += pos
         // neg -= pos
         if ((sign == false) == sum)
-            return unsigned.opOpAssign!"+"(rhs, overflow);
+            return unsigned.opOpAssign!"+"(rhs);
         // pos -= pos
         // neg += pos
-        if (unsigned.opOpAssign!"-"(rhs, overflow))
+        if (unsigned.opOpAssign!"-"(rhs))
         {
             sign = !sign;
-            twoComplementInPlace;
+            unsigned.twoComplementInPlace;
         }
         return false;
+    }
+
+    static if (isMutable!UInt)
+    /++
+    Performs `UInt overflow = big *= scalar` operatrion.
+    Precondition: non-empty coefficients
+    Params:
+        rhs = unsigned value to multiply by
+    Returns:
+        unsigned overflow value
+    +/
+    UInt opOpAssign(string op : "*")(UInt rhs, UInt overflow = 0u)
+        @safe pure nothrow @nogc
+    {
+        return unsigned.opOpAssign!op(rhs, overflow);
     }
 
     /++
@@ -467,23 +581,103 @@ struct BigIntView(UInt, WordEndian endian = MachineEndian)
     }
 
     /++
+    Returns: a slice of coefficients starting from the least significant.
+    +/
+    auto leastSignificantFirst()
+        @safe pure nothrow @nogc @property
+    {
+        return unsigned.leastSignificantFirst;
+    }
+
+    /++
+    Returns: a slice of coefficients starting from the most significant.
+    +/
+    auto mostSignificantFirst()
+        @safe pure nothrow @nogc @property
+    {
+        return unsigned.mostSignificantFirst;
+    }
+
+    /++
     Strips zero most significant coefficients.
+    Strips most significant zero coefficients.
     Sets sign to zero if no coefficients were left.
     +/
     BigIntView normalized()
     {
         auto number = this;
         number.unsigned = number.unsigned.normalized;
-        number.sign = number.unsigned.coefficients.length == 0 ? false : number.sign;
+        number.sign = number.coefficients.length == 0 ? false : number.sign;
         return number;
+    }
+}
+
+///
+@safe pure nothrow
+unittest
+{
+    import std.traits;
+    alias AliasSeq(T...) = T;
+
+    foreach (T; AliasSeq!(uint, ulong))
+    foreach (endian; AliasSeq!(WordEndian.little, WordEndian.big))
+    {
+        static if (endian == WordEndian.little)
+        {
+            T[3] lhsData = [1, T.max-1, 0];
+            T[3] rhsData = [T.max, T.max, 0];
+        }
+        else
+        {
+            T[3] lhsData = [0, T.max-1, 1];
+            T[3] rhsData = [0, T.max, T.max];
+        }
+
+        auto lhs = BigIntView!(T, endian)(lhsData).normalized;
+
+        ///  bool overflow = bigUInt op= scalar
+        assert(lhs.leastSignificantFirst == [1, T.max-1]);
+        assert(lhs.mostSignificantFirst == [T.max-1, 1]);
+        assert((lhs += T.max) == false);
+        assert(lhs.leastSignificantFirst == [0, T.max]);
+        assert((lhs += T.max) == false);
+        assert((lhs += T.max) == true); // overflow bit
+        assert(lhs.leastSignificantFirst == [T.max-1, 0]);
+        assert((lhs -= T(1)) == false);
+        assert(lhs.leastSignificantFirst == [T.max-2, 0]);
+        assert((lhs -= T.max) == false);
+        assert(lhs.leastSignificantFirst == [2, 0]);
+        assert(lhs.sign);
+        assert((lhs -= Signed!T(-4)) == false);
+        assert(lhs.leastSignificantFirst == [2, 0]);
+        assert(lhs.sign == false);
+        assert((lhs += Signed!T.max) == false);
+        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0]);
+
+        ///  bool overflow = bigUInt op= bigUInt/bigInt
+        lhs = BigIntView!(T, endian)(lhsData);
+        auto rhs = BigUIntView!(T, endian)(rhsData).normalized;
+        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+        assert(rhs.leastSignificantFirst == [T.max, T.max]);
+        assert((lhs += rhs) == false);
+        assert(lhs.leastSignificantFirst == [Signed!T.max + 1, 0, 1]);
+        assert((lhs -= rhs) == false);
+        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+        assert((lhs += -rhs) == false);
+        assert(lhs.sign);
+        assert(lhs.leastSignificantFirst == [T.max - (Signed!T.max + 2), T.max, 0]);
+        assert(lhs.sign);
+        assert((lhs -= -rhs) == false);
+        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+        assert(lhs.sign == false);
     }
 }
 
 /++
 An utility type to wrap a local buffer to accumulate unsigned numbers.
 +/
-struct BigUIntAccumulator(UInt, WordEndian endian = MachineEndian)
-    if (isUnsigned!UInt)
+struct BigUIntAccumulator(UInt, WordEndian endian = TargetEndian)
+    if (is(Unqual!UInt == uint) || is(Unqual!UInt == ulong))
 {
     /++
     A group of coefficients for a $(MREF DecimalRadix)`!UInt`.
@@ -498,14 +692,20 @@ struct BigUIntAccumulator(UInt, WordEndian endian = MachineEndian)
     Current length of initialized coefficients.
 
     The initialization order corresponds to endianness.
+
+    The `view` method may return a view with empty coefficients, which isn't usable.
+    Put `0` or another number first to make the accumulator maintain a non-empty view.
     +/
     size_t length;
 
     /++
     Returns:
-        Current unsigned integer view
+        Current unsigned integer view.
+    Note:
+        The method may return a view with empty coefficients, which isn't usable.
+        Put `0` or another number first to make the accumulator maintain a non-empty view.
     +/
-    BigUIntView!UInt view() @safe pure nothrow @nogc @property
+    BigUIntView!(UInt, endian) view() @safe pure nothrow @nogc @property
     {
         static if (endian == WordEndian.little)
             return typeof(return)(coefficients[0 .. length]);
@@ -517,9 +717,9 @@ struct BigUIntAccumulator(UInt, WordEndian endian = MachineEndian)
     Returns:
         True if the accumulator can accept next most significant coefficient 
     +/
-    bool canPut()
+    bool canPut() @property
     {
-        return length < coeffecients.length;
+        return length < coefficients.length;
     }
 
     /++
@@ -527,12 +727,59 @@ struct BigUIntAccumulator(UInt, WordEndian endian = MachineEndian)
     +/
     void put(UInt coeffecient)
     in {
-        assert(length < coeffecients.length);
+        assert(length < coefficients.length);
     }
     do {
         static if (endian == WordEndian.little)
             coefficients[length++] = coeffecient;
         else
             coefficients[$ - ++length] = coeffecient;
+    }
+
+    /++
+    Strips most significant zero coefficients from the current `view`.
+    Note:
+        The `view` method may return a view with empty coefficients, which isn't usable.
+        Put `0` or another number first to make the accumulator maintain a non-empty view.
+    +/
+    void normalize()
+    {
+        length = view.normalized.coefficients.length;
+    }
+}
+
+///
+@safe pure
+unittest
+{
+    import std.traits;
+    alias AliasSeq(T...) = T;
+
+    foreach (T; AliasSeq!(uint, ulong))
+    foreach (endian; AliasSeq!(WordEndian.little, WordEndian.big))
+    {
+        T[16 / T.sizeof] data;
+        auto accumulator = BigUIntAccumulator!(T, endian)(data);
+        assert(accumulator.length == 0);
+        assert(accumulator.coefficients.length == data.length);
+        assert(accumulator.view.coefficients.length == 0);
+        // needs to put a number before any operations on `.view`
+        accumulator.put(1);
+        // compute N factorial
+        auto N = 30;
+        foreach(i; 1 .. N + 1)
+        {
+            if (auto overflow = accumulator.view *= i)
+            {
+                if (!accumulator.canPut)
+                    throw new Exception("Factorial buffer overflow");
+                accumulator.put(overflow);
+            }
+        }
+        // 0xD13F6370F96865DF5DD54000000
+        static if (is(T == uint))
+            assert(accumulator.view.mostSignificantFirst == [0xD13, 0xF6370F96, 0x865DF5DD, 0x54000000]);
+        else
+            assert(accumulator.view.mostSignificantFirst == [0xD13F6370F96, 0x865DF5DD54000000]);
     }
 }
