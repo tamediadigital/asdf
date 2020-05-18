@@ -39,7 +39,7 @@ else
 Arbitrary length unsigned integer view.
 +/
 struct BigUIntView(UInt, WordEndian endian = TargetEndian)
-    if (is(Unqual!UInt == uint) || is(Unqual!UInt == ulong))
+    if (is(Unqual!UInt == ubyte) || is(Unqual!UInt == ushort) || is(Unqual!UInt == uint) || is(Unqual!UInt == ulong))
 {
     /++
     A group of coefficients for a radix `UInt.max + 1`.
@@ -67,7 +67,8 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
 
     /++
     +/
-    sizediff_t opCmp(BigUIntView!(const UInt, endian) rhs) const @safe pure nothrow @nogc
+    sizediff_t opCmp(BigUIntView!(const UInt, endian) rhs)
+        const @safe pure nothrow @nogc
     {
         import mir.algorithm.iteration: cmp;
         if (auto d = this.coefficients.length - rhs.coefficients.length)
@@ -76,7 +77,8 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     }
 
     ///
-    bool opEquals(BigUIntView!(const UInt, endian) rhs) const @safe pure nothrow @nogc @property
+    bool opEquals(BigUIntView!(const UInt, endian) rhs)
+        const @safe pure nothrow @nogc
     {
         return this.coefficients == rhs.coefficients;
     }
@@ -101,7 +103,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
             return BigUIntView(coefficients[$ - length .. $]);
     }
 
-    static if (isMutable!UInt)
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /++
     Performs `bool overflow = big +(-)= big` operatrion.
     Params:
@@ -133,7 +135,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         return overflow;
     }
 
-    static if (isMutable!UInt)
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /// ditto
     bool opOpAssign(string op)(BigIntView!(const UInt, endian) rhs, bool overflow = false)
     @safe pure nothrow @nogc
@@ -144,7 +146,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
             opOpAssign!(inverseSign!op)(rhs.unsigned, overflow);
     }
 
-    static if (isMutable!UInt)
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /++
     Performs `bool Overflow = big +(-)= scalar` operatrion.
     Precondition: non-empty coefficients
@@ -173,7 +175,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         return true;
     }
 
-    static if (isMutable!UInt)
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /// ditto
     bool opOpAssign(string op, T)(const T rhs)
         @safe pure nothrow @nogc
@@ -184,7 +186,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
             opOpAssign!(inverseSign!op)(cast(UInt)(-rhs));
     }
 
-    static if (isMutable!UInt)
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /++
     Performs `UInt overflow = big *= scalar` operatrion.
     Precondition: non-empty coefficients
@@ -228,16 +230,16 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         return typeof(return)(this, true);
     }
 
-    static if (isMutable!UInt)
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /++
     +/
     void bitwiseNotInPlace()
     {
         foreach (ref coefficient; this.coefficients)
-            coefficient = ~coefficient;
+            coefficient = cast(UInt)~(0 + coefficient);
     }
 
-    static if (isMutable!UInt)
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /++
     Performs `number=-number` operatrion.
     Precondition: non-empty coefficients
@@ -317,6 +319,80 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     {
         return typeof(return)(this, sign);
     }
+
+    /++
+    Params:
+        value = (out) unsigned integer
+    Returns: $(SUBREF exception, IonErrorCode)
+    +/
+    bool get(U)(scope out U value)
+        @safe pure nothrow @nogc const
+        if (isUnsigned!U)
+    {
+        auto d = lightConst.mostSignificantFirst;
+        if (d.length == 0)
+            return false;
+        static if (U.sizeof > UInt.sizeof)
+        {
+            size_t i;
+            for(;;)
+            {
+                value |= d[0];
+                d = d[1 .. $];
+                if (d.length == 0)
+                    return false;
+                i += cast(bool)value;
+                value <<= UInt.sizeof * 8;
+                import mir.utility: _expect;
+                if (_expect(i >= U.sizeof / UInt.sizeof, false))
+                    return true;
+            }
+        }
+        else
+        {
+            for(;;)
+            {
+                UInt f = d[0];
+                d = d[1 .. $];
+                if (d.length == 0)
+                {
+                    value = cast(U)f;
+                    static if (U.sizeof < UInt.sizeof)
+                    {
+                        if (value != f)
+                            return true;
+                    }
+                    return false;
+                }
+                if (f)
+                    return true;
+            }
+        }
+    }
+
+    /++
+    Returns: true if the integer and equals to `rhs`.
+    +/
+    bool opEquals(ulong rhs)
+        @safe pure nothrow @nogc const
+    {
+        foreach_reverse(d; lightConst.leastSignificantFirst)
+        {
+            static if (UInt.sizeof >= ulong.sizeof)
+            {
+                if (d != rhs)
+                    return false;
+                rhs = 0;
+            }
+            else
+            {
+                if (d != (rhs & UInt.max))
+                    return false;
+                rhs >>>= UInt.sizeof * 8;
+            }
+        }
+        return rhs == 0;
+    }
 }
 
 ///
@@ -326,7 +402,7 @@ unittest
     import std.traits;
     alias AliasSeq(T...) = T;
 
-    foreach (T; AliasSeq!(uint, ulong))
+    foreach (T; AliasSeq!(ubyte, ushort, uint, ulong))
     foreach (endian; AliasSeq!(WordEndian.little, WordEndian.big))
     {
         static if (endian == WordEndian.little)
@@ -345,43 +421,46 @@ unittest
         /// bool overflow = bigUInt op= scalar
         assert(lhs.leastSignificantFirst == [1, T.max-1]);
         assert(lhs.mostSignificantFirst == [T.max-1, 1]);
-        assert((lhs += T.max) == false);
-        assert(lhs.leastSignificantFirst == [0, T.max]);
-        assert((lhs += T.max) == false);
-        assert((lhs += T.max) == true); // overflow bit
-        assert(lhs.leastSignificantFirst == [T.max-1, 0]);
-        assert((lhs -= T(1)) == false);
-        assert(lhs.leastSignificantFirst == [T.max-2, 0]);
-        assert((lhs -= T.max) == true); // underflow bit
-        assert(lhs.leastSignificantFirst == [T.max-1, T.max]);
-        assert((lhs -= Signed!T(-4)) == true); // overflow bit
-        assert(lhs.leastSignificantFirst == [2, 0]);
-        assert((lhs += Signed!T.max) == false); // overflow bit
-        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0]);
+        static if (T.sizeof >= 4)
+        {
+            assert((lhs += T.max) == false);
+            assert(lhs.leastSignificantFirst == [0, T.max]);
+            assert((lhs += T.max) == false);
+            assert((lhs += T.max) == true); // overflow bit
+            assert(lhs.leastSignificantFirst == [T.max-1, 0]);
+            assert((lhs -= T(1)) == false);
+            assert(lhs.leastSignificantFirst == [T.max-2, 0]);
+            assert((lhs -= T.max) == true); // underflow bit
+            assert(lhs.leastSignificantFirst == [T.max-1, T.max]);
+            assert((lhs -= Signed!T(-4)) == true); // overflow bit
+            assert(lhs.leastSignificantFirst == [2, 0]);
+            assert((lhs += Signed!T.max) == false); // overflow bit
+            assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0]);
 
-        ///  bool overflow = bigUInt op= bigUInt/bigInt
-        lhs = BigUIntView!(T, endian)(lhsData);
-        auto rhs = BigUIntView!(T, endian)(rhsData).normalized;
-        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
-        assert(rhs.leastSignificantFirst == [T.max, T.max]);
-        assert((lhs += rhs) == false);
-        assert(lhs.leastSignificantFirst == [Signed!T.max + 1, 0, 1]);
-        assert((lhs -= rhs) == false);
-        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
-        assert((lhs += -rhs) == true);
-        assert(lhs.leastSignificantFirst == [Signed!T.max + 3, 0, T.max]);
-        assert((lhs += -(-rhs)) == true);
-        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+            ///  bool overflow = bigUInt op= bigUInt/bigInt
+            lhs = BigUIntView!(T, endian)(lhsData);
+            auto rhs = BigUIntView!(T, endian)(rhsData).normalized;
+            assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+            assert(rhs.leastSignificantFirst == [T.max, T.max]);
+            assert((lhs += rhs) == false);
+            assert(lhs.leastSignificantFirst == [Signed!T.max + 1, 0, 1]);
+            assert((lhs -= rhs) == false);
+            assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+            assert((lhs += -rhs) == true);
+            assert(lhs.leastSignificantFirst == [Signed!T.max + 3, 0, T.max]);
+            assert((lhs += -(-rhs)) == true);
+            assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
 
-        /// UInt overflow = bigUInt *= scalar
-        assert((lhs *= T.max) == 0);
-        assert((lhs += T(Signed!T.max + 2)) == false);
-        assert(lhs.leastSignificantFirst == [0, Signed!T.max + 2, 0]);
-        lhs = lhs.normalized;
-        lhs.leastSignificantFirst[1] = T.max / 2 + 3;
-        assert(lhs.leastSignificantFirst == [0, T.max / 2 + 3]);
-        assert((lhs *= 8u) == 4);
-        assert(lhs.leastSignificantFirst == [0, 16]);
+            /// UInt overflow = bigUInt *= scalar
+            assert((lhs *= T.max) == 0);
+            assert((lhs += T(Signed!T.max + 2)) == false);
+            assert(lhs.leastSignificantFirst == [0, Signed!T.max + 2, 0]);
+            lhs = lhs.normalized;
+            lhs.leastSignificantFirst[1] = T.max / 2 + 3;
+            assert(lhs.leastSignificantFirst == [0, T.max / 2 + 3]);
+            assert((lhs *= 8u) == 4);
+            assert(lhs.leastSignificantFirst == [0, 16]);
+        }
     }
 }
 
@@ -389,7 +468,7 @@ unittest
 Arbitrary length signed integer view.
 +/
 struct BigIntView(UInt, WordEndian endian = TargetEndian)
-    if (is(Unqual!UInt == uint) || is(Unqual!UInt == ulong))
+    if (is(Unqual!UInt == ubyte) || is(Unqual!UInt == ushort) || is(Unqual!UInt == uint) || is(Unqual!UInt == ulong))
 {
     /++
     Self-assigned to unsigned integer view $(MREF BigUIntView).
@@ -435,7 +514,8 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
 
     /++
     +/
-    sizediff_t opCmp(BigIntView!(const UInt, endian) rhs) const @safe pure nothrow @nogc
+    sizediff_t opCmp(BigIntView!(const UInt, endian) rhs) 
+        const @safe pure nothrow @nogc
     {
         import mir.algorithm.iteration: cmp;
         if (auto s = rhs.sign - this.sign)
@@ -447,7 +527,8 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
     }
 
     ///
-    bool opEquals(BigIntView!(const UInt, endian) rhs) const @safe pure nothrow @nogc @property
+    bool opEquals(BigIntView!(const UInt, endian) rhs)
+        const @safe pure nothrow @nogc
     {
         return this.sign == rhs.sign && this.unsigned == rhs.unsigned;
     }
@@ -466,6 +547,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
         return BigIntView(unsigned.topLeastSignificantPart(length), sign);
     }
 
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /++
     Performs `bool overflow = big +(-)= big` operatrion.
     Params:
@@ -500,6 +582,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
         return false;
     }
 
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /// ditto
     bool opOpAssign(string op)(BigUIntView!(const UInt, endian) rhs, bool overflow = false)
     @safe pure nothrow @nogc
@@ -508,6 +591,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
         return opOpAssign!op(rhs.signed, overflow);
     }
 
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /++
     Performs `bool overflow = big +(-)= scalar` operatrion.
     Precondition: non-empty coefficients
@@ -541,6 +625,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
         return false;
     }
 
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /// ditto
     bool opOpAssign(string op, T)(const T rhs)
         @safe pure nothrow @nogc
@@ -562,7 +647,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
         return false;
     }
 
-    static if (isMutable!UInt)
+    static if (isMutable!UInt && UInt.sizeof >= 4)
     /++
     Performs `UInt overflow = big *= scalar` operatrion.
     Precondition: non-empty coefficients
@@ -624,7 +709,7 @@ unittest
     import std.traits;
     alias AliasSeq(T...) = T;
 
-    foreach (T; AliasSeq!(uint, ulong))
+    foreach (T; AliasSeq!(ubyte, ushort, uint, ulong))
     foreach (endian; AliasSeq!(WordEndian.little, WordEndian.big))
     {
         static if (endian == WordEndian.little)
@@ -643,38 +728,43 @@ unittest
         ///  bool overflow = bigUInt op= scalar
         assert(lhs.leastSignificantFirst == [1, T.max-1]);
         assert(lhs.mostSignificantFirst == [T.max-1, 1]);
-        assert((lhs += T.max) == false);
-        assert(lhs.leastSignificantFirst == [0, T.max]);
-        assert((lhs += T.max) == false);
-        assert((lhs += T.max) == true); // overflow bit
-        assert(lhs.leastSignificantFirst == [T.max-1, 0]);
-        assert((lhs -= T(1)) == false);
-        assert(lhs.leastSignificantFirst == [T.max-2, 0]);
-        assert((lhs -= T.max) == false);
-        assert(lhs.leastSignificantFirst == [2, 0]);
-        assert(lhs.sign);
-        assert((lhs -= Signed!T(-4)) == false);
-        assert(lhs.leastSignificantFirst == [2, 0]);
-        assert(lhs.sign == false);
-        assert((lhs += Signed!T.max) == false);
-        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0]);
 
-        ///  bool overflow = bigUInt op= bigUInt/bigInt
-        lhs = BigIntView!(T, endian)(lhsData);
-        auto rhs = BigUIntView!(T, endian)(rhsData).normalized;
-        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
-        assert(rhs.leastSignificantFirst == [T.max, T.max]);
-        assert((lhs += rhs) == false);
-        assert(lhs.leastSignificantFirst == [Signed!T.max + 1, 0, 1]);
-        assert((lhs -= rhs) == false);
-        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
-        assert((lhs += -rhs) == false);
-        assert(lhs.sign);
-        assert(lhs.leastSignificantFirst == [T.max - (Signed!T.max + 2), T.max, 0]);
-        assert(lhs.sign);
-        assert((lhs -= -rhs) == false);
-        assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
-        assert(lhs.sign == false);
+        static if (T.sizeof >= 4)
+        {
+
+            assert((lhs += T.max) == false);
+            assert(lhs.leastSignificantFirst == [0, T.max]);
+            assert((lhs += T.max) == false);
+            assert((lhs += T.max) == true); // overflow bit
+            assert(lhs.leastSignificantFirst == [T.max-1, 0]);
+            assert((lhs -= T(1)) == false);
+            assert(lhs.leastSignificantFirst == [T.max-2, 0]);
+            assert((lhs -= T.max) == false);
+            assert(lhs.leastSignificantFirst == [2, 0]);
+            assert(lhs.sign);
+            assert((lhs -= Signed!T(-4)) == false);
+            assert(lhs.leastSignificantFirst == [2, 0]);
+            assert(lhs.sign == false);
+            assert((lhs += Signed!T.max) == false);
+            assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0]);
+
+            ///  bool overflow = bigUInt op= bigUInt/bigInt
+            lhs = BigIntView!(T, endian)(lhsData);
+            auto rhs = BigUIntView!(T, endian)(rhsData).normalized;
+            assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+            assert(rhs.leastSignificantFirst == [T.max, T.max]);
+            assert((lhs += rhs) == false);
+            assert(lhs.leastSignificantFirst == [Signed!T.max + 1, 0, 1]);
+            assert((lhs -= rhs) == false);
+            assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+            assert((lhs += -rhs) == false);
+            assert(lhs.sign);
+            assert(lhs.leastSignificantFirst == [T.max - (Signed!T.max + 2), T.max, 0]);
+            assert(lhs.sign);
+            assert((lhs -= -rhs) == false);
+            assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
+            assert(lhs.sign == false);
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 ///
 module mir.ion.value;
 
+import mir.bigint.low_level_view;
 import mir.ion.exception;
 import mir.utility: _expect;
 import std.traits: isIntegral, isSigned, isUnsigned, Unsigned, Signed, isFloatingPoint;
@@ -375,81 +376,12 @@ struct IonDescribedValue
         else
         static if (is(T == IonUInt) || is(T == IonNInt) || is(T == IonSymbolID))
         {
-            return T(IonUIntField(data));
+            return T(BigUIntView!(const ubyte, WordEndian.big)(data));
         }
         else
         {
             return T(data);
         }
-    }
-}
-
-/++
-Ion non-negative integer field.
-+/
-struct IonUIntField
-{
-    ///
-    const(ubyte)[] data;
-
-    /++
-    Params:
-        value = (out) unsigned integer
-    Returns: $(SUBREF exception, IonErrorCode)
-    +/
-    IonErrorCode get(U)(scope ref U value)
-        @safe pure nothrow @nogc const
-        if (isUnsigned!U)
-    {
-        auto d = cast()data;
-        size_t i;
-        U f;
-        if (d.length == 0)
-            goto R;
-        for(;;)
-        {
-            f |= d[0];
-            d = d[1 .. $];
-            if (d.length == 0)
-            {
-            R:
-                value = f;
-                return IonErrorCode.none;
-            }
-            i += cast(bool)f;
-            f <<= 8;
-            if (_expect(i >= U.sizeof, false))
-                return IonErrorCode.overflowInIntegerValue;
-        }
-    }
-
-    version (D_Exceptions)
-    {
-        /++
-        Returns: unsigned integer
-        Precondition: `this != null`.
-        +/
-        T get(T)()
-            @safe pure @nogc const
-            if (isUnsigned!T)
-        {
-            T ret;
-            if (auto error = get(ret))
-                throw error.ionException;
-            return ret;
-        }
-    }
-
-    /++
-    Returns: $(SUBREF exception, IonErrorCode)
-    Precondition: `this != null`.
-    +/
-    IonErrorCode getErrorCode(T)()
-        @trusted pure nothrow @nogc const
-        if (isUnsigned!T)
-    {
-        T value;
-        return get!T(value);
     }
 }
 
@@ -589,7 +521,7 @@ Ion non-negative integer number.
 struct IonUInt
 {
     ///
-    IonUIntField field;
+    BigUIntView!(const ubyte, WordEndian.big) field;
 
     /++
     Returns: true if the integer is `null.int`.
@@ -597,7 +529,7 @@ struct IonUInt
     bool opEquals(typeof(null))
         @safe pure nothrow @nogc const
     {
-        return field.data is null;
+        return field.coefficients is null;
     }
 
     /++
@@ -608,13 +540,7 @@ struct IonUInt
     {
         if (this == null)
             return false;
-        foreach_reverse(d; field.data)
-        {
-            if (d != (rhs & 0xFF))
-                return false;
-            rhs >>>= 8;
-        }
-        return true;
+        return field == rhs;
     }
 
     /++
@@ -630,12 +556,12 @@ struct IonUInt
         assert(this != null);
         static if (isUnsigned!T)
         {
-            return field.get(value);
+            return field.get(value) ? IonErrorCode.overflowInIntegerValue : IonErrorCode.none;
         }
         else
         {
-            if (auto error = field.get(*cast(Unsigned!T*)&value))
-                return error;
+            if (auto overflow = field.get(*cast(Unsigned!T*)&value))
+                return IonErrorCode.overflowInIntegerValue;
             if (_expect(value < 0, false))
                 return IonErrorCode.overflowInIntegerValue;
             return IonErrorCode.none;
@@ -726,7 +652,7 @@ Ion negative integer number.
 struct IonNInt
 {
     ///
-    IonUIntField field;
+    BigUIntView!(const ubyte, WordEndian.big) field;
 
     /++
     Returns: true if the integer is `null.int`.
@@ -734,7 +660,7 @@ struct IonNInt
     bool opEquals(typeof(null))
         @safe pure nothrow @nogc const
     {
-        return field.data is null;
+        return field.coefficients is null;
     }
 
     /++
@@ -745,7 +671,7 @@ struct IonNInt
     {
         if (rhs >= 0)
             return false;
-        return IonUInt(IonUIntField((()@trusted => cast(ubyte[])field.data)())) == ulong(rhs);
+        return IonUInt(field) == -rhs;
     }
 
     /++
@@ -765,8 +691,8 @@ struct IonNInt
         }
         else
         {
-            if (auto error = field.get(*cast(Unsigned!T*)&value))
-                return error;
+            if (auto overflow = field.get(*cast(Unsigned!T*)&value))
+                return IonErrorCode.overflowInIntegerValue;
             value = cast(T)(0-value);
             if (_expect(value >= 0, false))
                 return IonErrorCode.overflowInIntegerValue;
@@ -1509,7 +1435,7 @@ If L is zero then the symbol ID is zero and the length and symbol ID fields are 
 struct IonSymbolID
 {
     ///
-    IonUIntField representation;
+    BigUIntView!(const ubyte, WordEndian.big) representation;
 
     /++
     Returns: true if the symbol is `null.symbol`.
@@ -1517,7 +1443,7 @@ struct IonSymbolID
     bool opEquals(typeof(null))
         @safe pure nothrow @nogc const
     {
-        return representation.data is null;
+        return representation.coefficients is null;
     }
 
     /++
@@ -1531,7 +1457,7 @@ struct IonSymbolID
         if (isUnsigned!T)
     {
         assert(this != null);
-        return representation.get(value);
+        return representation.get(value) ? IonErrorCode.overflowInIntegerValue : IonErrorCode.none;
     }
 
     /++
