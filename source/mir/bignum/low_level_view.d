@@ -3,7 +3,7 @@ Low-level betterC utilities for big integer arithmetic libraries.
 
 The module provides $(REF BigUIntAccumulator), $(REF BigUIntView), and $(LREF BigIntView).
 +/
-module mir.bigint.low_level_view;
+module mir.bignum.low_level_view;
 
 import mir.checkedint;
 import std.traits;
@@ -877,4 +877,25 @@ unittest
         else
             assert(accumulator.view.mostSignificantFirst == [0xD13F6370F96, 0x865DF5DD54000000]);
     }
+}
+
+
+/++
++/
+struct DecimalView(UInt, WordEndian endian, Exp = size_t)
+{
+    ///
+    Exp exponent;
+    ///
+    BigIntView!(UInt, endian) coefficient;
+}
+
+/++
++/
+struct BinaryView(UInt, WordEndian endian, Exp = size_t)
+{
+    ///
+    Exp exponent;
+    ///
+    BigIntView!(UInt, endian) coefficient;
 }

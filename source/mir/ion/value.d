@@ -1,7 +1,7 @@
 ///
 module mir.ion.value;
 
-import mir.bigint.low_level_view;
+import mir.bignum.low_level_view;
 import mir.ion.exception;
 import mir.utility: _expect;
 import std.traits: isIntegral, isSigned, isUnsigned, Unsigned, Signed, isFloatingPoint;

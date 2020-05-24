@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+# python3 etc/dec2flt_table.py > source/mir/internal/dec2flt_table.d
 """
 Generate powers of ten using William Clinger's ``AlgorithmM`` for use in
 decimal to floating point conversions.
@@ -19,7 +19,7 @@ from fractions import Fraction
 from collections import namedtuple
 
 
-N = 64  # Size of the significand field in bits
+N = 128  # Size of the significand field in bits
 MIN_SIG = 2 ** (N - 1)
 MAX_SIG = (2 ** N) - 1
 
@@ -38,8 +38,8 @@ def algorithm_m(f, e):
         u = f * 10 ** e
         v = 1
     k = 0
-    x = u // v
     while True:
+        x = u // v
         if x < MIN_SIG:
             u <<= 1
             k -= 1
@@ -48,7 +48,6 @@ def algorithm_m(f, e):
             k += 1
         else:
             break
-        x = u // v
     return ratio_to_float(u, v, k)
 
 
@@ -94,9 +93,9 @@ module mir.internal.dec2flt_table;
 def main():
     print(HEADER.strip())
     print()
-    print_short_powers(64, 53)
-    print()
     print_proper_powers()
+    # print()
+    # print_short_powers(64, 53)
     # print_short_powers(32, 24)
     # print()
 
@@ -115,17 +114,20 @@ def print_proper_powers():
     print("enum max_p10_e = {};".format(MAX_E))
     print()
     print("// ")
-    typ = "ulong[{0}]".format(len(powers))
+    typ = "align(16) ulong[2][{0}]".format(len(powers))
     print("static immutable ", typ, " p10_coefficients = [", sep='')
     for z in powers:
-        print("    0x{:X},".format(z.sig))
+        M = N >> 3
+        strH = "{:X}".format((z.sig >> (N // 2)) + ((z.sig >> (N // 2 - 1)) & 1))
+        strL = "{:X}".format(z.sig)[M:]
+        print("    [0x" + strH + ", 0x" + strL + "],")
     print("];")
-    print("")
+    print()
     print("// ")
     typ = "short[{0}]".format(len(powers))
     print("static immutable ", typ, " p10_exponents = [", sep='')
     for z in powers:
-        print("    {},".format(z.exp))
+        print("    {},".format(z.exp + (N // 2)))
     print("];")
 
 
