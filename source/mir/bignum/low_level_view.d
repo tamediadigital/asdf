@@ -12,6 +12,12 @@ private alias cop(string op : "-") = subu;
 private alias cop(string op : "+") = addu;
 private enum inverseSign(string op) = op == "+" ? "-" : "+";
 
+private immutable hexStringErrorMsg = "Incorrect hex string for UInt.fromHexString";
+version (D_Exceptions)
+{
+    private immutable hexStringException = new Exception(hexStringErrorMsg);
+}
+
 /++
 +/
 enum WordEndian
@@ -103,6 +109,87 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
             return BigUIntView(coefficients[$ - length .. $]);
     }
 
+    /++
+    +/
+    static BigUIntView fromHexString(scope const(char)[] str)
+        @trusted pure
+    {
+        auto length = str.length / (UInt.sizeof * 2) + (str.length % (UInt.sizeof * 2) != 0);
+        auto data = new Unqual!UInt[length];
+        BigUIntView!(Unqual!UInt, endian)(data).fromHexStringImpl(str);
+        return BigUIntView(cast(UInt[])data);
+    }
+
+    static if (isMutable!UInt)
+    /++
+    +/
+    void fromHexStringImpl(scope const(char)[] str)
+        @safe pure @nogc
+    {
+        pragma(inline, false);
+        import mir.utility: _expect;
+        if (_expect(str.length == 0 || str.length > coefficients.length * UInt.sizeof * 2, false))
+        {
+            version(D_Exceptions)
+                throw hexStringException;
+            else
+                assert(0, hexStringErrorMsg);
+        }
+        auto rdata = leastSignificantFirst;
+        UInt current;
+        size_t i;
+        do
+        {
+            ubyte c;
+            switch(str[$ - ++i])
+            {
+                case '0': c = 0x0; break;
+                case '1': c = 0x1; break;
+                case '2': c = 0x2; break;
+                case '3': c = 0x3; break;
+                case '4': c = 0x4; break;
+                case '5': c = 0x5; break;
+                case '6': c = 0x6; break;
+                case '7': c = 0x7; break;
+                case '8': c = 0x8; break;
+                case '9': c = 0x9; break;
+                case 'A':
+                case 'a': c = 0xA; break;
+                case 'B':
+                case 'b': c = 0xB; break;
+                case 'C':
+                case 'c': c = 0xC; break;
+                case 'D':
+                case 'd': c = 0xD; break;
+                case 'E':
+                case 'e': c = 0xE; break;
+                case 'F':
+                case 'f': c = 0xF; break;
+                default:
+                    version(D_Exceptions)
+                        throw hexStringException;
+                    else
+                        assert(0, hexStringErrorMsg);
+            }
+            enum s = UInt.sizeof * 8 - 4;
+            UInt cc = cast(UInt)(UInt(c) << s);
+            current >>>= 4;
+            current |= cc;
+            if (i % (UInt.sizeof * 2) == 0)
+            {
+                rdata.front = current;
+                rdata.popFront;
+                current = 0;
+            }
+        }
+        while(i < str.length);
+        if (current)
+        {
+            current >>>= 4 * (UInt.sizeof * 2 - i % (UInt.sizeof * 2));
+            rdata.front = current;
+        }
+    }
+
     static if (isMutable!UInt && UInt.sizeof >= 4)
     /++
     Performs `bool overflow = big +(-)= big` operatrion.
@@ -123,9 +210,9 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         auto rs = rhs.leastSignificantFirst;
         do
         {
-            bool overflowM;
-            ls.front = ls.front.cop!op(rs.front, overflowM).cop!op(overflow, overflow);
-            overflow |= overflowM;
+            bool overflowM, overflowG;
+            ls.front = ls.front.cop!op(rs.front, overflowM).cop!op(overflow, overflowG);
+            overflow = overflowG | overflowM;
             ls.popFront;
             rs.popFront;
         }
@@ -871,14 +958,9 @@ unittest
                 accumulator.put(overflow);
             }
         }
-        // 0xD13F6370F96865DF5DD54000000
-        static if (is(T == uint))
-            assert(accumulator.view.mostSignificantFirst == [0xD13, 0xF6370F96, 0x865DF5DD, 0x54000000]);
-        else
-            assert(accumulator.view.mostSignificantFirst == [0xD13F6370F96, 0x865DF5DD54000000]);
+        assert(accumulator.view == BigUIntView!(T, endian).fromHexString("D13F6370F96865DF5DD54000000"));
     }
 }
-
 
 /++
 +/
