@@ -376,6 +376,21 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         }
     }
 
+    auto mostSignificantFirst(This this)()
+        const @safe pure nothrow @nogc @property
+    {
+        import mir.ndslice.slice: sliced;
+        static if (endian == WordEndian.big)
+        {
+            return coefficients.sliced;
+        }
+        else
+        {
+            import mir.ndslice.topology: retro;
+            return coefficients.sliced.retro;
+        }
+    }
+
     /++
     Strips most significant zero coefficients.
     +/
@@ -399,6 +414,38 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         }
         while (number.coefficients.length);
         return number;
+    }
+
+    /++
+    +/
+    bool bt()(size_t position)
+    {
+        import mir.ndslice.topology: bitwise;
+        assert(position < coefficients.length * UInt.sizeof * 8);
+        return leastSignificantFirst.bitwise[position];
+    }
+
+    /++
+    +/
+    size_t ctlz()() const @property
+        @safe pure nothrow @nogc
+    {
+        import mir.bitop: ctlz;
+        assert(coefficients.length);
+        auto d = mostSignificantFirst;
+        size_t ret;
+        do
+        {
+            if (auto c = d.front)
+            {
+                ret += ctlz(c);
+                break;
+            }
+            ret += UInt.sizeof * 8;
+            d.popFront;
+        }
+        while(d.length);
+        return ret;
     }
 
     ///

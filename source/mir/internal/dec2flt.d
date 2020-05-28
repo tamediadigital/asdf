@@ -1,13 +1,14 @@
 module mir.internal.dec2flt;
 
 import mir.bignum.fp;
+import mir.bignum.fixed_int;
 import std.traits;
 import mir.utility: _expect, extMul;
 import mir.bignum.low_level_view;
 /++
 +/
 
-Fp!ulong approxPow10(int exp)
+Fp!64 approxPow10(int exp)
 {
     import mir.internal.dec2flt_table;
     enum S = 9;
@@ -15,7 +16,7 @@ Fp!ulong approxPow10(int exp)
     static assert(min_p10_e <= -P);
     static assert(max_p10_e >= P);
     auto index = exp & 0x1F;
-    auto p = Fp!ulong(false, p10_exponents[index - min_p10_e], p10_coefficients[index - min_p10_e][0]);
+    auto p = Fp!64(false, p10_exponents[index - min_p10_e], UInt!64(p10_coefficients[index - min_p10_e][0]));
     exp >>= S;
     if (_expect(exp == 0, true))
     {
@@ -25,7 +26,7 @@ Fp!ulong approxPow10(int exp)
     {
         exp   = exp < 0 ? -exp : exp;
         index = exp < 0 ? -P : P;
-        auto v = Fp!ulong(false, p10_exponents[index - min_p10_e], p10_coefficients[index - min_p10_e][0]);
+        auto v = Fp!64(false, p10_exponents[index - min_p10_e], UInt!64(p10_coefficients[index - min_p10_e][0]));
         do
         {
             if (exp & 1)
