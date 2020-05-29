@@ -8,20 +8,21 @@ import mir.utility;
 
 /++
 +/
-struct Fp(size_t matissaSize)
-    if ((matissaSize & 0x3F) == 0 && matissaSize / (size_t.sizeof * 8) >= 1)
+struct Fp(size_t coefficientSize)
+    if ((coefficientSize & 0x3F) == 0 && coefficientSize / (size_t.sizeof * 8) >= 1)
 {
     import mir.bignum.fixed_int: UInt;
 
     bool sign;
     int exponent;
-    UInt!matissaSize coefficient;
+    UInt!coefficientSize coefficient;
 
-@safe pure nothrow @nogc:
+@safe pure @nogc:
 
     /++
     +/
-    this(bool sign, int exponent, UInt!matissaSize coefficient)
+    nothrow
+    this(bool sign, int exponent, UInt!coefficientSize coefficient)
     {
         this.coefficient = coefficient;
         this.exponent = exponent;
@@ -31,23 +32,23 @@ struct Fp(size_t matissaSize)
     /++
     +/
     this(size_t size)(UInt!size integer, bool normalizedInteger = false)
+        // nothrow
     {
         import mir.bignum.fixed_int: UInt;
-        static if (size < matissaSize)
+        static if (size < coefficientSize)
         {
             if (normalizedInteger)
             {
-                this.exponent = size - matissaSize;
-                this.coefficient = integer.toSize!matissaSize;
+                this(false, int(size) - int(coefficientSize), integer.rightExtend!(coefficientSize - size));
             }
             else
             {
-                this(integer.toSize!matissaSize, false);
+                this(integer.toSize!coefficientSize, false);
             }
         }
         else
         {
-            this.exponent = size - matissaSize;
+            this.exponent = size - coefficientSize;
             if (!normalizedInteger)
             {
                 if (auto c = integer.ctlz)
@@ -56,7 +57,7 @@ struct Fp(size_t matissaSize)
                     this.exponent -= c;
                 }
             }
-            static if (size == matissaSize)
+            static if (size == coefficientSize)
             {
                 coefficient = integer;
             }
@@ -67,24 +68,74 @@ struct Fp(size_t matissaSize)
                     coefficient.data = integer.data[$ - N .. $];
                 else
                     coefficient.data = integer.data[0 .. N];
-                enum tailSize = size - matissaSize;
-                enum half = (){ UInt!tailSize ret; ret.signBit = true; return ret; }();
-                auto cr = integer.toSize!tailSize.opCmp(half);
+                enum tailSize = size - coefficientSize;
+                enum half(size_t hs) = (){ UInt!hs ret; ret.signBit = true; return ret; }();
+                auto cr = integer.toSize!tailSize.opCmp(half!tailSize);
                 version (LittleEndian)
-                    auto inc = cr > 0 || cr == 0 && (integer.data[0] & 1);
+                    auto inc = cr > 0 || cr == 0 && (coefficient.data[0] & 1);
                 else
-                    auto inc = cr > 0 || cr == 0 && (integer.data[$ - 1] & 1);
+                    auto inc = cr > 0 || cr == 0 && (coefficient.data[$ - 1] & 1);
                 if (inc)
                 {
                     auto overflow = coefficient += 1;
                     if (overflow)
                     {
-                        coefficient = half;
+                        coefficient = half!coefficientSize;
                         exponent++;
                     }
                 }
             }
         }
+    }
+
+    static if (coefficientSize == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto fp = Fp!128(UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
+        assert(fp.exponent == 0);
+        assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
+        
+        fp = Fp!128(UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"), true);
+        assert(fp.exponent == 0);
+        assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
+        
+        fp = Fp!128(UInt!128.fromHexString("ae3cd0aff2714a1de7022b0029d"));
+        assert(fp.exponent == -20);
+        assert(fp.coefficient == UInt!128.fromHexString("ae3cd0aff2714a1de7022b0029d00000"));
+        
+        fp = Fp!128(UInt!128.fromHexString("e7022b0029d"));
+        assert(fp.exponent == -84);
+        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
+        
+        fp = Fp!128(UInt!64.fromHexString("e7022b0029d"));
+        assert(fp.exponent == -84);
+        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
+        
+        fp = Fp!128(UInt!64.fromHexString("e7022b0029dd0aff"), true);
+        assert(fp.exponent == -64);
+        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029dd0aff0000000000000000"));
+        
+        fp = Fp!128(UInt!64.fromHexString("e7022b0029d"));
+        assert(fp.exponent == -84);
+        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
+    
+        fp = Fp!128(UInt!192.fromHexString("ffffffffffffffffffffffffffffffff1000000000000000"));
+        assert(fp.exponent == 64);
+        assert(fp.coefficient == UInt!128.fromHexString("ffffffffffffffffffffffffffffffff"));
+
+        fp = Fp!128(UInt!192.fromHexString("ffffffffffffffffffffffffffffffff8000000000000000"));
+        assert(fp.exponent == 65);
+        assert(fp.coefficient == UInt!128.fromHexString("80000000000000000000000000000000"));
+
+        fp = Fp!128(UInt!192.fromHexString("fffffffffffffffffffffffffffffffe8000000000000000"));
+        assert(fp.exponent == 64);
+        assert(fp.coefficient == UInt!128.fromHexString("fffffffffffffffffffffffffffffffe"));
+
+        fp = Fp!128(UInt!192.fromHexString("fffffffffffffffffffffffffffffffe8000000000000001"));
+        assert(fp.exponent == 64);
+        assert(fp.coefficient == UInt!128.fromHexString("ffffffffffffffffffffffffffffffff"));
     }
 
     // /++
@@ -95,27 +146,27 @@ struct Fp(size_t matissaSize)
     // }
 
     ///
-    ref Fp opOpAssign(string op : "*")(Fp rhs) return
+    ref Fp opOpAssign(string op : "*")(Fp rhs) nothrow return
     {
         this = this.opBinary!"*"(rhs);
         return this;
     }
 
     ///
-    Fp opBinary(string op : "*")(Fp rhs) const
+    Fp opBinary(string op : "*")(Fp rhs) nothrow const
     {
-        return .extendedMul(this, rhs).ieeeRound!matissaSize;
+        return .extendedMul(this, rhs).ieeeRound!coefficientSize;
     }
 
     ///
-    T opCast(T)() const
+    T opCast(T)() nothrow const
         if (is(Unqual!T == bool))
     {
         return coefficient != 0;
     }
 
     ///
-    T opCast(T)() const
+    T opCast(T)() nothrow const
         if (isFloatingPoint!T)
     {
         Unqual!T c = coefficient;
@@ -125,13 +176,7 @@ struct Fp(size_t matissaSize)
     }
 
     ///
-    bool bt()(size_t position)
-    {
-        return BigUIntView!size_t(coefficient).bt(position);
-    }
-
-    ///
-    Fp!newMatntissaSize ieeeRound(size_t newMatntissaSize)() const
+    Fp!newMatntissaSize ieeeRound(size_t newMatntissaSize)() nothrow const
     {
         auto ret = typeof(return)(coefficient, true);
         ret.exponent += exponent;
@@ -141,7 +186,8 @@ struct Fp(size_t matissaSize)
 }
 
 ///
-Fp!(matissaSizeA + matissaSizeB) extendedMul(size_t matissaSizeA, size_t matissaSizeB)(Fp!matissaSizeA a, Fp!matissaSizeB b)
+Fp!(coefficientizeA + coefficientizeB) extendedMul(size_t coefficientizeA, size_t coefficientizeB)(Fp!coefficientizeA a, Fp!coefficientizeB b)
+    @safe pure nothrow @nogc
 {
     import mir.bignum.fixed_int: extendedMul;
     auto coefficient = extendedMul(a.coefficient, b.coefficient);

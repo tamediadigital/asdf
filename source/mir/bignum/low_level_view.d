@@ -376,7 +376,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         }
     }
 
-    auto mostSignificantFirst(This this)()
+    auto mostSignificantFirst()
         const @safe pure nothrow @nogc @property
     {
         import mir.ndslice.slice: sliced;

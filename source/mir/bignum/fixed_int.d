@@ -101,6 +101,28 @@ struct UInt(size_t size)
     }
 
     /++
+    `auto c = a << b` operation.
+    +/
+    UInt opBinary(string op : "<<")(size_t rhs)
+        const @safe pure nothrow @nogc
+    {
+        UInt ret = this;
+        ret.opOpAssign!op(rhs);
+        return ret;
+    }
+
+    static if (size == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto a = UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
+        assert(a << 4 == UInt!128.fromHexString("fbbfae3cd0aff2714a1de7022b0029d0"));
+        assert(a << 68 == UInt!128.fromHexString("4a1de7022b0029d00000000000000000"));
+        assert(a << 128 == UInt!128.fromHexString("0"));
+    }
+
+    /++
     `auto c = a + b` and `auto c = a - b` operations.
     +/
     UInt opBinary(string op, size_t rsize)(UInt!rsize rhs)
@@ -124,7 +146,7 @@ struct UInt(size_t size)
         {
             static foreach_reverse (i; 1 .. data.length)
             {
-                ret.data[i] = (data[i] << shift) | (data[i - 1] - csh);
+                ret.data[i] = (data[i] << shift) | (data[i - 1] >>> csh);
             }
             ret.data[0] = data[0] << shift;
         }
@@ -132,18 +154,28 @@ struct UInt(size_t size)
         {
             static foreach (i; 0 .. data.length - 1)
             {
-                ret.data[i] = (data[i] << shift) | (data[i + 1] - csh);
+                ret.data[i] = (data[i] << shift) | (data[i + 1] >>> csh);
             }
             ret.data[$ - 1] = data[$ - 1] << shift;
         }
         return ret;
     }
 
+    static if (size == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto a = UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
+        assert(a.smallLeftShift(4) == UInt!128.fromHexString("fbbfae3cd0aff2714a1de7022b0029d0"));
+    }
+
     /++
     Returns:
         the number with shrinked or extended size.
     +/
-    UInt!newSize toSize(size_t newSize)() const
+    UInt!newSize toSize(size_t newSize)()
+        const @safe pure @nogc nothrow
     {
         typeof(return) ret;
         import mir.utility: min;
@@ -151,7 +183,20 @@ struct UInt(size_t size)
         version (LittleEndian)
             ret.data[0 .. N] = data[0 .. N];
         else
-            ret.data[N - $ .. $] = data[N - $ .. $];
+            ret.data[$ - N .. $] = data[$ - N .. $];
+        return ret;
+    }
+
+    ///
+    UInt!(size + additionalRightBits) rightExtend(size_t additionalRightBits)()
+        const @safe pure @nogc nothrow
+        if (additionalRightBits)
+    {
+        typeof(return) ret;
+        version (BigEndian)
+            ret.data[0 .. data.length] = data;
+        else
+            ret.data[$ - data.length .. $] = data;
         return ret;
     }
 
@@ -161,8 +206,24 @@ struct UInt(size_t size)
         @safe pure nothrow @nogc
     {
         import mir.bignum.low_level_view;
-        assert(position < coefficients.length * size_t.sizeof * 8);
+        assert(position < data.sizeof * 8);
         return BigUIntView!(const size_t)(data).bt(position);
+    }
+
+    static if (size == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto a = UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
+        assert(a.bt(127) == 1);
+        assert(a.bt(126) == 0);
+        assert(a.bt(125) == 1);
+        assert(a.bt(124) == 0);
+        assert(a.bt(0) == 1);
+        assert(a.bt(1) == 0);
+        assert(a.bt(2) == 1);
+        assert(a.bt(3) == 1);
     }
 
     /++
@@ -172,6 +233,19 @@ struct UInt(size_t size)
     {
         import mir.bignum.low_level_view;
         return BigUIntView!(const size_t)(data).ctlz;
+    }
+
+    static if (size == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto a = UInt!128.fromHexString("dfbbfae3cd0aff2714a1de7022b0029d");
+        assert (a.ctlz == 0);
+        a = UInt!128.init;
+        assert (a.ctlz == 128);
+        a = UInt!128.fromHexString("3");
+        assert (a.ctlz == 126);
     }
 
     /++
@@ -184,8 +258,7 @@ struct UInt(size_t size)
             return data[0] >> (size_t.sizeof * 8 - 1);
     }
 
-    /++
-    +/
+    /// ditto
     void signBit()(bool value) @property
     {
         enum signMask = ptrdiff_t.max;
@@ -193,6 +266,18 @@ struct UInt(size_t size)
             data[$ - 1] = (data[$ - 1] & ptrdiff_t.max) | (size_t(value) << (size_t.sizeof * 8 - 1));
         else
             data[    0] = (data[    0] & ptrdiff_t.max) | (size_t(value) << (size_t.sizeof * 8 - 1));
+    }
+
+    ///
+    unittest
+    {
+        auto a = UInt!128.fromHexString("dfbbfae3cd0aff2714a1de7022b0029d");
+        assert(a.signBit);
+        a.signBit = false;
+        assert(a == UInt!128.fromHexString("5fbbfae3cd0aff2714a1de7022b0029d"));
+        assert(!a.signBit);
+        a.signBit = true;
+        assert(a == UInt!128.fromHexString("dfbbfae3cd0aff2714a1de7022b0029d"));
     }
 }
 
