@@ -22,9 +22,9 @@ struct Fp(size_t coefficientSize)
     /++
     +/
     nothrow
-    this(bool sign, int exponent, UInt!coefficientSize coefficient)
+    this(bool sign, int exponent, UInt!coefficientSize normalizedCoefficient)
     {
-        this.coefficient = coefficient;
+        this.coefficient = normalizedCoefficient;
         this.exponent = exponent;
         this.sign = sign;
     }
@@ -155,7 +155,20 @@ struct Fp(size_t coefficientSize)
     ///
     Fp opBinary(string op : "*")(Fp rhs) nothrow const
     {
-        return .extendedMul(this, rhs).ieeeRound!coefficientSize;
+        return cast(Fp) .extendedMul(this, rhs);
+    }
+
+    static if (coefficientSize == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto a = Fp!128(0, -13, UInt!128.fromHexString("dfbbfae3cd0aff2714a1de7022b0029d"));
+        auto b = Fp!128(1, 100, UInt!128.fromHexString("e3251bacb112c88b71ad3f85a970a314"));
+        auto fp = a * b;
+        assert(fp.sign);
+        assert(fp.exponent == 100 - 13 + 128);
+        assert(fp.coefficient == UInt!128.fromHexString("c6841dd302415d785373ab6d93712988"));
     }
 
     ///
@@ -175,13 +188,31 @@ struct Fp(size_t coefficientSize)
         return ldexp!(c, exponent);
     }
 
+    static if (coefficientSize == 128)
     ///
-    Fp!newMatntissaSize ieeeRound(size_t newMatntissaSize)() nothrow const
+    @safe pure @nogc
+    unittest
     {
-        auto ret = typeof(return)(coefficient, true);
+        // todo
+    }
+
+    ///
+    T opCast(T : Fp!newCoefficientSize, size_t newCoefficientSize)() nothrow const
+    {
+        auto ret = Fp!newCoefficientSize(coefficient, true);
         ret.exponent += exponent;
         ret.sign = sign;
         return ret;
+    }
+
+    static if (coefficientSize == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto fp = cast(Fp!64) Fp!128(UInt!128.fromHexString("afbbfae3cd0aff2784a1de7022b0029d"));
+        assert(fp.exponent == 64);
+        assert(fp.coefficient == UInt!64.fromHexString("afbbfae3cd0aff28"));
     }
 }
 
