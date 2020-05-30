@@ -13,12 +13,34 @@ Params:
     size = size in bits
 +/
 struct UInt(size_t size)
-    if ((size & 0x3F) == 0 && size / (size_t.sizeof * 8) >= 1)
+    if (size % 64 == 0 && size >= 64)
 {
     /++
     Payload. The data is located in the target endianness.
     +/
     size_t[size / (size_t.sizeof * 8)] data;
+
+    ///
+    this(typeof(data) data)
+    {
+        this.data = data;
+    }
+
+    ///
+    this(ulong data)
+    {
+        import mir.bignum.low_level_view;
+        auto d = BigUIntView!size_t(this.data).leastSignificantFirst;
+        static if (size_t.sizeof == ulong.sizeof)
+        {
+            d.front = data;
+        }
+        else
+        {
+            d.front = cast(uint) data;
+            d[1] = cast(uint) (data >> 32);
+        }
+    }
 
     ///
     enum UInt max = ((){UInt ret; ret.data = size_t.max; return ret;})();
@@ -72,9 +94,28 @@ struct UInt(size_t size)
     }
 
     ///
+    ref UInt opOpAssign(string op)(UInt rhs) nothrow return
+        if (op == "^" || op == "|" || op == "&")
+    {
+        static foreach (i; 0 .. data.length)
+           mixin(`data[i] ` ~ op ~ `= rhs.data[i];`);
+        return this;
+    }
+
+    static if (size == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto a = UInt!128.fromHexString("dfbbfae3cd0aff2714a1de7022b0029d");
+        auto b = UInt!128.fromHexString("e3251bacb112c88b71ad3f85a970a314");
+        assert((a.opBinary!"|"(b)) == UInt!128.fromHexString("ffbffbeffd1affaf75adfff5abf0a39d"));
+    }
+
+    ///
     ref UInt opOpAssign(string op)(size_t s)
         @safe pure nothrow @nogc return
-        if (op == "<<")
+        if (op == "<<" || op == ">>>" || op == ">>")
     {
         import mir.bignum.low_level_view;
         auto d = BigUIntView!size_t(data).leastSignificantFirst;
@@ -83,14 +124,29 @@ struct UInt(size_t size)
             auto index = s / (size_t.sizeof * 8);
             auto bs = s % (size_t.sizeof * 8);
             auto ss = size_t.sizeof * 8 - bs;
-            foreach_reverse (j; index + 1 .. data.length)
+            static if (op == ">>>" || op == ">>")
             {
-                data[j] = (data[j - index] << bs) | (data[j - (index + 1)] >> ss);
+                foreach (j; 0 .. data.length - (index + 1))
+                {
+                    d[j] = (d[j + index] >>> bs) | (d[j + (index + 1)] << ss);
+                }
+                d[$ - (index + 1)] = d.back >>> bs;
+                foreach (j; data.length - index .. data.length)
+                {
+                    d[j] = 0;
+                }
             }
-            data[index] = data[0] << bs;
-            foreach_reverse (j; 0 .. index)
+            else
             {
-                data[j] = 0;
+                foreach_reverse (j; index + 1 .. data.length)
+                {
+                    d[j] = (d[j - index] << bs) | (d[j - (index + 1)] >> ss);
+                }
+                d[index] = d.front << bs;
+                foreach_reverse (j; 0 .. index)
+                {
+                    d[j] = 0;
+                }
             }
         }
         else
@@ -103,8 +159,9 @@ struct UInt(size_t size)
     /++
     `auto c = a << b` operation.
     +/
-    UInt opBinary(string op : "<<")(size_t rhs)
+    UInt opBinary(string op)(size_t rhs)
         const @safe pure nothrow @nogc
+        if (op == "<<" || op == ">>>" || op == ">>")
     {
         UInt ret = this;
         ret.opOpAssign!op(rhs);
@@ -113,13 +170,28 @@ struct UInt(size_t size)
 
     static if (size == 128)
     ///
-    @safe pure @nogc
+    // @safe pure @nogc
     unittest
     {
         auto a = UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
         assert(a << 4 == UInt!128.fromHexString("fbbfae3cd0aff2714a1de7022b0029d0"));
         assert(a << 68 == UInt!128.fromHexString("4a1de7022b0029d00000000000000000"));
-        assert(a << 128 == UInt!128.fromHexString("0"));
+        assert(a << 128 == UInt!128(0));
+        assert(a >> 4 == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029"));
+        assert(a >> 68 == UInt!128.fromHexString("afbbfae3cd0aff2"));
+        assert(a >> 128 == UInt!128(0));
+    }
+
+    /++
+    `auto c = a << b`, and `^`, `|`, `&` operations.
+    +/
+    UInt opBinary(string op)(UInt rhs)
+        const @safe pure nothrow @nogc
+        if (op == "^" || op == "|" || op == "&")
+    {
+        UInt ret = this;
+        ret.opOpAssign!op(rhs);
+        return ret;
     }
 
     /++
@@ -135,7 +207,7 @@ struct UInt(size_t size)
     }
 
     /++
-    Shift using at most `size_t.sizeof * 8` bits
+    Shifts left using at most `size_t.sizeof * 8` bits
     +/
     UInt smallLeftShift()(uint shift)
     {
@@ -168,6 +240,59 @@ struct UInt(size_t size)
     {
         auto a = UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
         assert(a.smallLeftShift(4) == UInt!128.fromHexString("fbbfae3cd0aff2714a1de7022b0029d0"));
+    }
+
+    /++
+    Shifts right using at most `size_t.sizeof * 8` bits
+    +/
+    UInt smallRightShift()(uint shift)
+    {
+        assert(shift <= size_t.sizeof * 8);
+        UInt ret;
+        auto csh = size_t.sizeof * 8 - shift;
+        version (LittleEndian)
+        {
+            static foreach_reverse (i; 0 .. data.length - 1)
+            {
+                ret.data[i] = (data[i] >>> shift) | (data[i + 1] << csh);
+            }
+            ret.data[$ - 1] = data[$ - 1] >>> shift;
+        }
+        else
+        {
+            static foreach (i; 1 .. data.length)
+            {
+                ret.data[i] = (data[i] >>> shift) | (data[i - 1] << csh);
+            }
+            ret.data[0] = data[0] >>> shift;
+        }
+        return ret;
+    }
+
+    static if (size == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto a = UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
+        assert(a.smallRightShift(4) == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029"));
+    }
+
+    /++
+    +/
+    ulong opCast(T)()
+        if (is(Unqual!T == ulong))
+    {
+        import mir.bignum.low_level_view;
+        auto d = BigUIntView!size_t(data).leastSignificantFirst;
+        static if (size_t.sizeof == ulong.sizeof)
+        {
+            return d.front;
+        }
+        else
+        {
+            return d.front | (ulong(d[1]) << 32);
+        }
     }
 
     /++

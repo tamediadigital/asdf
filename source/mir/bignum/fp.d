@@ -6,18 +6,21 @@ import std.traits;
 import mir.bitop;
 import mir.utility;
 
+private enum half(size_t hs) = (){
+    import mir.bignum.fixed_int: UInt;
+    UInt!hs ret; ret.signBit = true; return ret;
+}();
+
 /++
 +/
 struct Fp(size_t coefficientSize)
-    if ((coefficientSize & 0x3F) == 0 && coefficientSize / (size_t.sizeof * 8) >= 1)
+    if (coefficientSize % 64 == 0 && coefficientSize >= 64)
 {
     import mir.bignum.fixed_int: UInt;
 
     bool sign;
     int exponent;
     UInt!coefficientSize coefficient;
-
-@safe pure @nogc:
 
     /++
     +/
@@ -69,16 +72,10 @@ struct Fp(size_t coefficientSize)
                 else
                     coefficient.data = integer.data[0 .. N];
                 enum tailSize = size - coefficientSize;
-                enum half(size_t hs) = (){ UInt!hs ret; ret.signBit = true; return ret; }();
                 auto cr = integer.toSize!tailSize.opCmp(half!tailSize);
-                version (LittleEndian)
-                    auto inc = cr > 0 || cr == 0 && (coefficient.data[0] & 1);
-                else
-                    auto inc = cr > 0 || cr == 0 && (coefficient.data[$ - 1] & 1);
-                if (inc)
+                if (cr > 0 || cr == 0 && coefficient.bt(0))
                 {
-                    auto overflow = coefficient += 1;
-                    if (overflow)
+                    if (auto overflow = coefficient += 1)
                     {
                         coefficient = half!coefficientSize;
                         exponent++;
@@ -148,7 +145,7 @@ struct Fp(size_t coefficientSize)
     ///
     ref Fp opOpAssign(string op : "*")(Fp rhs) nothrow return
     {
-        this = this.opBinary!"*"(rhs);
+        this = this.opBinary!op(rhs);
         return this;
     }
 
@@ -182,10 +179,40 @@ struct Fp(size_t coefficientSize)
     T opCast(T)() nothrow const
         if (isFloatingPoint!T)
     {
-        Unqual!T c = coefficient;
+        import mir.math.ieee: ldexp;
+        auto exp = cast()exponent;
+        static if (coefficientSize == 64)
+        {
+            Unqual!T c = cast(ulong) coefficient;
+        }
+        else
+        {
+            enum rMask = (UInt!coefficientSize(1) << (coefficientSize - T.mant_dig)) - UInt!coefficientSize(1);
+            enum rHalf = UInt!coefficientSize(1) << (coefficientSize - T.mant_dig - 1);
+            enum rInc = UInt!coefficientSize(1) << (coefficientSize - T.mant_dig);
+            auto cr = (coefficient & rMask).opCmp(rHalf);
+            UInt!coefficientSize adC = coefficient;
+            import std.stdio;
+            if (cr > 0 || cr == 0 && coefficient.bt(T.mant_dig))
+            {
+                if (auto overflow = adC += rInc)
+                {
+                    adC = half!coefficientSize;
+                    exp++;
+                }
+            }
+            adC >>= coefficientSize - T.mant_dig;
+            exp += coefficientSize - T.mant_dig;
+            Unqual!T c = cast(ulong) adC;
+            static if (T.mant_dig > 64) //
+            {
+                static assert (T.mant_dig <= 128);
+                c += ldexp(cast(T) cast(ulong) (adC >> 64), 64);
+            }
+        }
         if (sign)
             c = -c;
-        return ldexp!(c, exponent);
+        return ldexp(c, exp);
     }
 
     static if (coefficientSize == 128)
@@ -193,7 +220,9 @@ struct Fp(size_t coefficientSize)
     @safe pure @nogc
     unittest
     {
-        // todo
+        auto fp = Fp!128(1, 100, UInt!128.fromHexString("e3251bacb112cb8b71ad3f85a970a314"));
+        assert(cast(double)fp == -0xE3251BACB112C8p+172);
+        // TODO: more tests
     }
 
     ///
