@@ -17,15 +17,16 @@ struct Fp(size_t coefficientSize)
     if (coefficientSize % 64 == 0 && coefficientSize >= 64)
 {
     import mir.bignum.fixed_int: UInt;
+    import mir.bignum.low_level_view: BigUIntView, BigIntView, WordEndian;
 
     bool sign;
-    int exponent;
+    sizediff_t exponent;
     UInt!coefficientSize coefficient;
 
     /++
     +/
     nothrow
-    this(bool sign, int exponent, UInt!coefficientSize normalizedCoefficient)
+    this(bool sign, sizediff_t exponent, UInt!coefficientSize normalizedCoefficient)
     {
         this.coefficient = normalizedCoefficient;
         this.exponent = exponent;
@@ -42,7 +43,7 @@ struct Fp(size_t coefficientSize)
         {
             if (normalizedInteger)
             {
-                this(false, int(size) - int(coefficientSize), integer.rightExtend!(coefficientSize - size));
+                this(false, sizediff_t(size) - coefficientSize, integer.rightExtend!(coefficientSize - size));
             }
             else
             {
@@ -54,11 +55,9 @@ struct Fp(size_t coefficientSize)
             this.exponent = size - coefficientSize;
             if (!normalizedInteger)
             {
-                if (auto c = integer.ctlz)
-                {
-                    integer <<= c;
-                    this.exponent -= c;
-                }
+                auto c = integer.ctlz;
+                integer <<= c;
+                this.exponent -= c;
             }
             static if (size == coefficientSize)
             {
@@ -93,27 +92,27 @@ struct Fp(size_t coefficientSize)
         auto fp = Fp!128(UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
         assert(fp.exponent == 0);
         assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
-        
+
         fp = Fp!128(UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"), true);
         assert(fp.exponent == 0);
         assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
-        
+
         fp = Fp!128(UInt!128.fromHexString("ae3cd0aff2714a1de7022b0029d"));
         assert(fp.exponent == -20);
         assert(fp.coefficient == UInt!128.fromHexString("ae3cd0aff2714a1de7022b0029d00000"));
-        
+
         fp = Fp!128(UInt!128.fromHexString("e7022b0029d"));
         assert(fp.exponent == -84);
         assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
-        
+
         fp = Fp!128(UInt!64.fromHexString("e7022b0029d"));
         assert(fp.exponent == -84);
         assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
-        
+
         fp = Fp!128(UInt!64.fromHexString("e7022b0029dd0aff"), true);
         assert(fp.exponent == -64);
         assert(fp.coefficient == UInt!128.fromHexString("e7022b0029dd0aff0000000000000000"));
-        
+
         fp = Fp!128(UInt!64.fromHexString("e7022b0029d"));
         assert(fp.exponent == -84);
         assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
@@ -135,12 +134,129 @@ struct Fp(size_t coefficientSize)
         assert(fp.coefficient == UInt!128.fromHexString("ffffffffffffffffffffffffffffffff"));
     }
 
-    // /++
-    // +/
-    // this(UInt, WordEndian endiand)(BigUIntView!(const UInt, endiand) integer)
-    // {
-    //     integer = integer.normalized;
-    // }
+    /++
+    +/
+    this(BigIntView!size_t integer, bool wordNormalized = false, bool nonZero = false, bool bitNormalized = false)
+    {
+        this(integer.unsigned, wordNormalized, nonZero, bitNormalized);
+        this.sign = integer.sign;
+    }
+
+    static if (coefficientSize == 128)
+    ///
+    @safe pure
+    unittest
+    {
+        import mir.bignum.low_level_view: BigUIntView;
+
+        auto fp = Fp!128(-BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
+        assert(fp.sign);
+        assert(fp.exponent == 0);
+        assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
+    }
+
+    /++
+    +/
+    this(BigUIntView!size_t integer, bool wordNormalized = false, bool nonZero = false, bool bitNormalized = false)
+    {
+        if (!wordNormalized)
+            integer = integer.normalized;
+        if (!nonZero)
+            if (integer.coefficients.length == 0)
+                return;
+        if (!bitNormalized)
+        {
+            auto c = ctlz(integer.mostSignificant);
+            exponent = -c;
+            integer.smallLeftShiftInPlace(cast(uint)c);
+        }
+        assert(integer.coefficients.length);
+        while(_expect(integer.leastSignificant == 0, false))
+        {
+            exponent += size_t.sizeof * 8;
+            integer.popLeastSignificant;
+            assert(integer.coefficients.length);
+        }
+        sizediff_t size = integer.coefficients.length * (size_t.sizeof * 8);
+        enum N = coefficient.data.length;
+        auto expShift = size - coefficientSize;
+        this.exponent += expShift;
+        if (_expect(size <= coefficientSize, true))
+        {
+            version (BigEndian)
+                coefficient.data[0 .. integer.coefficients.length] = integer.coefficients;
+            else
+                coefficient.data[$ - integer.coefficients.length .. $] = integer.coefficients;
+        }
+        else
+        {
+            version (LittleEndian)
+                coefficient.data = integer.coefficients[$ - N .. $];
+            else
+                coefficient.data = integer.coefficients[0 .. N];
+            auto tail = integer.mostSignificantFirst[N];
+            if ((tail > cast(size_t)sizediff_t.min) | (tail == cast(size_t)sizediff_t.min) & (BigUIntView!size_t(coefficient.data).leastSignificant & 1))
+            {
+                if (auto overflow = coefficient += 1)
+                {
+                    coefficient = half!coefficientSize;
+                    exponent++;
+                }
+            }
+        }
+    }
+
+    static if (coefficientSize == 128)
+    ///
+    @safe pure
+    unittest
+    {
+        import mir.bignum.low_level_view: BigUIntView;
+
+        auto fp = Fp!128(BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
+        assert(fp.exponent == 0);
+        assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
+
+        fp = Fp!128(BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"), true);
+        assert(fp.exponent == 0);
+        assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
+
+        fp = Fp!128(BigUIntView!size_t.fromHexString("ae3cd0aff2714a1de7022b0029d"));
+        assert(fp.exponent == -20);
+        assert(fp.coefficient == UInt!128.fromHexString("ae3cd0aff2714a1de7022b0029d00000"));
+
+        fp = Fp!128(BigUIntView!size_t.fromHexString("e7022b0029d"));
+        assert(fp.exponent == -84);
+        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
+
+        fp = Fp!128(BigUIntView!size_t.fromHexString("e7022b0029d"));
+        assert(fp.exponent == -84);
+        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
+
+        fp = Fp!128(BigUIntView!size_t.fromHexString("e7022b0029dd0aff"), true);
+        assert(fp.exponent == -64);
+        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029dd0aff0000000000000000"));
+
+        fp = Fp!128(BigUIntView!size_t.fromHexString("e7022b0029d"));
+        assert(fp.exponent == -84);
+        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
+    
+        fp = Fp!128(BigUIntView!size_t.fromHexString("ffffffffffffffffffffffffffffffff1000000000000000"));
+        assert(fp.exponent == 64);
+        assert(fp.coefficient == UInt!128.fromHexString("ffffffffffffffffffffffffffffffff"));
+
+        fp = Fp!128(BigUIntView!size_t.fromHexString("ffffffffffffffffffffffffffffffff8000000000000000"));
+        assert(fp.exponent == 65);
+        assert(fp.coefficient == UInt!128.fromHexString("80000000000000000000000000000000"));
+
+        fp = Fp!128(BigUIntView!size_t.fromHexString("fffffffffffffffffffffffffffffffe8000000000000000"));
+        assert(fp.exponent == 64);
+        assert(fp.coefficient == UInt!128.fromHexString("fffffffffffffffffffffffffffffffe"));
+
+        fp = Fp!128(BigUIntView!size_t.fromHexString("fffffffffffffffffffffffffffffffe8000000000000001"));
+        assert(fp.exponent == 64);
+        assert(fp.coefficient == UInt!128.fromHexString("ffffffffffffffffffffffffffffffff"));
+    }
 
     ///
     ref Fp opOpAssign(string op : "*")(Fp rhs) nothrow return
@@ -193,7 +309,7 @@ struct Fp(size_t coefficientSize)
             auto cr = (coefficient & rMask).opCmp(rHalf);
             UInt!coefficientSize adC = coefficient;
             import std.stdio;
-            if (cr > 0 || cr == 0 && coefficient.bt(T.mant_dig))
+            if ((cr > 0) | (cr == 0) & coefficient.bt(T.mant_dig))
             {
                 if (auto overflow = adC += rInc)
                 {
@@ -212,7 +328,12 @@ struct Fp(size_t coefficientSize)
         }
         if (sign)
             c = -c;
-        return ldexp(c, exp);
+        static if (exp.sizeof > int.sizeof)
+        {
+            import mir.utility: min, max;
+            exp = exp.max(int.min).min(int.max);
+        }
+        return ldexp(c, cast(int)exp);
     }
 
     static if (coefficientSize == 128)
@@ -222,7 +343,35 @@ struct Fp(size_t coefficientSize)
     {
         auto fp = Fp!128(1, 100, UInt!128.fromHexString("e3251bacb112cb8b71ad3f85a970a314"));
         assert(cast(double)fp == -0xE3251BACB112C8p+172);
-        // TODO: more tests
+    }
+
+    static if (coefficientSize == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto fp = Fp!128(1, 100, UInt!128.fromHexString("e3251bacb112cb8b71ad3f85a970a314"));
+        static if (real.mant_dig == 64)
+            assert(cast(real)fp == -0xe3251bacb112cb8bp+164L);
+    }
+
+    static if (coefficientSize == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto fp = Fp!64(1, 100, UInt!64(0xe3251bacb112cb8b));
+        assert(cast(double)fp == -0xE3251BACB112C8p+108);
+    }
+
+    static if (coefficientSize == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto fp = Fp!64(1, 100, UInt!64(0xe3251bacb112cb8b));
+        static if (real.mant_dig == 64)
+            assert(cast(real)fp == -0xe3251bacb112cb8bp+100L);
     }
 
     ///

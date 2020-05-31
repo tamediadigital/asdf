@@ -49,7 +49,7 @@ T decimalToFloat(T, UInt, WordEndian endian)(BigUInt!(size_t, endian)[] f, int e
     enum half = expv >> 1;
     auto slop = (f.length > (ulong.sizeof / size_t.sizeof)) + 3 * (exp < 0);
     auto z = bigUIntToFp(f) * approxPow10(e);
-    auto ret = cast(T) z;
+    auto ret = cast(Unqual!T) z;
     if (_expect((z.coefficient & mask - half) <= slop || T.mant_dig == 64, T.mant_dig == 64))
     {
         if (exp)

@@ -91,6 +91,46 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
 
     /++
     +/
+    ref inout(UInt) mostSignificant() inout @property
+    {
+        static if (endian == WordEndian.big)
+            return coefficients[0];
+        else
+            return coefficients[$ - 1];
+    }
+
+    /++
+    +/
+    ref inout(UInt) leastSignificant() inout @property
+    {
+        static if (endian == WordEndian.little)
+            return coefficients[0];
+        else
+            return coefficients[$ - 1];
+    }
+
+    /++
+    +/
+    void popMostSignificant()
+    {
+        static if (endian == WordEndian.big)
+            coefficients = coefficients[1 .. $];
+        else
+            coefficients = coefficients[0 .. $ - 1];
+    }
+
+    /++
+    +/
+    void popLeastSignificant()
+    {
+        static if (endian == WordEndian.little)
+            coefficients = coefficients[1 .. $];
+        else
+            coefficients = coefficients[0 .. $ - 1];
+    }
+
+    /++
+    +/
     BigUIntView topMostSignificantPart(size_t length)
     {
         static if (endian == WordEndian.big)
@@ -107,6 +147,60 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
             return BigUIntView(coefficients[0 .. length]);
         else
             return BigUIntView(coefficients[$ - length .. $]);
+    }
+
+    /++
+    Shifts left using at most `size_t.sizeof * 8 - 1` bits
+    +/
+    void smallLeftShiftInPlace()(uint shift)
+    {
+        assert(shift < UInt.sizeof * 8);
+        if (shift == 0)
+            return;
+        auto csh = UInt.sizeof * 8 - shift;
+        auto d = leastSignificantFirst;
+        assert(d.length);
+        foreach_reverse (i; 1 .. d.length)
+            d[i] = (d[i] << shift) | (d[i - 1] >>> csh);
+        d.front <<= shift;
+    }
+
+    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    ///
+    @safe pure
+    unittest
+    {
+        auto a = BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
+        a.smallLeftShiftInPlace(4);
+        assert(a == BigUIntView!size_t.fromHexString("fbbfae3cd0aff2714a1de7022b0029d0"));
+        a.smallLeftShiftInPlace(0);
+        assert(a == BigUIntView!size_t.fromHexString("fbbfae3cd0aff2714a1de7022b0029d0"));
+    }
+
+    /++
+    Shifts right using at most `size_t.sizeof * 8 - 1` bits
+    +/
+    void smallRightShiftInPlace()(uint shift)
+    {
+        assert(shift < UInt.sizeof * 8);
+        if (shift == 0)
+            return;
+        auto csh = UInt.sizeof * 8 - shift;
+        auto d = leastSignificantFirst;
+        assert(d.length);
+        foreach (i; 0 .. d.length - 1)
+            d[i] = (d[i] >>> shift) | (d[i + 1] << csh);
+        d.back >>>= shift;
+    }
+
+    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    ///
+    @safe pure
+    unittest
+    {
+        auto a = BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
+        a.smallRightShiftInPlace(4);
+        assert(a == BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029"));
     }
 
     /++

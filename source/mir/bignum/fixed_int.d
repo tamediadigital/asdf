@@ -21,9 +21,13 @@ struct UInt(size_t size)
     size_t[size / (size_t.sizeof * 8)] data;
 
     ///
-    this(typeof(data) data)
+    this(size_t N)(size_t[N] data)
+        if (N <= this.data.length)
     {
-        this.data = data;
+        version(LittleEndian)
+            this.data[0 .. N] = data;
+        else
+            this.data[$ - N .. $] = data;
     }
 
     ///
@@ -113,45 +117,59 @@ struct UInt(size_t size)
     }
 
     ///
-    ref UInt opOpAssign(string op)(size_t s)
+    ref UInt opOpAssign(string op)(size_t shift)
         @safe pure nothrow @nogc return
         if (op == "<<" || op == ">>>" || op == ">>")
     {
         import mir.bignum.low_level_view;
         auto d = BigUIntView!size_t(data).leastSignificantFirst;
-        if (_expect(s < size, false))
+        assert(shift < size);
+        auto index = shift / (size_t.sizeof * 8);
+        auto bs = shift % (size_t.sizeof * 8);
+        auto ss = size_t.sizeof * 8 - bs;
+        static if (op == ">>>" || op == ">>")
         {
-            auto index = s / (size_t.sizeof * 8);
-            auto bs = s % (size_t.sizeof * 8);
-            auto ss = size_t.sizeof * 8 - bs;
-            static if (op == ">>>" || op == ">>")
+            if (bs)
             {
                 foreach (j; 0 .. data.length - (index + 1))
                 {
                     d[j] = (d[j + index] >>> bs) | (d[j + (index + 1)] << ss);
                 }
-                d[$ - (index + 1)] = d.back >>> bs;
-                foreach (j; data.length - index .. data.length)
+            }
+            else
+            {
+                foreach (j; 0 .. data.length - (index + 1))
                 {
-                    d[j] = 0;
+                    d[j] = d[j + index];
+                }
+            }
+            d[$ - (index + 1)] = d.back >>> bs;
+            foreach (j; data.length - index .. data.length)
+            {
+                d[j] = 0;
+            }
+        }
+        else
+        {
+            if (bs)
+            {
+                foreach_reverse (j; index + 1 .. data.length)
+                {
+                    d[j] = (d[j - index] << bs) | (d[j - (index + 1)] >> ss);
                 }
             }
             else
             {
                 foreach_reverse (j; index + 1 .. data.length)
                 {
-                    d[j] = (d[j - index] << bs) | (d[j - (index + 1)] >> ss);
-                }
-                d[index] = d.front << bs;
-                foreach_reverse (j; 0 .. index)
-                {
-                    d[j] = 0;
+                    d[j] = d[j - index];
                 }
             }
-        }
-        else
-        {
-            this = this.init;
+            d[index] = d.front << bs;
+            foreach_reverse (j; 0 .. index)
+            {
+                d[j] = 0;
+            }
         }
         return this;
     }
@@ -170,16 +188,18 @@ struct UInt(size_t size)
 
     static if (size == 128)
     ///
-    // @safe pure @nogc
+    @safe pure @nogc
     unittest
     {
         auto a = UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
+        assert(a << 0 == a);
         assert(a << 4 == UInt!128.fromHexString("fbbfae3cd0aff2714a1de7022b0029d0"));
         assert(a << 68 == UInt!128.fromHexString("4a1de7022b0029d00000000000000000"));
-        assert(a << 128 == UInt!128(0));
+        assert(a << 127 == UInt!128.fromHexString("80000000000000000000000000000000"));
+        assert(a >> 0 == a);
         assert(a >> 4 == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029"));
         assert(a >> 68 == UInt!128.fromHexString("afbbfae3cd0aff2"));
-        assert(a >> 128 == UInt!128(0));
+        assert(a >> 127 == UInt!128(1));
     }
 
     /++
@@ -207,28 +227,31 @@ struct UInt(size_t size)
     }
 
     /++
-    Shifts left using at most `size_t.sizeof * 8` bits
+    Shifts left using at most `size_t.sizeof * 8 - 1` bits
     +/
-    UInt smallLeftShift()(uint shift)
+    UInt smallLeftShift()(uint shift) const
     {
-        assert(shift <= size_t.sizeof * 8);
-        UInt ret;
-        auto csh = size_t.sizeof * 8 - shift;
-        version (LittleEndian)
+        assert(shift < size_t.sizeof * 8);
+        UInt ret = this;
+        if (shift)
         {
-            static foreach_reverse (i; 1 .. data.length)
+            auto csh = size_t.sizeof * 8 - shift;
+            version (LittleEndian)
             {
-                ret.data[i] = (data[i] << shift) | (data[i - 1] >>> csh);
+                static foreach_reverse (i; 1 .. data.length)
+                {
+                    ret.data[i] = (ret.data[i] << shift) | (ret.data[i - 1] >>> csh);
+                }
+                ret.data[0] = ret.data[0] << shift;
             }
-            ret.data[0] = data[0] << shift;
-        }
-        else
-        {
-            static foreach (i; 0 .. data.length - 1)
+            else
             {
-                ret.data[i] = (data[i] << shift) | (data[i + 1] >>> csh);
+                static foreach (i; 0 .. data.length - 1)
+                {
+                    ret.data[i] = (ret.data[i] << shift) | (ret.data[i + 1] >>> csh);
+                }
+                ret.data[$ - 1] = ret.data[$ - 1] << shift;
             }
-            ret.data[$ - 1] = data[$ - 1] << shift;
         }
         return ret;
     }
@@ -243,28 +266,31 @@ struct UInt(size_t size)
     }
 
     /++
-    Shifts right using at most `size_t.sizeof * 8` bits
+    Shifts right using at most `size_t.sizeof * 8 - 1` bits
     +/
-    UInt smallRightShift()(uint shift)
+    UInt smallRightShift()(uint shift) const
     {
-        assert(shift <= size_t.sizeof * 8);
-        UInt ret;
-        auto csh = size_t.sizeof * 8 - shift;
-        version (LittleEndian)
+        assert(shift < size_t.sizeof * 8);
+        UInt ret = this;
+        if (shift)
         {
-            static foreach_reverse (i; 0 .. data.length - 1)
+            auto csh = size_t.sizeof * 8 - shift;
+            version (LittleEndian)
             {
-                ret.data[i] = (data[i] >>> shift) | (data[i + 1] << csh);
+                static foreach (i; 0 .. data.length - 1)
+                {
+                    ret.data[i] = (ret.data[i] >>> shift) | (ret.data[i + 1] << csh);
+                }
+                ret.data[$ - 1] = ret.data[$ - 1] >>> shift;
             }
-            ret.data[$ - 1] = data[$ - 1] >>> shift;
-        }
-        else
-        {
-            static foreach (i; 1 .. data.length)
+            else
             {
-                ret.data[i] = (data[i] >>> shift) | (data[i - 1] << csh);
+                static foreach_reverse (i; 1 .. data.length)
+                {
+                    ret.data[i] = (ret.data[i] >>> shift) | (ret.data[i - 1] << csh);
+                }
+                ret.data[0] = ret.data[0] >>> shift;
             }
-            ret.data[0] = data[0] >>> shift;
         }
         return ret;
     }
@@ -280,11 +306,11 @@ struct UInt(size_t size)
 
     /++
     +/
-    ulong opCast(T)()
+    ulong opCast(T)() const
         if (is(Unqual!T == ulong))
     {
         import mir.bignum.low_level_view;
-        auto d = BigUIntView!size_t(data).leastSignificantFirst;
+        auto d = BigUIntView!(const size_t)(data).leastSignificantFirst;
         static if (size_t.sizeof == ulong.sizeof)
         {
             return d.front;
@@ -432,10 +458,10 @@ UInt!(sizeA + sizeB) extendedMul(size_t sizeA, size_t sizeB)(UInt!sizeA a, UInt!
 UInt!(size + size_t.sizeof * 8)
     extendedMul(size_t size)(UInt!size a, size_t b)
 {
-    import mir.bignum.low_level_view;
+    import mir.bignum.low_level_view: BigUIntView;
     size_t overflow = BigUIntView!size_t(a.data) *= b;
     auto ret = a.toSize!(size + size_t.sizeof * 8);
-    BigUIntView!size_t(ret.data).mostSignificantFirst.front = overflow;
+    BigUIntView!size_t(ret.data).mostSignificant = overflow;
     return ret;
 }
 
@@ -522,6 +548,6 @@ UInt!(size + size_t.sizeof * 8)
     import mir.bignum.low_level_view;
     auto ret = extendedMul(a, b);
     auto view = BigUIntView!size_t(ret.data);
-    view.leastSignificantFirst.back += view.topLeastSignificantPart(a.data.length) += BigUIntView!size_t(c.data);
+    view.mostSignificant += view.topLeastSignificantPart(a.data.length) += BigUIntView!size_t(c.data);
     return ret;
 }
