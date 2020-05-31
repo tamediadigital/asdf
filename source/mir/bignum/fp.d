@@ -195,7 +195,7 @@ struct Fp(size_t coefficientSize)
             else
                 coefficient.data = integer.coefficients[0 .. N];
             auto tail = integer.mostSignificantFirst[N];
-            if ((tail > cast(size_t)sizediff_t.min) | (tail == cast(size_t)sizediff_t.min) & (BigUIntView!size_t(coefficient.data).leastSignificant & 1))
+            if ((tail > cast(size_t)sizediff_t.min) || (tail == cast(size_t)sizediff_t.min) && (integer.coefficients.length > N + 1 || BigUIntView!size_t(coefficient.data).leastSignificant & 1))
             {
                 if (auto overflow = coefficient += 1)
                 {
