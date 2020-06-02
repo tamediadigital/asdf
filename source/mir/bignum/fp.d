@@ -136,9 +136,9 @@ struct Fp(size_t coefficientSize)
 
     /++
     +/
-    this(BigIntView!size_t integer, bool wordNormalized = false, bool nonZero = false, bool bitNormalized = false)
+    this(BigIntView!size_t integer, bool wordNormalized = false, bool nonZero = false)
     {
-        this(integer.unsigned, wordNormalized, nonZero, bitNormalized);
+        this(integer.unsigned, wordNormalized, nonZero);
         this.sign = integer.sign;
     }
 
@@ -157,45 +157,47 @@ struct Fp(size_t coefficientSize)
 
     /++
     +/
-    this(BigUIntView!size_t integer, bool wordNormalized = false, bool nonZero = false, bool bitNormalized = false)
+    this(BigUIntView!(const size_t) integer, bool wordNormalized = false, bool nonZero = false)
     {
         if (!wordNormalized)
             integer = integer.normalized;
         if (!nonZero)
             if (integer.coefficients.length == 0)
                 return;
-        if (!bitNormalized)
-        {
-            auto c = ctlz(integer.mostSignificant);
-            exponent = -c;
-            integer.smallLeftShiftInPlace(cast(uint)c);
-        }
         assert(integer.coefficients.length);
+        enum N = coefficient.data.length;
+        auto c = cast(uint) ctlz(integer.mostSignificant);
+        sizediff_t size = integer.coefficients.length * (size_t.sizeof * 8);
+        auto expShift = size - coefficientSize;
+        this.exponent = expShift - c;
         while(_expect(integer.leastSignificant == 0, false))
         {
-            exponent += size_t.sizeof * 8;
             integer.popLeastSignificant;
             assert(integer.coefficients.length);
         }
-        sizediff_t size = integer.coefficients.length * (size_t.sizeof * 8);
-        enum N = coefficient.data.length;
-        auto expShift = size - coefficientSize;
-        this.exponent += expShift;
-        if (_expect(size <= coefficientSize, true))
+        if (_expect(integer.coefficients.length <= coefficient.data.length, true))
         {
+
             version (BigEndian)
                 coefficient.data[0 .. integer.coefficients.length] = integer.coefficients;
             else
                 coefficient.data[$ - integer.coefficients.length .. $] = integer.coefficients;
+            coefficient = coefficient.smallLeftShift(c);
         }
         else
         {
-            version (LittleEndian)
-                coefficient.data = integer.coefficients[$ - N .. $];
+            UInt!(coefficientSize + size_t.sizeof * 8) holder;
+            version (BigEndian)
+                holder.data = integer.coefficients[0 .. holder.data.length];
             else
-                coefficient.data = integer.coefficients[0 .. N];
-            auto tail = integer.mostSignificantFirst[N];
-            if ((tail > cast(size_t)sizediff_t.min) || (tail == cast(size_t)sizediff_t.min) && (integer.coefficients.length > N + 1 || BigUIntView!size_t(coefficient.data).leastSignificant & 1))
+                holder.data = integer.coefficients[$ - holder.data.length .. $];
+            holder = holder.smallLeftShift(c);
+            version (BigEndian)
+                coefficient.data = holder.data[0 .. $ - 1];
+            else
+                coefficient.data = holder.data[1 .. $];
+            auto tail = BigUIntView!size_t(holder.data).leastSignificant;
+            if ((tail > cast(size_t)sizediff_t.min) || (tail == cast(size_t)sizediff_t.min) && (integer.coefficients.length > N + 1 || (BigUIntView!size_t(coefficient.data).leastSignificant & 1)))
             {
                 if (auto overflow = coefficient += 1)
                 {
