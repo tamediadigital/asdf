@@ -45,7 +45,7 @@ else
 Arbitrary length unsigned integer view.
 +/
 struct BigUIntView(UInt, WordEndian endian = TargetEndian)
-    if (is(Unqual!UInt == ubyte) || is(Unqual!UInt == ushort) || is(Unqual!UInt == uint) || is(Unqual!UInt == ulong))
+    if (__traits(isUnsigned, UInt) || !(UInt.size == 1 && endian != TargetEndian))
 {
     /++
     A group of coefficients for a radix `UInt.max + 1`.
@@ -60,6 +60,40 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     BigIntView!(UInt, endian) signed() @safe pure nothrow @nogc @property
     {
         return typeof(return)(this);
+    }
+
+    /++
+    +/
+    BigUIntView!(NewUInt, NewUInt.sizeof == 1 ? TargetEndian : endian)
+        coefficientsCast(NewUInt)()
+        pure nothrow @nogc
+        if (NewUInt.sizeof <= UInt.sizeof && (NewUInt.sizeof == 1 || NewUInt.sizeof == UInt.sizeof || endian == TargetEndian))
+    {
+        return typeof(return)(cast(NewUInt[])coefficients);
+    }
+
+    ///
+    T opCast(T, bool wordNormalized = false, bool nonZero = false)() const
+        if (isFloatingPoint!T)
+    {
+        import mir.bignum.fp;
+        enum md = T.mant_dig;
+        enum b = size_t.sizeof * 8;
+        enum n = md / b + (md % b != 0);
+        enum s = n * b;
+        Fp!s fp;
+        fp.ctorImpl!(s - md, wordNormalized, nonZero)(this);
+        return fp.opCast!(T, true);
+    }
+
+    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    ///
+    unittest
+    {
+        auto a = cast(double) BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
+        assert(a == 0xa.fbbfae3cd0bp+124);
+        assert(cast(double) BigUIntView!size_t.init == 0);
+        assert(cast(double) BigUIntView!size_t([0]) == 0);
     }
 
     ///
@@ -729,6 +763,25 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
     {
         this.unsigned = unsigned;
         this.sign = sign;
+    }
+
+    ///
+    T opCast(T, bool wordNormalized = false, bool nonZero = false)() const
+        if (isFloatingPoint!T)
+    {
+        auto ret = this.unsigned.opCast!(T, wordNormalized, nonZero);
+        if (sign)
+            ret = -ret;
+        return ret;
+    }
+
+
+    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    ///
+    unittest
+    {
+        auto a = cast(double) -BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
+        assert(a == -0xa.fbbfae3cd0bp+124);
     }
 
     ///

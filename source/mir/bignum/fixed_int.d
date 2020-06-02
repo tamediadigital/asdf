@@ -13,7 +13,7 @@ Params:
     size = size in bits
 +/
 struct UInt(size_t size)
-    if (size % 64 == 0 && size >= 64)
+    if (size % (size_t.sizeof * 8) == 0 && size >= (size_t.sizeof * 8))
 {
     /++
     Payload. The data is located in the target endianness.
@@ -30,6 +30,7 @@ struct UInt(size_t size)
             this.data[$ - N .. $] = data;
     }
 
+    static if (size >= 64)
     ///
     this(ulong data)
     {
@@ -44,6 +45,14 @@ struct UInt(size_t size)
             d.front = cast(uint) data;
             d[1] = cast(uint) (data >> 32);
         }
+    }
+
+    static if (size < 64)
+    ///
+    this(uint data)
+    {
+        import mir.bignum.low_level_view;
+        BigUIntView!size_t(this.data).leastSignificant = data;
     }
 
     ///

@@ -136,9 +136,9 @@ struct Fp(size_t coefficientSize)
 
     /++
     +/
-    this(BigIntView!size_t integer, bool wordNormalized = false, bool nonZero = false)
+    this(UInt, WordEndian endian)(BigIntView!(const UInt, endian) integer)
     {
-        this(integer.unsigned, wordNormalized, nonZero);
+        this(integer.unsigned);
         this.sign = integer.sign;
     }
 
@@ -157,55 +157,9 @@ struct Fp(size_t coefficientSize)
 
     /++
     +/
-    this(BigUIntView!(const size_t) integer, bool wordNormalized = false, bool nonZero = false)
+    this(UInt, WordEndian endian)(BigUIntView!(const UInt, endian) integer)
     {
-        if (!wordNormalized)
-            integer = integer.normalized;
-        if (!nonZero)
-            if (integer.coefficients.length == 0)
-                return;
-        assert(integer.coefficients.length);
-        enum N = coefficient.data.length;
-        auto c = cast(uint) ctlz(integer.mostSignificant);
-        sizediff_t size = integer.coefficients.length * (size_t.sizeof * 8);
-        auto expShift = size - coefficientSize;
-        this.exponent = expShift - c;
-        while(_expect(integer.leastSignificant == 0, false))
-        {
-            integer.popLeastSignificant;
-            assert(integer.coefficients.length);
-        }
-        if (_expect(integer.coefficients.length <= coefficient.data.length, true))
-        {
-
-            version (BigEndian)
-                coefficient.data[0 .. integer.coefficients.length] = integer.coefficients;
-            else
-                coefficient.data[$ - integer.coefficients.length .. $] = integer.coefficients;
-            coefficient = coefficient.smallLeftShift(c);
-        }
-        else
-        {
-            UInt!(coefficientSize + size_t.sizeof * 8) holder;
-            version (BigEndian)
-                holder.data = integer.coefficients[0 .. holder.data.length];
-            else
-                holder.data = integer.coefficients[$ - holder.data.length .. $];
-            holder = holder.smallLeftShift(c);
-            version (BigEndian)
-                coefficient.data = holder.data[0 .. $ - 1];
-            else
-                coefficient.data = holder.data[1 .. $];
-            auto tail = BigUIntView!size_t(holder.data).leastSignificant;
-            if ((tail > cast(size_t)sizediff_t.min) || (tail == cast(size_t)sizediff_t.min) && (integer.coefficients.length > N + 1 || (BigUIntView!size_t(coefficient.data).leastSignificant & 1)))
-            {
-                if (auto overflow = coefficient += 1)
-                {
-                    coefficient = half!coefficientSize;
-                    exponent++;
-                }
-            }
-        }
+        ctorImpl(integer);
     }
 
     static if (coefficientSize == 128)
@@ -215,29 +169,21 @@ struct Fp(size_t coefficientSize)
     {
         import mir.bignum.low_level_view: BigUIntView;
 
-        auto fp = Fp!128(BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
+        auto fp = Fp!128(BigUIntView!ulong.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
         assert(fp.exponent == 0);
         assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
 
-        fp = Fp!128(BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"), true);
-        assert(fp.exponent == 0);
-        assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
-
-        fp = Fp!128(BigUIntView!size_t.fromHexString("ae3cd0aff2714a1de7022b0029d"));
+        fp = Fp!128(BigUIntView!uint.fromHexString("ae3cd0aff2714a1de7022b0029d"));
         assert(fp.exponent == -20);
         assert(fp.coefficient == UInt!128.fromHexString("ae3cd0aff2714a1de7022b0029d00000"));
 
-        fp = Fp!128(BigUIntView!size_t.fromHexString("e7022b0029d"));
+        fp = Fp!128(BigUIntView!ushort.fromHexString("e7022b0029d"));
         assert(fp.exponent == -84);
         assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
 
-        fp = Fp!128(BigUIntView!size_t.fromHexString("e7022b0029d"));
+        fp = Fp!128(BigUIntView!ubyte.fromHexString("e7022b0029d"));
         assert(fp.exponent == -84);
         assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
-
-        fp = Fp!128(BigUIntView!size_t.fromHexString("e7022b0029dd0aff"), true);
-        assert(fp.exponent == -64);
-        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029dd0aff0000000000000000"));
 
         fp = Fp!128(BigUIntView!size_t.fromHexString("e7022b0029d"));
         assert(fp.exponent == -84);
@@ -258,6 +204,118 @@ struct Fp(size_t coefficientSize)
         fp = Fp!128(BigUIntView!size_t.fromHexString("fffffffffffffffffffffffffffffffe8000000000000001"));
         assert(fp.exponent == 64);
         assert(fp.coefficient == UInt!128.fromHexString("ffffffffffffffffffffffffffffffff"));
+    }
+
+    package void ctorImpl(size_t internalRoundLastBits = 0, bool wordNormalized = false, bool nonZero = false, UInt, WordEndian endian)(BigUIntView!(const UInt, endian) integer)
+        if (internalRoundLastBits < size_t.sizeof * 8 && (size_t.sizeof >= UInt.sizeof || endian == TargetEndian))
+    {
+        static if (UInt.sizeof > size_t.sizeof)
+        {
+            ctorImpl!internalRoundLastBits(integer.coefficientsCast!size_t, false, nonZero);
+        }
+        else
+        {
+            static if (!wordNormalized)
+                integer = integer.normalized;
+            static if (!nonZero)
+                if (integer.coefficients.length == 0)
+                    return;
+            assert(integer.coefficients.length);
+            enum N = coefficient.data.length;
+            auto ms = integer.mostSignificant;
+            auto c = cast(uint) ctlz(ms);
+            sizediff_t size = integer.coefficients.length * (UInt.sizeof * 8);
+            sizediff_t expShift = size - coefficientSize;
+            this.exponent = expShift - c;
+            if (_expect(expShift <= 0, true))
+            {
+                static if (N == 1 && UInt.sizeof == size_t.sizeof)
+                {
+                    coefficient.data[0] = ms;
+                }
+                else
+                {
+                    BigUIntView!size_t(coefficient.data)
+                        .coefficientsCast!UInt
+                        .leastSignificantFirst
+                            [$ - integer.coefficients.length .. $] = integer.leastSignificantFirst;
+                }
+                coefficient = coefficient.smallLeftShift(c);
+            }
+            else
+            {
+                mir.bignum.fixed_int.UInt!(coefficientSize + size_t.sizeof * 8) holder;
+
+                static if (N == 1 && UInt.sizeof == size_t.sizeof)
+                {
+                    version (BigEndian)
+                    {
+                        holder.data[0] = ms;
+                        holder.data[1] = integer.mostSignificantFirst[1];
+                    }
+                    else
+                    {
+                        holder.data[0] = integer.mostSignificantFirst[1];
+                        holder.data[1] = ms;
+                    }
+                }
+                else
+                {
+                    auto holderView = BigUIntView!size_t(holder.data)
+                        .coefficientsCast!UInt
+                        .leastSignificantFirst;
+                    holderView[] = integer.leastSignificantFirst[$ - holderView.length .. $];
+                }
+
+                bool nonZeroTail()
+                {
+                    while(_expect(integer.leastSignificant == 0, false))
+                    {
+                        integer.popLeastSignificant;
+                        assert(integer.coefficients.length);
+                    }
+                    return integer.coefficients.length > (N + 1) * (size_t.sizeof / UInt.sizeof);
+                }
+
+                holder = holder.smallLeftShift(c);
+                version (BigEndian)
+                    coefficient.data = holder.data[0 .. $ - 1];
+                else
+                    coefficient.data = holder.data[1 .. $];
+                auto tail = BigUIntView!size_t(holder.data).leastSignificant;
+
+                static if (internalRoundLastBits)
+                {
+                    enum half = size_t(1) << (internalRoundLastBits - 1);
+                    enum mask0 = (size_t(1) << internalRoundLastBits) - 1;
+                    auto tail0 = BigUIntView!size_t(coefficient.data).leastSignificant & mask0;
+                    BigUIntView!size_t(coefficient.data).leastSignificant &= ~mask0;
+                    auto condInc = tail0 >= half
+                        && (   tail0 > half
+                            || tail
+                            || (BigUIntView!size_t(coefficient.data).leastSignificant & 1)
+                            || nonZeroTail);
+                }
+                else
+                {
+                    enum half = cast(size_t)Signed!size_t.min;
+                    auto condInc = tail >= half
+                        && (    tail > half
+                            || (BigUIntView!size_t(coefficient.data).leastSignificant & 1)
+                            || nonZeroTail);
+                }
+
+                if (condInc)
+                {
+                    enum inc = size_t(1) << internalRoundLastBits;
+                    if (auto overflow = coefficient += inc)
+                    {
+                        coefficient = .half!coefficientSize;
+                        exponent++;
+                    }
+                }
+            }
+        }
     }
 
     ///
@@ -294,11 +352,16 @@ struct Fp(size_t coefficientSize)
     }
 
     ///
-    T opCast(T)() nothrow const
+    T opCast(T, bool noHalf = false)() nothrow const
         if (isFloatingPoint!T)
     {
         import mir.math.ieee: ldexp;
         auto exp = cast()exponent;
+        static if (coefficientSize == 32)
+        {
+            Unqual!T c = cast(uint) coefficient;
+        }
+        else
         static if (coefficientSize == 64)
         {
             Unqual!T c = cast(ulong) coefficient;
@@ -308,15 +371,17 @@ struct Fp(size_t coefficientSize)
             enum rMask = (UInt!coefficientSize(1) << (coefficientSize - T.mant_dig)) - UInt!coefficientSize(1);
             enum rHalf = UInt!coefficientSize(1) << (coefficientSize - T.mant_dig - 1);
             enum rInc = UInt!coefficientSize(1) << (coefficientSize - T.mant_dig);
-            auto cr = (coefficient & rMask).opCmp(rHalf);
             UInt!coefficientSize adC = coefficient;
-            import std.stdio;
-            if ((cr > 0) | (cr == 0) & coefficient.bt(T.mant_dig))
+            static if (!noHalf)
             {
-                if (auto overflow = adC += rInc)
+                auto cr = (coefficient & rMask).opCmp(rHalf);
+                if ((cr > 0) | (cr == 0) & coefficient.bt(T.mant_dig))
                 {
-                    adC = half!coefficientSize;
-                    exp++;
+                    if (auto overflow = adC += rInc)
+                    {
+                        adC = half!coefficientSize;
+                        exp++;
+                    }
                 }
             }
             adC >>= coefficientSize - T.mant_dig;
