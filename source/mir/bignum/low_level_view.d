@@ -41,12 +41,31 @@ else
     enum TargetEndian = WordEndian.big;
 }
 
+private template MaxWordPow5(T)
+{
+    static if (is(T == ubyte))
+        enum MaxWordPow5 = 3;
+    else
+    static if (is(T == ushort))
+        enum MaxWordPow5 = 6;
+    else
+    static if (is(T == uint))
+        enum MaxWordPow5 = 13;
+    else
+    static if (is(T == ulong))
+        enum MaxWordPow5 = 27;
+    else
+        static assert(0);
+}
+
 /++
 Arbitrary length unsigned integer view.
 +/
 struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     if (__traits(isUnsigned, UInt) || !(UInt.size == 1 && endian != TargetEndian))
 {
+    import mir.bignum.fp: Fp, half;
+
     /++
     A group of coefficients for a radix `UInt.max + 1`.
 
@@ -81,9 +100,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         enum b = size_t.sizeof * 8;
         enum n = md / b + (md % b != 0);
         enum s = n * b;
-        Fp!s fp;
-        fp.ctorImpl!(s - md, wordNormalized, nonZero)(this);
-        return fp.opCast!(T, true);
+        return opCast!(Fp!s, s - md, wordNormalized, nonZero).opCast!(T, true);
     }
 
     static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
@@ -94,6 +111,178 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         assert(a == 0xa.fbbfae3cd0bp+124);
         assert(cast(double) BigUIntView!size_t.init == 0);
         assert(cast(double) BigUIntView!size_t([0]) == 0);
+    }
+
+    ///
+    T opCast(T : Fp!coefficientSize, size_t internalRoundLastBits = 0, bool wordNormalized = false, bool nonZero = false, size_t coefficientSize)() const
+        if (internalRoundLastBits < size_t.sizeof * 8 && (size_t.sizeof >= UInt.sizeof || endian == TargetEndian))
+    {
+        static if (isMutable!UInt)
+        {
+            return lightConst.opCast!(T, internalRoundLastBits, wordNormalized, nonZero);
+        }
+        else
+        static if (UInt.sizeof > size_t.sizeof)
+        {
+            integer.coefficientsCast!size_t.opCast!(internalRoundLastBits, false, nonZero);
+        }
+        else
+        {
+            import mir.utility: _expect;
+            import mir.bitop: ctlz;
+            Fp!coefficientSize ret;
+            auto integer = lightConst;
+            static if (!wordNormalized)
+                integer = integer.normalized;
+            static if (!nonZero)
+                if (integer.coefficients.length == 0)
+                    goto R;
+            {
+                assert(integer.coefficients.length);
+                enum N = ret.coefficient.data.length;
+                auto ms = integer.mostSignificant;
+                auto c = cast(uint) ctlz(ms);
+                sizediff_t size = integer.coefficients.length * (UInt.sizeof * 8);
+                sizediff_t expShift = size - coefficientSize;
+                ret.exponent = expShift - c;
+                if (_expect(expShift <= 0, true))
+                {
+                    static if (N == 1 && UInt.sizeof == size_t.sizeof)
+                    {
+                        ret.coefficient.data[0] = ms;
+                    }
+                    else
+                    {
+                        BigUIntView!size_t(ret.coefficient.data)
+                            .coefficientsCast!(Unqual!UInt)
+                            .leastSignificantFirst
+                                [$ - integer.coefficients.length .. $] = integer.leastSignificantFirst;
+                    }
+                    ret.coefficient = ret.coefficient.smallLeftShift(c);
+                }
+                else
+                {
+                    mir.bignum.fixed_int.UInt!(coefficientSize + size_t.sizeof * 8) holder;
+
+                    static if (N == 1 && UInt.sizeof == size_t.sizeof)
+                    {
+                        version (BigEndian)
+                        {
+                            holder.data[0] = ms;
+                            holder.data[1] = integer.mostSignificantFirst[1];
+                        }
+                        else
+                        {
+                            holder.data[0] = integer.mostSignificantFirst[1];
+                            holder.data[1] = ms;
+                        }
+                    }
+                    else
+                    {
+                        auto holderView = BigUIntView!size_t(holder.data)
+                            .coefficientsCast!(Unqual!UInt)
+                            .leastSignificantFirst;
+                        holderView[] = integer.leastSignificantFirst[$ - holderView.length .. $];
+                    }
+
+                    bool nonZeroTail()
+                    {
+                        while(_expect(integer.leastSignificant == 0, false))
+                        {
+                            integer.popLeastSignificant;
+                            assert(integer.coefficients.length);
+                        }
+                        return integer.coefficients.length > (N + 1) * (size_t.sizeof / UInt.sizeof);
+                    }
+
+                    holder = holder.smallLeftShift(c);
+                    version (BigEndian)
+                        ret.coefficient.data = holder.data[0 .. $ - 1];
+                    else
+                        ret.coefficient.data = holder.data[1 .. $];
+                    auto tail = BigUIntView!size_t(holder.data).leastSignificant;
+
+                    static if (internalRoundLastBits)
+                    {
+                        enum half = size_t(1) << (internalRoundLastBits - 1);
+                        enum mask0 = (size_t(1) << internalRoundLastBits) - 1;
+                        auto tail0 = BigUIntView!size_t(ret.coefficient.data).leastSignificant & mask0;
+                        BigUIntView!size_t(ret.coefficient.data).leastSignificant &= ~mask0;
+                        auto condInc = tail0 >= half
+                            && (   tail0 > half
+                                || tail
+                                || (BigUIntView!size_t(ret.coefficient.data).leastSignificant & 1)
+                                || nonZeroTail);
+                    }
+                    else
+                    {
+                        enum half = cast(size_t)Signed!size_t.min;
+                        auto condInc = tail >= half
+                            && (    tail > half
+                                || (BigUIntView!size_t(ret.coefficient.data).leastSignificant & 1)
+                                || nonZeroTail);
+                    }
+
+                    if (condInc)
+                    {
+                        enum inc = size_t(1) << internalRoundLastBits;
+                        if (auto overflow = ret.coefficient += inc)
+                        {
+                            import mir.bignum.fp: half;
+                            ret.coefficient = half!coefficientSize;
+                            ret.exponent++;
+                        }
+                    }
+                }
+            }
+        R:
+            return ret;
+        }
+    }
+
+    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    ///
+    @safe pure
+    unittest
+    {
+        import mir.bignum.fp: Fp;
+        import mir.bignum.fixed_int: UInt;
+
+        auto fp = cast(Fp!128) BigUIntView!ulong.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
+        assert(fp.exponent == 0);
+        assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
+
+        fp = cast(Fp!128) BigUIntView!uint.fromHexString("ae3cd0aff2714a1de7022b0029d");
+        assert(fp.exponent == -20);
+        assert(fp.coefficient == UInt!128.fromHexString("ae3cd0aff2714a1de7022b0029d00000"));
+
+        fp = cast(Fp!128) BigUIntView!ushort.fromHexString("e7022b0029d");
+        assert(fp.exponent == -84);
+        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
+
+        fp = cast(Fp!128) BigUIntView!ubyte.fromHexString("e7022b0029d");
+        assert(fp.exponent == -84);
+        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
+
+        fp = cast(Fp!128) BigUIntView!size_t.fromHexString("e7022b0029d");
+        assert(fp.exponent == -84);
+        assert(fp.coefficient == UInt!128.fromHexString("e7022b0029d000000000000000000000"));
+    
+        fp = cast(Fp!128) BigUIntView!size_t.fromHexString("ffffffffffffffffffffffffffffffff1000000000000000");
+        assert(fp.exponent == 64);
+        assert(fp.coefficient == UInt!128.fromHexString("ffffffffffffffffffffffffffffffff"));
+
+        fp = cast(Fp!128) BigUIntView!size_t.fromHexString("ffffffffffffffffffffffffffffffff8000000000000000");
+        assert(fp.exponent == 65);
+        assert(fp.coefficient == UInt!128.fromHexString("80000000000000000000000000000000"));
+
+        fp = cast(Fp!128) BigUIntView!size_t.fromHexString("fffffffffffffffffffffffffffffffe8000000000000000");
+        assert(fp.exponent == 64);
+        assert(fp.coefficient == UInt!128.fromHexString("fffffffffffffffffffffffffffffffe"));
+
+        fp = cast(Fp!128) BigUIntView!size_t.fromHexString("fffffffffffffffffffffffffffffffe8000000000000001");
+        assert(fp.exponent == 64);
+        assert(fp.coefficient == UInt!128.fromHexString("ffffffffffffffffffffffffffffffff"));
     }
 
     ///
@@ -732,6 +921,8 @@ Arbitrary length signed integer view.
 struct BigIntView(UInt, WordEndian endian = TargetEndian)
     if (is(Unqual!UInt == ubyte) || is(Unqual!UInt == ushort) || is(Unqual!UInt == uint) || is(Unqual!UInt == ulong))
 {
+    import mir.bignum.fp: Fp;
+
     /++
     Self-assigned to unsigned integer view $(MREF BigUIntView).
 
@@ -782,6 +973,30 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
     {
         auto a = cast(double) -BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
         assert(a == -0xa.fbbfae3cd0bp+124);
+    }
+
+    /++
+    +/
+    T opCast(T : Fp!coefficientSize, size_t internalRoundLastBits = 0, bool wordNormalized = false, bool nonZero = false, size_t coefficientSize)() const
+        if (internalRoundLastBits < size_t.sizeof * 8 && (size_t.sizeof >= UInt.sizeof || endian == TargetEndian))
+    {
+        auto ret = unsigned.opCast!(Fp!coefficientSize, internalRoundLastBits, wordNormalized, nonZero);
+        ret.sign = sign;
+        return ret;
+    }
+
+    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    ///
+    @safe pure
+    unittest
+    {
+        import mir.bignum.fixed_int: UInt;
+        import mir.bignum.fp: Fp;
+
+        auto fp = cast(Fp!128) -BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
+        assert(fp.sign);
+        assert(fp.exponent == 0);
+        assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
     }
 
     ///
@@ -1122,6 +1337,85 @@ struct BigUIntAccumulator(UInt, WordEndian endian = TargetEndian)
     {
         length = view.normalized.coefficients.length;
     }
+
+    ///
+    bool canPutN(size_t n)
+    {
+        return length + n <= coefficients.length;
+    }
+
+    ///
+    bool approxCanMulPow5(size_t degree)
+    {
+        // TODO: more precise result
+        enum n = MaxWordPow5!UInt;
+        return canPutN(degree / n + (degree % n != 0));
+    }
+
+    ///
+    bool canMulPow2(size_t degree)
+    {
+        import mir.bitop: ctlz;
+        enum n = UInt.sizeof * 8;
+        return canPutN(degree / n + (degree % n > ctlz(view.mostSignificant)));
+    }
+
+    ///
+    void mulPow5(size_t degree)
+    {
+        // assert(approxCanMulPow5(degree));
+        enum n = MaxWordPow5!UInt;
+        enum wordInit = UInt(5) ^^ n;
+        UInt word = wordInit;
+        while(degree)
+        {
+            if (degree >= n)
+            {
+                degree -= n;
+            }
+            else
+            {
+                word = 1;
+                do word *= 5;
+                while(--degree);
+            }
+            if (auto overflow = view *= word)
+            {
+                put(overflow);
+            }
+        }
+    }
+
+    ///
+    void mulPow2(size_t degree)
+    {
+        import mir.bitop: ctlz;
+        assert(canMulPow2(degree));
+        enum n = UInt.sizeof * 8;
+        auto ws = degree / n;
+        auto oldLength = length;
+        length += ws;
+        if (ws)
+        {
+            auto v = view.leastSignificantFirst;
+            foreach_reverse (i; 0 .. oldLength)
+            {
+                v[i + ws] = v[i];
+            }
+            do v[--ws] = 0;
+            while(ws);
+        }
+
+        if (auto tail = cast(uint)(degree % n))
+        {
+            if (tail > ctlz(view.mostSignificant))
+            {
+                put(0);
+                oldLength++;
+            }
+            view.topMostSignificantPart(oldLength).smallLeftShiftInPlace(tail);
+        }
+    }
 }
 
 ///
@@ -1156,22 +1450,155 @@ unittest
     }
 }
 
-/++
-+/
-struct DecimalView(UInt, WordEndian endian, Exp = size_t)
+/// Computes `13 * 10^^60`
+@safe pure
+unittest
 {
-    ///
-    Exp exponent;
-    ///
-    BigIntView!(UInt, endian) coefficient;
+    uint[7] buffer;
+    auto accumulator = BigUIntAccumulator!uint(buffer);
+    accumulator.put(13); // initial value
+    assert(accumulator.approxCanMulPow5(60));
+    accumulator.mulPow5(60);
+    assert(accumulator.canMulPow2(60));
+    accumulator.mulPow2(60);
+    assert(accumulator.view == BigUIntView!uint.fromHexString("81704fcef32d3bd8117effd5c4389285b05d000000000000000"));
 }
 
 /++
 +/
-struct BinaryView(UInt, WordEndian endian, Exp = size_t)
+struct DecimalView(UInt, WordEndian endian = TargetEndian, Exp = int)
 {
+    ///
+    bool sign;
     ///
     Exp exponent;
     ///
-    BigIntView!(UInt, endian) coefficient;
+    BigUIntView!(UInt, endian) coefficient;
+
+    ///
+    T opCast(T, bool wordNormalized = false, bool nonZero = false)() const
+        if (isFloatingPoint!T)
+    {
+        import mir.internal.dec2flt_table;
+        import mir.bignum.fp;
+        auto coeff = coefficient;
+        Unqual!T ret = 0;
+        static if (!wordNormalized)
+            coeff = coeff.normalized;
+        static if (!nonZero)
+            if (coeff.coefficients.length == 0)
+                goto R;
+        enum S = 9;
+        enum P = 1 << (S - 1);
+        static assert(min_p10_e <= -P);
+        static assert(max_p10_e >= P);
+        static if (T.mant_dig < 64)
+        {
+            Unsigned!Exp exp = exponent;
+            auto expSign = exponent < 0;
+            exp = expSign ? -exp : exp;
+            if (_expect(exp >>> S == 0, true))
+            {
+                auto z = coefficient.opCast!(Fp!64, 64, true, true) * Fp!64(false, p10_exponents[exponent - min_p10_e], UInt!64(p10_coefficients[exponent - min_p10_e][0]));
+                ret = cast(Unqual!T) z;
+                auto slop = (coeff.coefficients.length > (ulong.sizeof / UInt.sizeof)) + 3 * expSign;
+                if (slop == 0 && exponent <= MaxWordPow5!ulong)
+                    goto R;
+                enum ulong expv = (1UL << (64 - T.mant_dig));
+                enum ulong mask = expv - 1;
+                enum ulong half = expv >> 1;
+                long bitsDiff = (cast(ulong)z & mask) - half;
+                if (_expect((bitsDiff < 0 ? -bitsDiff : bitsDiff) > slop, true))
+                    goto R;
+                goto AlgoR;
+            }
+            ret = T.infinity;
+            goto R;
+        }
+        else
+        {
+            UInt!128 load(Exp e)
+            {
+                auto h = p10_coefficients[e - min_p10_e][0];
+                auto l = p10_coefficients[e - min_p10_e][1]
+                if (l >= cast(ulong)long.min)
+                    h--;
+                version(BigEndian)
+                    auto p10Coeff = UInt!128(cast(size_t[ulong.sizeof / size_t.sizeof * 2])cast(ulong[2])[h, l]);
+                else
+                    auto p10Coeff = UInt!128(cast(size_t[ulong.sizeof / size_t.sizeof * 2])cast(ulong[2])[l, h]);
+                auto p10exp = p10_exponents[e - min_p10_e] - 64;
+                return Fp!128(false, p10exp, p10coeff);
+            }
+            Unsigned!Exp exp = exponent;
+            auto expSign = exponent < 0;
+            exp = expSign ? -exp : exp;
+            auto index = exp & 0x1F;
+            auto coeff = load(expSign ? -index : index);
+            exp >>= S;
+            if (_expect(exp != 0, false))
+            {
+                if (!expSign)
+                    goto AlgoR;
+                exp   = -exp;
+                auto v = load(-P);
+                do
+                {
+                    if (exp & 1)
+                        coeff *= v;
+                    exp >>>= 1;
+                    if (exp == 0)
+                        break;
+                    v *= v;
+                }
+                while(true);
+            }
+            auto z = coefficient.opCast!(Fp!128, 128, true, true) * coeff;
+            ret = cast(Unqual!T) z;
+            auto slop = (coeff.coefficients.length > (ulong.sizeof / UInt.sizeof)) + 3 * expSign;
+            if (slop == 0 && exponent <= 55)
+                goto R;
+            static if (T.mant_dig == 64)
+            {
+                long bitsDiff = cast(ulong)z - long.min;
+            }
+            else
+            {
+                enum ulong expv = (1UL << (128 - T.mant_dig));
+                enum ulong mask = expv - 1;
+                enum ulong half = expv >> 1;
+                long bitsDiff = (cast(ulong)z & mask) - half;
+            }
+            if (_expect((bitsDiff < 0 ? -bitsDiff : bitsDiff) <= slop, true))
+                goto R;
+        }
+
+        if (_expect(exponent > MaxWordPow5!ushort, false))
+        {
+            ret = T.infinity;
+            goto R;
+        }
+        if (_expect(exponent + (coeff.coefficients.length - 1) * (UInt.sizeof * 8) < MaxWordPow5!ushort, false))
+        {
+            ret = T.infinity;
+            goto R;
+        }
+
+    R:
+        if (sign)
+            ret = -ret;
+        return ret;
+    }
+}
+
+/++
++/
+struct BinaryView(UInt, WordEndian endian = TargetEndian, Exp = int)
+{
+    ///
+    bool sign;
+    ///
+    Exp exponent;
+    ///
+    BigUIntView!(UInt, endian) coefficient;
 }

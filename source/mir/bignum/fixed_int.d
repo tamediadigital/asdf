@@ -315,7 +315,7 @@ struct UInt(size_t size)
 
     /++
     +/
-    ulong opCast(T)() const
+    T opCast(T)() const
         if (is(Unqual!T == ulong))
     {
         import mir.bignum.low_level_view;
