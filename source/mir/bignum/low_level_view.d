@@ -79,9 +79,10 @@ private template MaxFpPow5(T)
 Arbitrary length unsigned integer view.
 +/
 struct BigUIntView(UInt, WordEndian endian = TargetEndian)
-    if (__traits(isUnsigned, UInt) || !(UInt.size == 1 && endian != TargetEndian))
+    if (__traits(isUnsigned, UInt) || !(UInt.sizeof == 1 && endian != TargetEndian))
 {
     import mir.bignum.fp: Fp, half;
+    import mir.bignum.fixed_int: FixedUInt = UInt;
 
     /++
     A group of coefficients for a radix `UInt.max + 1`.
@@ -624,19 +625,40 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         do
         {
             import mir.utility: extMul;
+            auto ext = ns.front.extMul(rhs);
             bool overflowM;
-            static if (is(UInt == uint))
-            {
-                auto ext = ulong(ns.front) * ulong(rhs);
-                ns.front = (cast(uint)(ext)).cop!"+"(overflow, overflowM);
-                overflow = cast(uint)(ext >>> 32) + overflowM;
-            }
-            else
-            {
-                auto ext = ns.front.extMul(rhs);
-                ns.front = ext.low.cop!"+"(overflow, overflowM);
-                overflow = ext.high + overflowM;
-            }
+            ns.front = ext.low.cop!"+"(overflow, overflowM);
+            overflow = ext.high + overflowM;
+            ns.popFront;
+        }
+        while (ns.length);
+        return overflow;
+    }
+
+    static if (isMutable!UInt && UInt.sizeof == size_t.sizeof)
+    /++
+    Performs `UInt overflow = big *= fixed_int` operatrion.
+    Precondition: non-empty coefficients
+    Params:
+        rhs = unsigned fixed-length integer to multiply by
+    Returns:
+        unsigned fixed-length integer overflow value
+    +/
+    FixedUInt!size
+    opOpAssign(string op : "*", size_t size)(FixedUInt!size rhs, FixedUInt!size overflow = 0)
+        @safe pure nothrow @nogc
+    {
+        assert(coefficients.length);
+        auto ns = this.leastSignificantFirst;
+        do
+        {
+            auto t = rhs;
+            auto overflowW = t.view *= ns.front;
+            auto overflowM = t += overflow;
+            overflowW += overflowM;
+            ns.front = cast(size_t) t;
+            overflow = t.toSize!(size - size_t.sizeof * 8, false).toSize!size;
+            BigUIntView!size_t(overflow.data).mostSignificant = overflowW;
             ns.popFront;
         }
         while (ns.length);
@@ -1022,6 +1044,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
     {
         return typeof(return)(unsigned.lightConst, sign);
     }
+
     ///ditto
     alias lightConst this;
 
@@ -1467,6 +1490,19 @@ unittest
     }
 }
 
+///
+unittest
+{
+    import mir.bignum.fixed_int: UInt;
+    import mir.bignum.low_level_view: BigUIntView;
+    auto bigView = BigUIntView!size_t.fromHexString("55a325ad18b2a77120d870d987d5237473790532acab45da44bc07c92c92babf0b5e2e2c7771cd472ae5d7acdb159a56fbf74f851a058ae341f69d1eb750d7e3");
+    auto fixed = UInt!256.fromHexString("55e5669576d31726f4a9b58a90159de5923adc6c762ebd3c4ba518d495229072");
+    auto overflow = bigView *= fixed;
+    assert(overflow == UInt!256.fromHexString("1cbbe8c42dc21f936e4ce5b2f52ac404439857f174084012fcd1b71fdec2a398"));
+    assert(bigView == BigUIntView!size_t.fromHexString("c73fd2b26f2514c103c324943b6c90a05d2732118d5f0099c36a69a8051bb0573adc825b5c9295896c70280faa4c4d369df8e92f82bfffafe078b52ae695d316"));
+
+}
+
 /// Computes `13 * 10^^60`
 @safe pure
 unittest
@@ -1480,6 +1516,44 @@ unittest
     accumulator.mulPow2(60);
     assert(accumulator.view == BigUIntView!uint.fromHexString("81704fcef32d3bd8117effd5c4389285b05d000000000000000"));
 }
+
+// /++
+// +/
+// BigUIntView!(UInt, endian) multiplyAddImpl(UInt, WordEndian endian)(
+//     BigUIntView!(UInt, endian) result,
+//     BigUIntView!(const UInt, endian) a,
+//     BigUIntView!(const UInt, endian) b, out bool overflow)
+// @safe pure nothrow @nogc
+// {
+//     import mir.utility: swap;
+//     assert(a.length);
+//     assert(b.length);
+//     assert(result.length);
+//     if (a.length > b.length)
+//         swap(a, b);
+//             assert(coefficients.length);
+//     assert(b.length <= result.length);
+
+//     auto rs = a.leastSignificantFirst;
+//     do
+//     {
+//         auto ns = b.leastSignificantFirst;
+//         do
+//         {
+//             import mir.utility: extMul;
+//             bool overflowM;
+//             bool overflowN;
+//             auto ext = ns.front.extMul(rhs);
+//             ns.front = ext.low.cop!"+"(overflow, overflowM)
+//                 .cop!"+"(overflow, overflowN);
+//             overflow = ext.high + overflowM;
+//             ns.popFront;
+//         }
+//         while (ns.length);
+//     }
+//     while (rs.length);
+//     return overflow;
+// }
 
 /++
 +/
@@ -1622,7 +1696,7 @@ struct DecimalView(UInt, WordEndian endian = TargetEndian, Exp = int)
         {
             assert(exponent >= 0);
             size_t[128] buffer = void;
-            if ()
+            // if ()
         }
         else
         {

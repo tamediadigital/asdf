@@ -34,8 +34,7 @@ struct UInt(size_t size)
     ///
     this(ulong data)
     {
-        import mir.bignum.low_level_view;
-        auto d = BigUIntView!size_t(this.data).leastSignificantFirst;
+        auto d = view.leastSignificantFirst;
         static if (size_t.sizeof == ulong.sizeof)
         {
             d.front = data;
@@ -51,8 +50,7 @@ struct UInt(size_t size)
     ///
     this(uint data)
     {
-        import mir.bignum.low_level_view;
-        BigUIntView!size_t(this.data).leastSignificant = data;
+        view.leastSignificant = data;
     }
 
     ///
@@ -61,21 +59,33 @@ struct UInt(size_t size)
     ///
     enum UInt min = UInt.init;
 
+    import mir.bignum.low_level_view: BigUIntView;
+
+    ///
+    BigUIntView!size_t view()() @property pure nothrow @nogc scope @safe
+    {
+        return BigUIntView!size_t(data);
+    }
+
+    ///
+    BigUIntView!(const size_t) view()() const @property pure nothrow @nogc scope @safe
+    {
+        return BigUIntView!(const size_t)(data);
+    }
+
     ///
     static UInt fromHexString(scope const(char)[] str)
     {
-        import mir.bignum.low_level_view;
         typeof(return) ret;
-        BigUIntView!size_t(ret.data).fromHexStringImpl(str);
+        ret.view.fromHexStringImpl(str);
         return ret;
     }
 
     /++
     +/
-    auto opCmp(UInt integer)
+    auto opCmp(UInt rhs)
     {
-        import mir.bignum.low_level_view: BigUIntView;
-        return BigUIntView!size_t(data).opCmp(BigUIntView!size_t(integer.data));
+        return view.opCmp(rhs.view);
     }
 
     /++
@@ -85,8 +95,7 @@ struct UInt(size_t size)
         @safe pure nothrow @nogc
         if (op == "+" || op == "-")
     {
-        import mir.bignum.low_level_view;
-        return BigUIntView!size_t(data).opOpAssign!op(BigUIntView!size_t(rhs.data), overflow);
+        return view.opOpAssign!op(rhs.view, overflow);
     }
 
     /// ditto
@@ -94,8 +103,7 @@ struct UInt(size_t size)
         @safe pure nothrow @nogc
         if (op == "+" || op == "-")
     {
-        import mir.bignum.low_level_view;
-        return BigUIntView!size_t(data).opOpAssign!op(rhs);
+        return view.opOpAssign!op(rhs);
     }
 
     /// ditto
@@ -130,8 +138,7 @@ struct UInt(size_t size)
         @safe pure nothrow @nogc return
         if (op == "<<" || op == ">>>" || op == ">>")
     {
-        import mir.bignum.low_level_view;
-        auto d = BigUIntView!size_t(data).leastSignificantFirst;
+        auto d = view.leastSignificantFirst;
         assert(shift < size);
         auto index = shift / (size_t.sizeof * 8);
         auto bs = shift % (size_t.sizeof * 8);
@@ -318,8 +325,7 @@ struct UInt(size_t size)
     T opCast(T)() const
         if (is(Unqual!T == ulong))
     {
-        import mir.bignum.low_level_view;
-        auto d = BigUIntView!(const size_t)(data).leastSignificantFirst;
+        auto d = view.leastSignificantFirst;
         static if (size_t.sizeof == ulong.sizeof)
         {
             return d.front;
@@ -331,19 +337,38 @@ struct UInt(size_t size)
     }
 
     /++
+    +/
+    T opCast(T)() const
+        if (is(Unqual!T == uint))
+    {
+        auto d = view.leastSignificantFirst;
+        return cast(uint) d.front;
+    }
+
+    /++
     Returns:
         the number with shrinked or extended size.
     +/
-    UInt!newSize toSize(size_t newSize)()
+    UInt!newSize toSize(size_t newSize, bool lowerBits = true)()
         const @safe pure @nogc nothrow
     {
         typeof(return) ret;
         import mir.utility: min;
         enum N = min(ret.data.length, data.length);
-        version (LittleEndian)
-            ret.data[0 .. N] = data[0 .. N];
+        static if (lowerBits)
+        {
+            version (LittleEndian)
+                ret.data[0 .. N] = data[0 .. N];
+            else
+                ret.data[$ - N .. $] = data[$ - N .. $];
+        }
         else
-            ret.data[$ - N .. $] = data[$ - N .. $];
+        {
+            version (LittleEndian)
+                ret.data[0 .. N] = data[$ - N .. $];
+            else
+                ret.data[$ - N .. $] = data[0 .. N];
+        }
         return ret;
     }
 
@@ -365,9 +390,8 @@ struct UInt(size_t size)
     bool bt()(size_t position) const
         @safe pure nothrow @nogc
     {
-        import mir.bignum.low_level_view;
         assert(position < data.sizeof * 8);
-        return BigUIntView!(const size_t)(data).bt(position);
+        return view.bt(position);
     }
 
     static if (size == 128)
@@ -391,8 +415,7 @@ struct UInt(size_t size)
     size_t ctlz()() const @property
         @safe pure nothrow @nogc
     {
-        import mir.bignum.low_level_view;
-        return BigUIntView!(const size_t)(data).ctlz;
+        return view.ctlz;
     }
 
     static if (size == 128)
@@ -467,10 +490,9 @@ UInt!(sizeA + sizeB) extendedMul(size_t sizeA, size_t sizeB)(UInt!sizeA a, UInt!
 UInt!(size + size_t.sizeof * 8)
     extendedMul(size_t size)(UInt!size a, size_t b)
 {
-    import mir.bignum.low_level_view: BigUIntView;
-    size_t overflow = BigUIntView!size_t(a.data) *= b;
+    size_t overflow = a.view *= b;
     auto ret = a.toSize!(size + size_t.sizeof * 8);
-    BigUIntView!size_t(ret.data).mostSignificant = overflow;
+    ret.view.mostSignificant = overflow;
     return ret;
 }
 
@@ -554,9 +576,8 @@ unittest
 UInt!(size + size_t.sizeof * 8)
     extendedMulAdd(size_t size)(UInt!size a, size_t b, UInt!size c)
 {
-    import mir.bignum.low_level_view;
     auto ret = extendedMul(a, b);
-    auto view = BigUIntView!size_t(ret.data);
-    view.mostSignificant += view.topLeastSignificantPart(a.data.length) += BigUIntView!size_t(c.data);
+    auto view = ret.view;
+    view.mostSignificant += view.topLeastSignificantPart(a.data.length) += c.view;
     return ret;
 }

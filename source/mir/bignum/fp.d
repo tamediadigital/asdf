@@ -17,7 +17,6 @@ struct Fp(size_t coefficientSize)
     if (coefficientSize % 64 == 0 && coefficientSize >= 64)
 {
     import mir.bignum.fixed_int: UInt;
-    import mir.bignum.low_level_view: BigUIntView, BigIntView, WordEndian;
 
     bool sign;
     sizediff_t exponent;
