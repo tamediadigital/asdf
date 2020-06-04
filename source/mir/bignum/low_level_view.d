@@ -58,6 +58,23 @@ private template MaxWordPow5(T)
         static assert(0);
 }
 
+private template MaxFpPow5(T)
+{
+    static if (T.mant_dig == 24)
+        enum MaxWordPow5 = 6;
+    else
+    static if (T.mant_dig == 53)
+        enum MaxWordPow5 = 10;
+    else
+    static if (T.mant_dig == 64)
+        enum MaxWordPow5 = 27;
+    else
+    static if (T.mant_dig == 113)
+        enum MaxWordPow5 = 48;
+    else
+        static assert(0, "floating point format isn't supported");
+}
+
 /++
 Arbitrary length unsigned integer view.
 +/
@@ -1477,12 +1494,12 @@ struct DecimalView(UInt, WordEndian endian = TargetEndian, Exp = int)
 
     ///
     T opCast(T, bool wordNormalized = false, bool nonZero = false)() const
-        if (isFloatingPoint!T)
+        if (isFloatingPoint!T && isMutable!T)
     {
         import mir.internal.dec2flt_table;
         import mir.bignum.fp;
         auto coeff = coefficient;
-        Unqual!T ret = 0;
+        T ret = 0;
         static if (!wordNormalized)
             coeff = coeff.normalized;
         static if (!nonZero)
@@ -1494,25 +1511,38 @@ struct DecimalView(UInt, WordEndian endian = TargetEndian, Exp = int)
         static assert(max_p10_e >= P);
         static if (T.mant_dig < 64)
         {
-            Unsigned!Exp exp = exponent;
-            auto expSign = exponent < 0;
-            exp = expSign ? -exp : exp;
-            if (_expect(exp >>> S == 0, true))
+            UInt!64 load(Exp e)
             {
-                auto z = coefficient.opCast!(Fp!64, 64, true, true) * Fp!64(false, p10_exponents[exponent - min_p10_e], UInt!64(p10_coefficients[exponent - min_p10_e][0]));
-                ret = cast(Unqual!T) z;
+                auto p10Coeff = p10_coefficients[e - min_p10_e][0];
+                auto p10exp = p10_exponents[e - min_p10_e];
+                return Fp!64(false, p10exp, p10coeff);
+            }
+
+            auto expSign = exponent < 0;
+            if (_expect((expSign ? -exponent : exponent) >>> S == 0, true))
+            {
+                enum ulong mask = (1UL << (64 - T.mant_dig)) - 1;
+                enum ulong half = (1UL << (64 - T.mant_dig - 1));
+                enum ulong bound = ulong(1) << T.mant_dig;
+
+                auto c = coeff.opCast!(Fp!64, 64, true, true);
+                auto z = c.extemdedMul(load(exponent));
+                ret = cast(T) z;
                 auto slop = (coeff.coefficients.length > (ulong.sizeof / UInt.sizeof)) + 3 * expSign;
-                if (slop == 0 && exponent <= MaxWordPow5!ulong)
-                    goto R;
-                enum ulong expv = (1UL << (64 - T.mant_dig));
-                enum ulong mask = expv - 1;
-                enum ulong half = expv >> 1;
-                long bitsDiff = (cast(ulong)z & mask) - half;
+                long bitsDiff = (cast(ulong) cast(Fp!64) z & mask) - half;
                 if (_expect((bitsDiff < 0 ? -bitsDiff : bitsDiff) > slop, true))
                     goto R;
+                if (slop == 0 && exponent <= MaxWordPow5!ulong || exponent == 0)
+                    goto R;
+                if (slop == 3 && MaxFpPow5!T >= -exponent && cast(ulong)c < bound)
+                {
+                    auto e = load(-exponent);
+                    ret =  c.opCast!(T, true) / cast(T) (cast(ulong)e.coeffecient >> e.exponent);
+                    goto R;
+                }
                 goto AlgoR;
             }
-            ret = T.infinity;
+            ret = expSign ? 0 : T.infinity;
             goto R;
         }
         else
@@ -1520,7 +1550,7 @@ struct DecimalView(UInt, WordEndian endian = TargetEndian, Exp = int)
             UInt!128 load(Exp e)
             {
                 auto h = p10_coefficients[e - min_p10_e][0];
-                auto l = p10_coefficients[e - min_p10_e][1]
+                auto l = p10_coefficients[e - min_p10_e][1];
                 if (l >= cast(ulong)long.min)
                     h--;
                 version(BigEndian)
@@ -1530,58 +1560,73 @@ struct DecimalView(UInt, WordEndian endian = TargetEndian, Exp = int)
                 auto p10exp = p10_exponents[e - min_p10_e] - 64;
                 return Fp!128(false, p10exp, p10coeff);
             }
-            Unsigned!Exp exp = exponent;
+
             auto expSign = exponent < 0;
+            Unsigned!Exp exp = exponent;
             exp = expSign ? -exp : exp;
             auto index = exp & 0x1F;
-            auto coeff = load(expSign ? -index : index);
-            exp >>= S;
-            if (_expect(exp != 0, false))
+            bool gotoAlgoR;
+            auto c = load(expSign ? -index : index);
             {
-                if (!expSign)
-                    goto AlgoR;
-                exp   = -exp;
-                auto v = load(-P);
-                do
+                exp >>= S;
+                gotoAlgoR = exp != 0;
+                if (_expect(gotoAlgoR, false))
                 {
-                    if (exp & 1)
-                        coeff *= v;
-                    exp >>>= 1;
-                    if (exp == 0)
-                        break;
-                    v *= v;
+                    if (!expSign)
+                        goto AlgoR;
+                    exp   = -exp;
+                    auto v = load(-P);
+                    do
+                    {
+                        if (exp & 1)
+                            c *= v;
+                        exp >>>= 1;
+                        if (exp == 0)
+                            break;
+                        v *= v;
+                    }
+                    while(true);
                 }
-                while(true);
             }
-            auto z = coefficient.opCast!(Fp!128, 128, true, true) * coeff;
-            ret = cast(Unqual!T) z;
-            auto slop = (coeff.coefficients.length > (ulong.sizeof / UInt.sizeof)) + 3 * expSign;
-            if (slop == 0 && exponent <= 55)
-                goto R;
-            static if (T.mant_dig == 64)
             {
-                long bitsDiff = cast(ulong)z - long.min;
+                auto z = coeff.opCast!(Fp!128, 128, true, true).extendedMul(c);
+                ret = cast(T) z;
+                if (!gotoAlgoR)
+                {
+                    static if (T.mant_dig == 64)
+                        enum ulong mask = ulong.max;
+                    else
+                        enum ulong mask = (1UL << (128 - T.mant_dig)) - 1;
+                    enum ulong half = (1UL << (128 - T.mant_dig - 1));
+                    enum Fp!128 bound = Fp!128(1) << T.mant_dig;
+
+                    auto slop = (coeff.coefficients.length > (ulong.sizeof * 2 / UInt.sizeof)) + 3 * expSign;
+                    long bitsDiff = (cast(ulong) cast(Fp!64) z & mask) - half;
+                    if (_expect((bitsDiff < 0 ? -bitsDiff : bitsDiff) > slop, true))
+                        goto R;
+                    if (slop == 0 && exponent <= 55 || exponent == 0)
+                        goto R;
+                    if (slop == 3 && MaxFpPow5!T >= -exponent && c < bound)
+                    {
+                        auto e = load(-exponent);
+                        ret =  c.opCast!(T, true) / cast(T) e;
+                        goto R;
+                    }
+                }
             }
-            else
-            {
-                enum ulong expv = (1UL << (128 - T.mant_dig));
-                enum ulong mask = expv - 1;
-                enum ulong half = expv >> 1;
-                long bitsDiff = (cast(ulong)z & mask) - half;
-            }
-            if (_expect((bitsDiff < 0 ? -bitsDiff : bitsDiff) <= slop, true))
-                goto R;
         }
 
-        if (_expect(exponent > MaxWordPow5!ushort, false))
+    AlgoR:
+        // fast path
+        if (exponent >= 0)
         {
-            ret = T.infinity;
-            goto R;
+            assert(exponent >= 0);
+            size_t[128] buffer = void;
+            if ()
         }
-        if (_expect(exponent + (coeff.coefficients.length - 1) * (UInt.sizeof * 8) < MaxWordPow5!ushort, false))
+        else
         {
-            ret = T.infinity;
-            goto R;
+
         }
 
     R:
