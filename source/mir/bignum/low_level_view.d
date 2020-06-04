@@ -12,7 +12,7 @@ private alias cop(string op : "-") = subu;
 private alias cop(string op : "+") = addu;
 private enum inverseSign(string op) = op == "+" ? "-" : "+";
 
-private immutable hexStringErrorMsg = "Incorrect hex string for UInt.fromHexString";
+private immutable hexStringErrorMsg = "Incorrect hex string for BigUIntView.fromHexString";
 version (D_Exceptions)
 {
     private immutable hexStringException = new Exception(hexStringErrorMsg);
@@ -78,23 +78,23 @@ private template MaxFpPow5(T)
 /++
 Arbitrary length unsigned integer view.
 +/
-struct BigUIntView(UInt, WordEndian endian = TargetEndian)
-    if (__traits(isUnsigned, UInt) || !(UInt.sizeof == 1 && endian != TargetEndian))
+struct BigUIntView(W, WordEndian endian = TargetEndian)
+    if (__traits(isUnsigned, W) || !(W.sizeof == 1 && endian != TargetEndian))
 {
     import mir.bignum.fp: Fp, half;
-    import mir.bignum.fixed_int: FixedUInt = UInt;
+    import mir.bignum.fixed_int: UInt;
 
     /++
-    A group of coefficients for a radix `UInt.max + 1`.
+    A group of coefficients for a radix `W.max + 1`.
 
     The order corresponds to endianness.
     +/
-    UInt[] coefficients;
+    W[] coefficients;
 
     /++
     Retrurns: signed integer view using the same data payload
     +/
-    BigIntView!(UInt, endian) signed() @safe pure nothrow @nogc @property
+    BigIntView!(W, endian) signed() @safe pure nothrow @nogc @property
     {
         return typeof(return)(this);
     }
@@ -104,7 +104,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     BigUIntView!(NewUInt, NewUInt.sizeof == 1 ? TargetEndian : endian)
         coefficientsCast(NewUInt)()
         pure nothrow @nogc
-        if (NewUInt.sizeof <= UInt.sizeof && (NewUInt.sizeof == 1 || NewUInt.sizeof == UInt.sizeof || endian == TargetEndian))
+        if (NewUInt.sizeof <= W.sizeof && (NewUInt.sizeof == 1 || NewUInt.sizeof == W.sizeof || endian == TargetEndian))
     {
         return typeof(return)(cast(NewUInt[])coefficients);
     }
@@ -121,7 +121,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         return opCast!(Fp!s, s - md, wordNormalized, nonZero).opCast!(T, true);
     }
 
-    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
     unittest
     {
@@ -133,14 +133,14 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
 
     ///
     T opCast(T : Fp!coefficientSize, size_t internalRoundLastBits = 0, bool wordNormalized = false, bool nonZero = false, size_t coefficientSize)() const
-        if (internalRoundLastBits < size_t.sizeof * 8 && (size_t.sizeof >= UInt.sizeof || endian == TargetEndian))
+        if (internalRoundLastBits < size_t.sizeof * 8 && (size_t.sizeof >= W.sizeof || endian == TargetEndian))
     {
-        static if (isMutable!UInt)
+        static if (isMutable!W)
         {
             return lightConst.opCast!(T, internalRoundLastBits, wordNormalized, nonZero);
         }
         else
-        static if (UInt.sizeof > size_t.sizeof)
+        static if (W.sizeof > size_t.sizeof)
         {
             integer.coefficientsCast!size_t.opCast!(internalRoundLastBits, false, nonZero);
         }
@@ -160,19 +160,19 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
                 enum N = ret.coefficient.data.length;
                 auto ms = integer.mostSignificant;
                 auto c = cast(uint) ctlz(ms);
-                sizediff_t size = integer.coefficients.length * (UInt.sizeof * 8);
+                sizediff_t size = integer.coefficients.length * (W.sizeof * 8);
                 sizediff_t expShift = size - coefficientSize;
                 ret.exponent = expShift - c;
                 if (_expect(expShift <= 0, true))
                 {
-                    static if (N == 1 && UInt.sizeof == size_t.sizeof)
+                    static if (N == 1 && W.sizeof == size_t.sizeof)
                     {
                         ret.coefficient.data[0] = ms;
                     }
                     else
                     {
                         BigUIntView!size_t(ret.coefficient.data)
-                            .coefficientsCast!(Unqual!UInt)
+                            .coefficientsCast!(Unqual!W)
                             .leastSignificantFirst
                                 [$ - integer.coefficients.length .. $] = integer.leastSignificantFirst;
                     }
@@ -180,9 +180,9 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
                 }
                 else
                 {
-                    mir.bignum.fixed_int.UInt!(coefficientSize + size_t.sizeof * 8) holder;
+                    UInt!(coefficientSize + size_t.sizeof * 8) holder;
 
-                    static if (N == 1 && UInt.sizeof == size_t.sizeof)
+                    static if (N == 1 && W.sizeof == size_t.sizeof)
                     {
                         version (BigEndian)
                         {
@@ -198,7 +198,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
                     else
                     {
                         auto holderView = BigUIntView!size_t(holder.data)
-                            .coefficientsCast!(Unqual!UInt)
+                            .coefficientsCast!(Unqual!W)
                             .leastSignificantFirst;
                         holderView[] = integer.leastSignificantFirst[$ - holderView.length .. $];
                     }
@@ -210,7 +210,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
                             integer.popLeastSignificant;
                             assert(integer.coefficients.length);
                         }
-                        return integer.coefficients.length > (N + 1) * (size_t.sizeof / UInt.sizeof);
+                        return integer.coefficients.length > (N + 1) * (size_t.sizeof / W.sizeof);
                     }
 
                     holder = holder.smallLeftShift(c);
@@ -258,7 +258,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         }
     }
 
-    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
     @safe pure
     unittest
@@ -304,7 +304,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     }
 
     ///
-    BigUIntView!(const UInt, endian) lightConst()
+    BigUIntView!(const W, endian) lightConst()
         const @safe pure nothrow @nogc @property
     {
         return typeof(return)(coefficients);
@@ -314,7 +314,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
 
     /++
     +/
-    sizediff_t opCmp(BigUIntView!(const UInt, endian) rhs)
+    sizediff_t opCmp(BigUIntView!(const W, endian) rhs)
         const @safe pure nothrow @nogc
     {
         import mir.algorithm.iteration: cmp;
@@ -324,7 +324,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     }
 
     ///
-    bool opEquals(BigUIntView!(const UInt, endian) rhs)
+    bool opEquals(BigUIntView!(const W, endian) rhs)
         const @safe pure nothrow @nogc
     {
         return this.coefficients == rhs.coefficients;
@@ -332,7 +332,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
 
     /++
     +/
-    ref inout(UInt) mostSignificant() inout @property
+    ref inout(W) mostSignificant() inout @property
     {
         static if (endian == WordEndian.big)
             return coefficients[0];
@@ -342,7 +342,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
 
     /++
     +/
-    ref inout(UInt) leastSignificant() inout @property
+    ref inout(W) leastSignificant() inout @property
     {
         static if (endian == WordEndian.little)
             return coefficients[0];
@@ -395,10 +395,10 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     +/
     void smallLeftShiftInPlace()(uint shift)
     {
-        assert(shift < UInt.sizeof * 8);
+        assert(shift < W.sizeof * 8);
         if (shift == 0)
             return;
-        auto csh = UInt.sizeof * 8 - shift;
+        auto csh = W.sizeof * 8 - shift;
         auto d = leastSignificantFirst;
         assert(d.length);
         foreach_reverse (i; 1 .. d.length)
@@ -406,7 +406,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         d.front <<= shift;
     }
 
-    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
     @safe pure
     unittest
@@ -423,10 +423,10 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     +/
     void smallRightShiftInPlace()(uint shift)
     {
-        assert(shift < UInt.sizeof * 8);
+        assert(shift < W.sizeof * 8);
         if (shift == 0)
             return;
-        auto csh = UInt.sizeof * 8 - shift;
+        auto csh = W.sizeof * 8 - shift;
         auto d = leastSignificantFirst;
         assert(d.length);
         foreach (i; 0 .. d.length - 1)
@@ -434,7 +434,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         d.back >>>= shift;
     }
 
-    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
     @safe pure
     unittest
@@ -449,13 +449,13 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     static BigUIntView fromHexString(scope const(char)[] str)
         @trusted pure
     {
-        auto length = str.length / (UInt.sizeof * 2) + (str.length % (UInt.sizeof * 2) != 0);
-        auto data = new Unqual!UInt[length];
-        BigUIntView!(Unqual!UInt, endian)(data).fromHexStringImpl(str);
-        return BigUIntView(cast(UInt[])data);
+        auto length = str.length / (W.sizeof * 2) + (str.length % (W.sizeof * 2) != 0);
+        auto data = new Unqual!W[length];
+        BigUIntView!(Unqual!W, endian)(data).fromHexStringImpl(str);
+        return BigUIntView(cast(W[])data);
     }
 
-    static if (isMutable!UInt)
+    static if (isMutable!W)
     /++
     +/
     void fromHexStringImpl(scope const(char)[] str)
@@ -463,7 +463,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     {
         pragma(inline, false);
         import mir.utility: _expect;
-        if (_expect(str.length == 0 || str.length > coefficients.length * UInt.sizeof * 2, false))
+        if (_expect(str.length == 0 || str.length > coefficients.length * W.sizeof * 2, false))
         {
             version(D_Exceptions)
                 throw hexStringException;
@@ -471,7 +471,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
                 assert(0, hexStringErrorMsg);
         }
         auto rdata = leastSignificantFirst;
-        UInt current;
+        W current;
         size_t i;
         do
         {
@@ -506,11 +506,11 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
                     else
                         assert(0, hexStringErrorMsg);
             }
-            enum s = UInt.sizeof * 8 - 4;
-            UInt cc = cast(UInt)(UInt(c) << s);
+            enum s = W.sizeof * 8 - 4;
+            W cc = cast(W)(W(c) << s);
             current >>>= 4;
             current |= cc;
-            if (i % (UInt.sizeof * 2) == 0)
+            if (i % (W.sizeof * 2) == 0)
             {
                 rdata.front = current;
                 rdata.popFront;
@@ -520,12 +520,12 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         while(i < str.length);
         if (current)
         {
-            current >>>= 4 * (UInt.sizeof * 2 - i % (UInt.sizeof * 2));
+            current >>>= 4 * (W.sizeof * 2 - i % (W.sizeof * 2));
             rdata.front = current;
         }
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /++
     Performs `bool overflow = big +(-)= big` operatrion.
     Params:
@@ -535,7 +535,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     Returns:
         true in case of unsigned overflow
     +/
-    bool opOpAssign(string op)(BigUIntView!(const UInt, endian) rhs, bool overflow = false)
+    bool opOpAssign(string op)(BigUIntView!(const W, endian) rhs, bool overflow = false)
     @safe pure nothrow @nogc
         if (op == "+" || op == "-")
     {
@@ -553,13 +553,13 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         }
         while(rs.length);
         if (overflow && ls.length)
-            return topMostSignificantPart(ls.length).opOpAssign!op(UInt(overflow));
+            return topMostSignificantPart(ls.length).opOpAssign!op(W(overflow));
         return overflow;
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /// ditto
-    bool opOpAssign(string op)(BigIntView!(const UInt, endian) rhs, bool overflow = false)
+    bool opOpAssign(string op)(BigIntView!(const W, endian) rhs, bool overflow = false)
     @safe pure nothrow @nogc
         if (op == "+" || op == "-")
     {
@@ -568,7 +568,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
             opOpAssign!(inverseSign!op)(rhs.unsigned, overflow);
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /++
     Performs `bool Overflow = big +(-)= scalar` operatrion.
     Precondition: non-empty coefficients
@@ -579,11 +579,11 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     +/
     bool opOpAssign(string op, T)(const T rhs)
         @safe pure nothrow @nogc
-        if ((op == "+" || op == "-") && is(T == UInt))
+        if ((op == "+" || op == "-") && is(T == W))
     {
         assert(this.coefficients.length > 0);
         auto ns = this.leastSignificantFirst;
-        UInt additive = rhs;
+        W additive = rhs;
         do
         {
             bool overflow;
@@ -597,27 +597,27 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         return true;
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /// ditto
     bool opOpAssign(string op, T)(const T rhs)
         @safe pure nothrow @nogc
-        if ((op == "+" || op == "-") && is(T == Signed!UInt))
+        if ((op == "+" || op == "-") && is(T == Signed!W))
     {
         return rhs >= 0 ?
-            opOpAssign!op(cast(UInt)rhs):
-            opOpAssign!(inverseSign!op)(cast(UInt)(-rhs));
+            opOpAssign!op(cast(W)rhs):
+            opOpAssign!(inverseSign!op)(cast(W)(-rhs));
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /++
-    Performs `UInt overflow = big *= scalar` operatrion.
+    Performs `W overflow = big *= scalar` operatrion.
     Precondition: non-empty coefficients
     Params:
         rhs = unsigned value to multiply by
     Returns:
         unsigned overflow value
     +/
-    UInt opOpAssign(string op : "*")(UInt rhs, UInt overflow = 0u)
+    W opOpAssign(string op : "*")(W rhs, W overflow = 0u)
         @safe pure nothrow @nogc
     {
         assert(coefficients.length);
@@ -635,17 +635,17 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         return overflow;
     }
 
-    static if (isMutable!UInt && UInt.sizeof == size_t.sizeof)
+    static if (isMutable!W && W.sizeof == size_t.sizeof)
     /++
-    Performs `UInt overflow = big *= fixed_int` operatrion.
+    Performs `W overflow = big *= fixed_int` operatrion.
     Precondition: non-empty coefficients
     Params:
         rhs = unsigned fixed-length integer to multiply by
     Returns:
         unsigned fixed-length integer overflow value
     +/
-    FixedUInt!size
-    opOpAssign(string op : "*", size_t size)(FixedUInt!size rhs, FixedUInt!size overflow = 0)
+    UInt!size
+    opOpAssign(string op : "*", size_t size)(UInt!size rhs, UInt!size overflow = 0)
         @safe pure nothrow @nogc
     {
         assert(coefficients.length);
@@ -668,21 +668,21 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     /++
     Returns: the same intger view with inversed sign
     +/
-    BigIntView!(UInt, endian) opUnary(string op : "-")()
+    BigIntView!(W, endian) opUnary(string op : "-")()
     {
         return typeof(return)(this, true);
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /++
     +/
     void bitwiseNotInPlace()
     {
         foreach (ref coefficient; this.coefficients)
-            coefficient = cast(UInt)~(0 + coefficient);
+            coefficient = cast(W)~(0 + coefficient);
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /++
     Performs `number=-number` operatrion.
     Precondition: non-empty coefficients
@@ -693,7 +693,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     {
         assert(coefficients.length);
         bitwiseNotInPlace();
-        return this.opOpAssign!"+"(UInt(1));
+        return this.opOpAssign!"+"(W(1));
     }
 
     /++
@@ -777,7 +777,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     bool bt()(size_t position)
     {
         import mir.ndslice.topology: bitwise;
-        assert(position < coefficients.length * UInt.sizeof * 8);
+        assert(position < coefficients.length * W.sizeof * 8);
         return leastSignificantFirst.bitwise[position];
     }
 
@@ -797,7 +797,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
                 ret += ctlz(c);
                 break;
             }
-            ret += UInt.sizeof * 8;
+            ret += W.sizeof * 8;
             d.popFront;
         }
         while(d.length);
@@ -805,7 +805,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     }
 
     ///
-    BigIntView!(UInt, endian) withSign(bool sign)
+    BigIntView!(W, endian) withSign(bool sign)
     {
         return typeof(return)(this, sign);
     }
@@ -822,7 +822,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         auto d = lightConst.mostSignificantFirst;
         if (d.length == 0)
             return false;
-        static if (U.sizeof > UInt.sizeof)
+        static if (U.sizeof > W.sizeof)
         {
             size_t i;
             for(;;)
@@ -832,9 +832,9 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
                 if (d.length == 0)
                     return false;
                 i += cast(bool)value;
-                value <<= UInt.sizeof * 8;
+                value <<= W.sizeof * 8;
                 import mir.utility: _expect;
-                if (_expect(i >= U.sizeof / UInt.sizeof, false))
+                if (_expect(i >= U.sizeof / W.sizeof, false))
                     return true;
             }
         }
@@ -842,12 +842,12 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
         {
             for(;;)
             {
-                UInt f = d[0];
+                W f = d[0];
                 d = d[1 .. $];
                 if (d.length == 0)
                 {
                     value = cast(U)f;
-                    static if (U.sizeof < UInt.sizeof)
+                    static if (U.sizeof < W.sizeof)
                     {
                         if (value != f)
                             return true;
@@ -868,7 +868,7 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
     {
         foreach_reverse(d; lightConst.leastSignificantFirst)
         {
-            static if (UInt.sizeof >= ulong.sizeof)
+            static if (W.sizeof >= ulong.sizeof)
             {
                 if (d != rhs)
                     return false;
@@ -876,9 +876,9 @@ struct BigUIntView(UInt, WordEndian endian = TargetEndian)
             }
             else
             {
-                if (d != (rhs & UInt.max))
+                if (d != (rhs & W.max))
                     return false;
-                rhs >>>= UInt.sizeof * 8;
+                rhs >>>= W.sizeof * 8;
             }
         }
         return rhs == 0;
@@ -941,7 +941,7 @@ unittest
             assert((lhs += -(-rhs)) == true);
             assert(lhs.leastSignificantFirst == [Signed!T.max + 2, 0, 0]);
 
-            /// UInt overflow = bigUInt *= scalar
+            /// W overflow = bigUInt *= scalar
             assert((lhs *= T.max) == 0);
             assert((lhs += T(Signed!T.max + 2)) == false);
             assert(lhs.leastSignificantFirst == [0, Signed!T.max + 2, 0]);
@@ -957,8 +957,8 @@ unittest
 /++
 Arbitrary length signed integer view.
 +/
-struct BigIntView(UInt, WordEndian endian = TargetEndian)
-    if (is(Unqual!UInt == ubyte) || is(Unqual!UInt == ushort) || is(Unqual!UInt == uint) || is(Unqual!UInt == ulong))
+struct BigIntView(W, WordEndian endian = TargetEndian)
+    if (is(Unqual!W == ubyte) || is(Unqual!W == ushort) || is(Unqual!W == uint) || is(Unqual!W == ulong))
 {
     import mir.bignum.fp: Fp;
 
@@ -969,7 +969,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
 
     The number is encoded as pair of `unsigned` and `sign`.
     +/
-    BigUIntView!(UInt, endian) unsigned;
+    BigUIntView!(W, endian) unsigned;
 
     /++
     Sign bit
@@ -977,19 +977,19 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
     bool sign;
 
     ///
-    inout(UInt)[] coefficients() inout @property
+    inout(W)[] coefficients() inout @property
     {
         return unsigned.coefficients;
     }
 
     ///
-    this(UInt[] coefficients, bool sign = false)
+    this(W[] coefficients, bool sign = false)
     {
-        this(BigUIntView!(UInt, endian)(coefficients), sign);
+        this(BigUIntView!(W, endian)(coefficients), sign);
     }
 
     ///
-    this(BigUIntView!(UInt, endian) unsigned, bool sign = false)
+    this(BigUIntView!(W, endian) unsigned, bool sign = false)
     {
         this.unsigned = unsigned;
         this.sign = sign;
@@ -1006,7 +1006,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
     }
 
 
-    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
     unittest
     {
@@ -1017,14 +1017,14 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
     /++
     +/
     T opCast(T : Fp!coefficientSize, size_t internalRoundLastBits = 0, bool wordNormalized = false, bool nonZero = false, size_t coefficientSize)() const
-        if (internalRoundLastBits < size_t.sizeof * 8 && (size_t.sizeof >= UInt.sizeof || endian == TargetEndian))
+        if (internalRoundLastBits < size_t.sizeof * 8 && (size_t.sizeof >= W.sizeof || endian == TargetEndian))
     {
         auto ret = unsigned.opCast!(Fp!coefficientSize, internalRoundLastBits, wordNormalized, nonZero);
         ret.sign = sign;
         return ret;
     }
 
-    static if (UInt.sizeof == size_t.sizeof && endian == TargetEndian)
+    static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
     @safe pure
     unittest
@@ -1039,7 +1039,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
     }
 
     ///
-    BigIntView!(const UInt, endian) lightConst()
+    BigIntView!(const W, endian) lightConst()
         const @safe pure nothrow @nogc @property
     {
         return typeof(return)(unsigned.lightConst, sign);
@@ -1050,7 +1050,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
 
     /++
     +/
-    sizediff_t opCmp(BigIntView!(const UInt, endian) rhs) 
+    sizediff_t opCmp(BigIntView!(const W, endian) rhs) 
         const @safe pure nothrow @nogc
     {
         import mir.algorithm.iteration: cmp;
@@ -1063,7 +1063,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
     }
 
     ///
-    bool opEquals(BigIntView!(const UInt, endian) rhs)
+    bool opEquals(BigIntView!(const W, endian) rhs)
         const @safe pure nothrow @nogc
     {
         return this.sign == rhs.sign && this.unsigned == rhs.unsigned;
@@ -1083,7 +1083,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
         return BigIntView(unsigned.topLeastSignificantPart(length), sign);
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /++
     Performs `bool overflow = big +(-)= big` operatrion.
     Params:
@@ -1093,7 +1093,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
     Returns:
         true in case of unsigned overflow
     +/
-    bool opOpAssign(string op)(BigIntView!(const UInt, endian) rhs, bool overflow = false)
+    bool opOpAssign(string op)(BigIntView!(const W, endian) rhs, bool overflow = false)
     @safe pure nothrow @nogc
         if (op == "+" || op == "-")
     {
@@ -1118,16 +1118,16 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
         return false;
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /// ditto
-    bool opOpAssign(string op)(BigUIntView!(const UInt, endian) rhs, bool overflow = false)
+    bool opOpAssign(string op)(BigUIntView!(const W, endian) rhs, bool overflow = false)
     @safe pure nothrow @nogc
         if (op == "+" || op == "-")
     {
         return opOpAssign!op(rhs.signed, overflow);
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /++
     Performs `bool overflow = big +(-)= scalar` operatrion.
     Precondition: non-empty coefficients
@@ -1138,7 +1138,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
     +/
     bool opOpAssign(string op, T)(const T rhs)
         @safe pure nothrow @nogc
-        if ((op == "+" || op == "-") && is(T == Signed!UInt))
+        if ((op == "+" || op == "-") && is(T == Signed!W))
     {
         assert(this.coefficients.length > 0);
         enum sum = op == "+";
@@ -1146,7 +1146,7 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
         // neg += neg
         // neg -= pos
         // pos -= neg
-        auto urhs = cast(UInt) (rhs < 0 ? -rhs : rhs);
+        auto urhs = cast(W) (rhs < 0 ? -rhs : rhs);
         if ((sign == (rhs < 0)) == sum)
             return unsigned.opOpAssign!"+"(urhs);
         // pos -= pos
@@ -1161,11 +1161,11 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
         return false;
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /// ditto
     bool opOpAssign(string op, T)(const T rhs)
         @safe pure nothrow @nogc
-        if ((op == "+" || op == "-") && is(T == UInt))
+        if ((op == "+" || op == "-") && is(T == W))
     {
         assert(this.coefficients.length > 0);
         enum sum = op == "+";
@@ -1183,16 +1183,16 @@ struct BigIntView(UInt, WordEndian endian = TargetEndian)
         return false;
     }
 
-    static if (isMutable!UInt && UInt.sizeof >= 4)
+    static if (isMutable!W && W.sizeof >= 4)
     /++
-    Performs `UInt overflow = big *= scalar` operatrion.
+    Performs `W overflow = big *= scalar` operatrion.
     Precondition: non-empty coefficients
     Params:
         rhs = unsigned value to multiply by
     Returns:
         unsigned overflow value
     +/
-    UInt opOpAssign(string op : "*")(UInt rhs, UInt overflow = 0u)
+    W opOpAssign(string op : "*")(W rhs, W overflow = 0u)
         @safe pure nothrow @nogc
     {
         return unsigned.opOpAssign!op(rhs, overflow);
@@ -1307,17 +1307,17 @@ unittest
 /++
 An utility type to wrap a local buffer to accumulate unsigned numbers.
 +/
-struct BigUIntAccumulator(UInt, WordEndian endian = TargetEndian)
-    if (is(Unqual!UInt == uint) || is(Unqual!UInt == ulong))
+struct BigUIntAccumulator(W, WordEndian endian = TargetEndian)
+    if (is(Unqual!W == uint) || is(Unqual!W == ulong))
 {
     /++
-    A group of coefficients for a $(MREF DecimalRadix)`!UInt`.
+    A group of coefficients for a $(MREF DecimalRadix)`!W`.
 
     The order corresponds to endianness.
 
     The unused part can be uninitialized.
     +/
-    UInt[] coefficients;
+    W[] coefficients;
 
     /++
     Current length of initialized coefficients.
@@ -1336,7 +1336,7 @@ struct BigUIntAccumulator(UInt, WordEndian endian = TargetEndian)
         The method may return a view with empty coefficients, which isn't usable.
         Put `0` or another number first to make the accumulator maintain a non-empty view.
     +/
-    BigUIntView!(UInt, endian) view() @safe pure nothrow @nogc @property
+    BigUIntView!(W, endian) view() @safe pure nothrow @nogc @property
     {
         static if (endian == WordEndian.little)
             return typeof(return)(coefficients[0 .. length]);
@@ -1356,7 +1356,7 @@ struct BigUIntAccumulator(UInt, WordEndian endian = TargetEndian)
     /++
     Places coefficient to the next most significant position.
     +/
-    void put(UInt coeffecient)
+    void put(W coeffecient)
     in {
         assert(length < coefficients.length);
     }
@@ -1388,7 +1388,7 @@ struct BigUIntAccumulator(UInt, WordEndian endian = TargetEndian)
     bool approxCanMulPow5(size_t degree)
     {
         // TODO: more precise result
-        enum n = MaxWordPow5!UInt;
+        enum n = MaxWordPow5!W;
         return canPutN(degree / n + (degree % n != 0));
     }
 
@@ -1396,7 +1396,7 @@ struct BigUIntAccumulator(UInt, WordEndian endian = TargetEndian)
     bool canMulPow2(size_t degree)
     {
         import mir.bitop: ctlz;
-        enum n = UInt.sizeof * 8;
+        enum n = W.sizeof * 8;
         return canPutN(degree / n + (degree % n > ctlz(view.mostSignificant)));
     }
 
@@ -1404,9 +1404,9 @@ struct BigUIntAccumulator(UInt, WordEndian endian = TargetEndian)
     void mulPow5(size_t degree)
     {
         // assert(approxCanMulPow5(degree));
-        enum n = MaxWordPow5!UInt;
-        enum wordInit = UInt(5) ^^ n;
-        UInt word = wordInit;
+        enum n = MaxWordPow5!W;
+        enum wordInit = W(5) ^^ n;
+        W word = wordInit;
         while(degree)
         {
             if (degree >= n)
@@ -1431,7 +1431,7 @@ struct BigUIntAccumulator(UInt, WordEndian endian = TargetEndian)
     {
         import mir.bitop: ctlz;
         assert(canMulPow2(degree));
-        enum n = UInt.sizeof * 8;
+        enum n = W.sizeof * 8;
         auto ws = degree / n;
         auto oldLength = length;
         length += ws;
@@ -1519,10 +1519,10 @@ unittest
 
 // /++
 // +/
-// BigUIntView!(UInt, endian) multiplyAddImpl(UInt, WordEndian endian)(
-//     BigUIntView!(UInt, endian) result,
-//     BigUIntView!(const UInt, endian) a,
-//     BigUIntView!(const UInt, endian) b, out bool overflow)
+// BigUIntView!(W, endian) multiplyAddImpl(W, WordEndian endian)(
+//     BigUIntView!(W, endian) result,
+//     BigUIntView!(const W, endian) a,
+//     BigUIntView!(const W, endian) b, out bool overflow)
 // @safe pure nothrow @nogc
 // {
 //     import mir.utility: swap;
@@ -1557,14 +1557,14 @@ unittest
 
 /++
 +/
-struct DecimalView(UInt, WordEndian endian = TargetEndian, Exp = int)
+struct DecimalView(W, WordEndian endian = TargetEndian, Exp = int)
 {
     ///
     bool sign;
     ///
     Exp exponent;
     ///
-    BigUIntView!(UInt, endian) coefficient;
+    BigUIntView!(W, endian) coefficient;
 
     ///
     T opCast(T, bool wordNormalized = false, bool nonZero = false)() const
@@ -1602,7 +1602,7 @@ struct DecimalView(UInt, WordEndian endian = TargetEndian, Exp = int)
                 auto c = coeff.opCast!(Fp!64, 64, true, true);
                 auto z = c.extemdedMul(load(exponent));
                 ret = cast(T) z;
-                auto slop = (coeff.coefficients.length > (ulong.sizeof / UInt.sizeof)) + 3 * expSign;
+                auto slop = (coeff.coefficients.length > (ulong.sizeof / W.sizeof)) + 3 * expSign;
                 long bitsDiff = (cast(ulong) cast(Fp!64) z & mask) - half;
                 if (_expect((bitsDiff < 0 ? -bitsDiff : bitsDiff) > slop, true))
                     goto R;
@@ -1674,7 +1674,7 @@ struct DecimalView(UInt, WordEndian endian = TargetEndian, Exp = int)
                     enum ulong half = (1UL << (128 - T.mant_dig - 1));
                     enum Fp!128 bound = Fp!128(1) << T.mant_dig;
 
-                    auto slop = (coeff.coefficients.length > (ulong.sizeof * 2 / UInt.sizeof)) + 3 * expSign;
+                    auto slop = (coeff.coefficients.length > (ulong.sizeof * 2 / W.sizeof)) + 3 * expSign;
                     long bitsDiff = (cast(ulong) cast(Fp!64) z & mask) - half;
                     if (_expect((bitsDiff < 0 ? -bitsDiff : bitsDiff) > slop, true))
                         goto R;
@@ -1712,12 +1712,12 @@ struct DecimalView(UInt, WordEndian endian = TargetEndian, Exp = int)
 
 /++
 +/
-struct BinaryView(UInt, WordEndian endian = TargetEndian, Exp = int)
+struct BinaryView(W, WordEndian endian = TargetEndian, Exp = int)
 {
     ///
     bool sign;
     ///
     Exp exponent;
     ///
-    BigUIntView!(UInt, endian) coefficient;
+    BigUIntView!(W, endian) coefficient;
 }
