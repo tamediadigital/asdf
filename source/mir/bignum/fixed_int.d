@@ -7,7 +7,7 @@ import mir.bitop;
 import mir.utility;
 
 /++
-Fixed-length Unsigned Integer
+Fixed-length unsigned integer.
 
 Params:
     size = size in bits
@@ -136,14 +136,14 @@ struct UInt(size_t size)
     ///
     ref UInt opOpAssign(string op)(size_t shift)
         @safe pure nothrow @nogc return
-        if (op == "<<" || op == ">>>" || op == ">>")
+        if (op == "<<" || op == ">>")
     {
         auto d = view.leastSignificantFirst;
         assert(shift < size);
         auto index = shift / (size_t.sizeof * 8);
         auto bs = shift % (size_t.sizeof * 8);
         auto ss = size_t.sizeof * 8 - bs;
-        static if (op == ">>>" || op == ">>")
+        static if (op == ">>")
         {
             if (bs)
             {

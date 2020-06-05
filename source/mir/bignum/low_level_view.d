@@ -12,10 +12,10 @@ private alias cop(string op : "-") = subu;
 private alias cop(string op : "+") = addu;
 private enum inverseSign(string op) = op == "+" ? "-" : "+";
 
-private immutable hexStringErrorMsg = "Incorrect hex string for BigUIntView.fromHexString";
+package immutable hexStringErrorMsg = "Incorrect hex string for BigUIntView.fromHexString";
 version (D_Exceptions)
 {
-    private immutable hexStringException = new Exception(hexStringErrorMsg);
+    package immutable hexStringException = new Exception(hexStringErrorMsg);
 }
 
 /++
@@ -41,7 +41,7 @@ else
     enum TargetEndian = WordEndian.big;
 }
 
-private template MaxWordPow5(T)
+package template MaxWordPow5(T)
 {
     static if (is(T == ubyte))
         enum MaxWordPow5 = 3;
