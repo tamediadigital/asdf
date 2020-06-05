@@ -99,16 +99,6 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
         return typeof(return)(this);
     }
 
-    /++
-    +/
-    BigUIntView!(NewUInt, NewUInt.sizeof == 1 ? TargetEndian : endian)
-        coefficientsCast(NewUInt)()
-        pure nothrow @nogc
-        if (NewUInt.sizeof <= W.sizeof && (NewUInt.sizeof == 1 || NewUInt.sizeof == W.sizeof || endian == TargetEndian))
-    {
-        return typeof(return)(cast(NewUInt[])coefficients);
-    }
-
     ///
     T opCast(T, bool wordNormalized = false, bool nonZero = false)() const
         if (isFloatingPoint!T)
@@ -142,7 +132,7 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
         else
         static if (W.sizeof > size_t.sizeof)
         {
-            integer.coefficientsCast!size_t.opCast!(internalRoundLastBits, false, nonZero);
+            integer.opCast!(BigUIntView!size_t).opCast!(internalRoundLastBits, false, nonZero);
         }
         else
         {
@@ -172,7 +162,7 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
                     else
                     {
                         BigUIntView!size_t(ret.coefficient.data)
-                            .coefficientsCast!(Unqual!W)
+                            .opCast!(BigUIntView!(Unqual!W))
                             .leastSignificantFirst
                                 [$ - integer.coefficients.length .. $] = integer.leastSignificantFirst;
                     }
@@ -198,7 +188,7 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
                     else
                     {
                         auto holderView = BigUIntView!size_t(holder.data)
-                            .coefficientsCast!(Unqual!W)
+                            .opCast!(BigUIntView!(Unqual!W))
                             .leastSignificantFirst;
                         holderView[] = integer.leastSignificantFirst[$ - holderView.length .. $];
                     }
@@ -301,6 +291,14 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
         fp = cast(Fp!128) BigUIntView!size_t.fromHexString("fffffffffffffffffffffffffffffffe8000000000000001");
         assert(fp.exponent == 64);
         assert(fp.coefficient == UInt!128.fromHexString("ffffffffffffffffffffffffffffffff"));
+    }
+
+    static if (endian == TargetEndian)
+    ///
+    BigUIntView!V opCast(T : BigUIntView!V, V)()
+        if (V.sizeof <= W.sizeof)
+    {
+        return typeof(return)(cast(V[])this.coefficients);
     }
 
     ///
@@ -1038,6 +1036,14 @@ struct BigIntView(W, WordEndian endian = TargetEndian)
         assert(fp.coefficient == UInt!128.fromHexString("afbbfae3cd0aff2714a1de7022b0029d"));
     }
 
+    static if (endian == TargetEndian)
+    ///
+    BigIntView!V opCast(T : BigIntView!V, V)()
+        if (V.sizeof <= W.sizeof)
+    {
+        return typeof(return)(this.unsigned.opCast!(BigUIntView!V), sign);
+    }
+
     ///
     BigIntView!(const W, endian) lightConst()
         const @safe pure nothrow @nogc @property
@@ -1646,10 +1652,7 @@ struct DecimalView(W, WordEndian endian = TargetEndian, Exp = int)
                 gotoAlgoR = exp != 0;
                 if (_expect(gotoAlgoR, false))
                 {
-                    if (!expSign)
-                        goto AlgoR;
-                    exp   = -exp;
-                    auto v = load(-P);
+                    auto v = load(expSign ? -P : P);
                     do
                     {
                         if (exp & 1)
@@ -1695,12 +1698,29 @@ struct DecimalView(W, WordEndian endian = TargetEndian, Exp = int)
         if (exponent >= 0)
         {
             assert(exponent >= 0);
-            size_t[128] buffer = void;
-            // if ()
+            BigInt!256 x;
+            if (!x.copyFrom(this.coefficient) && !x.mulPow5(exponent)) // if no overflow
+                ret = ldexp(cast(T) x.view, exponent);
         }
         else
         {
-
+            do
+            {
+                int k;
+                enum p2 = T(2) ^^ T.mant_dig;
+                auto m0 = frexp(ret, k) * p2;
+                k -= T.mant_dig;
+                static if (T.mant_dig <= 64)
+                {
+                    auto m = UInt!64(cast(ulong) m0);
+                }
+                else
+                {
+                    auto m = UInt!128();
+                }
+                
+            }
+            while (T.mant_dig < 64);
         }
 
     R:

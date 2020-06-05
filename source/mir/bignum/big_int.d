@@ -284,11 +284,50 @@ struct BigInt(size_t maxSize64)
         }
         return this;
     }
+
+    /++
+    +/
+    bool copyFrom(W, WordEndian endian)(BigIntView!(const W, endian) view)
+    {
+        static if (W.sizeof > size_t.sizeof)
+        {
+            return this.copyFrom(cast(BigIntView!(const size_t))view);
+        }
+        else
+        {
+            this.sign = view.sign;
+            auto lhs = cast(BigUIntView!(W, endian))(cast(W[])data);
+            auto rhs = view;
+            auto overflow = lhs.coefficients.length < rhs.coefficients.length;
+            auto n = overflow ? lhs.coefficients.length : rhs.coefficients.length;
+            lhs.leastSignificantFirst[0 .. n] = rhs.leastSignificantFirst[0 .. n];
+            this.length = cast(uint)(n / (size_t.sizeof / W.sizeof));
+            if (auto tail = n % (size_t.sizeof / W.sizeof))
+            {
+                this.length++;
+                auto shift = ((size_t.sizeof / W.sizeof) - tail) * (W.sizeof * 8);
+                auto value = this.view.unsigned.mostSignificant;
+                value <<= shift;
+                value >>= shift;
+                this.view.unsigned.mostSignificant = value;
+            }
+            return overflow;
+        }
+    }
+
+    /// ditto
+    bool copyFrom(W)(BigUIntView!(const W) view)
+    {
+        return this.copyFrom(BigIntView!(const W)(view));
+    }
 }
 
 ///
 unittest
 {
+    import mir.bignum.fixed_int;
+    import mir.bignum.low_level_view;
+
     auto a = BigInt!4.fromHexString("4b313b23aa560e1b0985f89cbe6df5460860e39a64ba92b4abdd3ee77e4e05b8");
     auto b = BigInt!4.fromHexString("c39b18a9f06fd8e962d99935cea0707f79a222050aaeaaaed17feb7aa76999d7");
     auto c = BigInt!4.fromHexString("7869dd864619cace5953a09910327b3971413e6aa5f417fa25a2ac93291b941f");
@@ -306,7 +345,6 @@ unittest
     assert((b *= 0x7869dd86) == 0x5c019770);
     assert(b == d);
 
-    import mir.bignum.fixed_int;
     d = BigInt!4.fromHexString("856eeb23e68cc73f2a517448862cdc97e83f9dfa23768296724bf00fda7df32a");
     auto o = b *= UInt!128.fromHexString("f79a222050aaeaaa417fa25a2ac93291");
     assert(o == UInt!128.fromHexString("d6d15b99499b73e68c3331eb0f7bf16"));
@@ -329,4 +367,12 @@ unittest
     c <<= 84;
     d <<= 4;
     assert(d == c);
+    assert(c != b);
+    b.sign = true;
+    assert(!c.copyFrom(b.view));
+    assert(c == b);
+    b >>= 18;
+    auto bView = cast(BigIntView!ushort)b.view;
+    assert(!c.copyFrom(bView.topLeastSignificantPart(bView.unsigned.coefficients.length - 1)));
+    assert(c == b);
 }
