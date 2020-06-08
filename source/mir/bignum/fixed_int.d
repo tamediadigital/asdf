@@ -433,6 +433,27 @@ struct UInt(size_t size)
 
     /++
     +/
+    size_t cttz()() const @property
+        @safe pure nothrow @nogc
+    {
+        return view.cttz;
+    }
+
+    static if (size == 128)
+    ///
+    @safe pure @nogc
+    unittest
+    {
+        auto a = UInt!128.fromHexString("d");
+        assert (a.cttz == 0);
+        a = UInt!128.init;
+        assert (a.cttz == 128);
+        a = UInt!128.fromHexString("300000000000000000");
+        assert (a.cttz == 68);
+    }
+
+    /++
+    +/
     bool signBit()() const @property
     {
         version (LittleEndian)

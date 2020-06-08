@@ -165,7 +165,7 @@ struct Fp(size_t coefficientSize)
     {
         return coefficient != 0;
     }
-
+    
     ///
     T opCast(T, bool noHalf = false)() nothrow const
         if (isFloatingPoint!T)

@@ -101,7 +101,7 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
 
     ///
     T opCast(T, bool wordNormalized = false, bool nonZero = false)() const
-        if (isFloatingPoint!T)
+        if (isFloatingPoint!T && isMutable!T)
     {
         import mir.bignum.fp;
         enum md = T.mant_dig;
@@ -712,6 +712,22 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
         }
     }
 
+    ///
+    auto leastSignificantFirst()
+        const @safe pure nothrow @nogc @property
+    {
+        import mir.ndslice.slice: sliced;
+        static if (endian == WordEndian.little)
+        {
+            return coefficients.sliced;
+        }
+        else
+        {
+            import mir.ndslice.topology: retro;
+            return coefficients.sliced.retro;
+        }
+    }
+
     /++
     Returns: a slice of coefficients starting from the most significant.
     +/
@@ -730,6 +746,7 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
         }
     }
 
+    ///
     auto mostSignificantFirst()
         const @safe pure nothrow @nogc @property
     {
@@ -793,6 +810,29 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
             if (auto c = d.front)
             {
                 ret += ctlz(c);
+                break;
+            }
+            ret += W.sizeof * 8;
+            d.popFront;
+        }
+        while(d.length);
+        return ret;
+    }
+
+    /++
+    +/
+    size_t cttz()() const @property
+        @safe pure nothrow @nogc
+    {
+        import mir.bitop: cttz;
+        assert(coefficients.length);
+        auto d = leastSignificantFirst;
+        size_t ret;
+        do
+        {
+            if (auto c = d.front)
+            {
+                ret += cttz(c);
                 break;
             }
             ret += W.sizeof * 8;
@@ -1698,27 +1738,39 @@ struct DecimalView(W, WordEndian endian = TargetEndian, Exp = int)
         if (exponent >= 0)
         {
             assert(exponent >= 0);
-            BigInt!256 x;
+            BigInt!256 x; // max value is 2^(2^14)-1
             if (!x.copyFrom(this.coefficient) && !x.mulPow5(exponent)) // if no overflow
-                ret = ldexp(cast(T) x.view, exponent);
+                ret = ldexp(cast(T) x, exponent);
         }
         else
         {
             do
             {
                 int k;
-                enum p2 = T(2) ^^ T.mant_dig;
-                auto m0 = frexp(ret, k) * p2;
+                auto m0 = frexp(ret, k);
                 k -= T.mant_dig;
                 static if (T.mant_dig <= 64)
                 {
-                    auto m = UInt!64(cast(ulong) m0);
+                    enum p2 = T(2) ^^ T.mant_dig;
+                    auto m = UInt!64(cast(ulong) (m0 * p2));
                 }
                 else
                 {
-                    auto m = UInt!128();
+                    enum p2h = T(2) ^^ (T.mant_dig - 64);
+                    enum p2l = T(2) ^^ 64;
+                    m0 *= p2h;
+                    auto mhf = floor(m0);
+                    auto mh = cast(ulong) mhf;
+                    m0 -= mhf;
+                    m0 *= p2l;
+                    auto ml = cast(ulong) mhl;
+                    auto m = UInt!128(ml);
+                    m <<= 64;
+                    m |= UInt!128(mh);
                 }
-                
+                auto mtz = m.cttz;
+                m >>= mtz;
+                k += m.mtz;
             }
             while (T.mant_dig < 64);
         }

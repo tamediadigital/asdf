@@ -285,6 +285,13 @@ struct BigInt(size_t maxSize64)
         return this;
     }
 
+    ///
+    T opCast(T, bool wordNormalized = false, bool nonZero = false)() const
+        if (isFloatingPoint!T && isMutable!T)
+    {
+        return view.opCast(T, wordNormalized, nonZero);
+    }
+
     /++
     +/
     bool copyFrom(W, WordEndian endian)(BigIntView!(const W, endian) view)
