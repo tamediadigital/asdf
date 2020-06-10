@@ -289,7 +289,7 @@ struct BigInt(size_t maxSize64)
     T opCast(T, bool wordNormalized = false, bool nonZero = false)() const
         if (isFloatingPoint!T && isMutable!T)
     {
-        return view.opCast(T, wordNormalized, nonZero);
+        return view.opCast!(T, wordNormalized, nonZero);
     }
 
     /++
@@ -323,9 +323,9 @@ struct BigInt(size_t maxSize64)
     }
 
     /// ditto
-    bool copyFrom(W)(BigUIntView!(const W) view)
+    bool copyFrom(W, WordEndian endian)(BigUIntView!(const W, endian) view)
     {
-        return this.copyFrom(BigIntView!(const W)(view));
+        return this.copyFrom(BigIntView!(const W, endian)(view));
     }
 }
 
