@@ -25,9 +25,49 @@ struct BigInt(size_t maxSize64)
     @disable this(this);
 
     ///
+    this(size_t size)(UInt!size fixedInt)
+    {
+        this(fixedInt.data);
+    }
+
+    ///
+    this(size_t N)(size_t[N] data)
+        if (N <= this.data.length)
+    {
+        version(LittleEndian)
+            this.data[0 .. N] = data;
+        else
+            this.data[$ - N .. $] = data;
+        length = data.length;
+        normalize;
+    }
+
+    ///
+    this(ulong data)
+    {
+        auto d = view.leastSignificantFirst;
+        static if (size_t.sizeof == ulong.sizeof)
+        {
+            d.front = data;
+            length = 1;
+        }
+        else
+        {
+            d.front = cast(uint) data;
+            d[1] = cast(uint) (data >> 32);
+            length = 2;
+        }
+        normalize;
+    }
+
+    ///
     BigInt copy() @property
     {
-        return BigInt(sign, length, data);
+        BigInt ret;
+        ret.sign = sign;
+        ret.length = length;
+        ret.data = data;
+        return ret;
     }
 
     ///
@@ -128,15 +168,19 @@ struct BigInt(size_t maxSize64)
         @safe pure nothrow @nogc
         if (op == "+" || op == "-")
     {
-        sizediff_t diff = length - rhs.length;
+        int diff = length - rhs.length;
+        import std.stdio;
+        try debug writeln(diff, " ", length, " ", rhs.length); catch(Exception e) {}
         if (diff < 0)
         {
-            view.unsigned.leastSignificantFirst[length .. rhs.length] = 0;
+            auto oldLength = length;
             length = rhs.length;
+            view.unsigned.leastSignificantFirst[oldLength .. $] = 0;
         }
         else
         if (length == 0)
             return false;
+        try debug writeln(diff, " ", length, " ", rhs.length); catch(Exception e) {}
         auto thisView = view;
         auto overflow = thisView.opOpAssign!op(rhs.view);
         this.sign = thisView.sign;
@@ -240,7 +284,7 @@ struct BigInt(size_t maxSize64)
         }
         else
         {
-            if (index >= data.length)
+            if (index >= data.length || length == 0)
             {
                 length = 0;
                 return this;

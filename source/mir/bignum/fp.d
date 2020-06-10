@@ -183,14 +183,15 @@ struct Fp(size_t coefficientSize)
         }
         else
         {
-            enum rMask = (UInt!coefficientSize(1) << (coefficientSize - T.mant_dig)) - UInt!coefficientSize(1);
-            enum rHalf = UInt!coefficientSize(1) << (coefficientSize - T.mant_dig - 1);
-            enum rInc = UInt!coefficientSize(1) << (coefficientSize - T.mant_dig);
+            enum shift = coefficientSize - T.mant_dig;
+            enum rMask = (UInt!coefficientSize(1) << shift) - UInt!coefficientSize(1);
+            enum rHalf = UInt!coefficientSize(1) << (shift - 1);
+            enum rInc = UInt!coefficientSize(1) << shift;
             UInt!coefficientSize adC = coefficient;
             static if (!noHalf)
             {
                 auto cr = (coefficient & rMask).opCmp(rHalf);
-                if ((cr > 0) | (cr == 0) & coefficient.bt(T.mant_dig))
+                if ((cr > 0) | (cr == 0) & coefficient.bt(shift))
                 {
                     if (auto overflow = adC += rInc)
                     {
@@ -199,8 +200,8 @@ struct Fp(size_t coefficientSize)
                     }
                 }
             }
-            adC >>= coefficientSize - T.mant_dig;
-            exp += coefficientSize - T.mant_dig;
+            adC >>= shift;
+            exp += shift;
             Unqual!T c = cast(ulong) adC;
             static if (T.mant_dig > 64) //
             {

@@ -15,13 +15,14 @@ Params:
 struct UInt(size_t size)
     if (size % (size_t.sizeof * 8) == 0 && size >= (size_t.sizeof * 8))
 {
+    import mir.bignum.fixed_int: UInt;
     /++
     Payload. The data is located in the target endianness.
     +/
     size_t[size / (size_t.sizeof * 8)] data;
 
     ///
-    this(size_t N)(size_t[N] data)
+    this(size_t N)(auto ref size_t[N] data)
         if (N <= this.data.length)
     {
         version(LittleEndian)
@@ -54,10 +55,10 @@ struct UInt(size_t size)
     }
 
     ///
-    enum UInt max = ((){UInt ret; ret.data = size_t.max; return ret;})();
+    enum UInt!size max = ((){UInt!size ret; ret.data = size_t.max; return ret;})();
 
     ///
-    enum UInt min = UInt.init;
+    enum UInt!size min = UInt!size.init;
 
     import mir.bignum.low_level_view: BigUIntView;
 
@@ -74,7 +75,7 @@ struct UInt(size_t size)
     }
 
     ///
-    static UInt fromHexString(scope const(char)[] str)
+    static UInt!size fromHexString(scope const(char)[] str)
     {
         typeof(return) ret;
         ret.view.fromHexStringImpl(str);
@@ -83,7 +84,7 @@ struct UInt(size_t size)
 
     /++
     +/
-    auto opCmp(UInt rhs)
+    auto opCmp(UInt!size rhs)
     {
         return view.opCmp(rhs.view);
     }
@@ -91,7 +92,7 @@ struct UInt(size_t size)
     /++
     `bool overflow = a += b ` and `bool overflow = a -= b` operations.
     +/
-    bool opOpAssign(string op)(UInt rhs, bool overflow = false)
+    bool opOpAssign(string op)(UInt!size rhs, bool overflow = false)
         @safe pure nothrow @nogc
         if (op == "+" || op == "-")
     {
@@ -115,11 +116,11 @@ struct UInt(size_t size)
     }
 
     ///
-    ref UInt opOpAssign(string op)(UInt rhs) nothrow return
+    ref UInt!size opOpAssign(string op)(UInt!size rhs) nothrow return
         if (op == "^" || op == "|" || op == "&")
     {
         static foreach (i; 0 .. data.length)
-           mixin(`data[i] ` ~ op ~ `= rhs.data[i];`);
+            mixin(`data[i] ` ~ op ~ `= rhs.data[i];`);
         return this;
     }
 
@@ -134,7 +135,7 @@ struct UInt(size_t size)
     }
 
     ///
-    ref UInt opOpAssign(string op)(size_t shift)
+    ref UInt!size opOpAssign(string op)(size_t shift)
         @safe pure nothrow @nogc return
         if (op == "<<" || op == ">>")
     {
@@ -193,11 +194,11 @@ struct UInt(size_t size)
     /++
     `auto c = a << b` operation.
     +/
-    UInt opBinary(string op)(size_t rhs)
+    UInt!size opBinary(string op)(size_t rhs)
         const @safe pure nothrow @nogc
         if (op == "<<" || op == ">>>" || op == ">>")
     {
-        UInt ret = this;
+        UInt!size ret = this;
         ret.opOpAssign!op(rhs);
         return ret;
     }
@@ -221,11 +222,11 @@ struct UInt(size_t size)
     /++
     `auto c = a << b`, and `^`, `|`, `&` operations.
     +/
-    UInt opBinary(string op)(UInt rhs)
+    UInt!size opBinary(string op)(UInt!size rhs)
         const @safe pure nothrow @nogc
         if (op == "^" || op == "|" || op == "&")
     {
-        UInt ret = this;
+        UInt!size ret = this;
         ret.opOpAssign!op(rhs);
         return ret;
     }
@@ -233,11 +234,11 @@ struct UInt(size_t size)
     /++
     `auto c = a + b` and `auto c = a - b` operations.
     +/
-    UInt opBinary(string op, size_t rsize)(UInt!rsize rhs)
+    UInt!size opBinary(string op, size_t rsize)(UInt!rsize rhs)
         const @safe pure nothrow @nogc
         if ((op == "+" || op == "-") && rsize <= size)
     {
-        UInt ret = this;
+        UInt!size ret = this;
         ret.opOpAssign!op(rhs);
         return ret;
     }
@@ -245,10 +246,10 @@ struct UInt(size_t size)
     /++
     Shifts left using at most `size_t.sizeof * 8 - 1` bits
     +/
-    UInt smallLeftShift()(uint shift) const
+    UInt!size smallLeftShift()(uint shift) const
     {
         assert(shift < size_t.sizeof * 8);
-        UInt ret = this;
+        UInt!size ret = this;
         if (shift)
         {
             auto csh = size_t.sizeof * 8 - shift;
@@ -284,10 +285,10 @@ struct UInt(size_t size)
     /++
     Shifts right using at most `size_t.sizeof * 8 - 1` bits
     +/
-    UInt smallRightShift()(uint shift) const
+    UInt!size smallRightShift()(uint shift) const
     {
         assert(shift < size_t.sizeof * 8);
-        UInt ret = this;
+        UInt!size ret = this;
         if (shift)
         {
             auto csh = size_t.sizeof * 8 - shift;
