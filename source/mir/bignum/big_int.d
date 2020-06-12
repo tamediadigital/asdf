@@ -169,8 +169,6 @@ struct BigInt(size_t maxSize64)
         if (op == "+" || op == "-")
     {
         int diff = length - rhs.length;
-        import std.stdio;
-        try debug writeln(diff, " ", length, " ", rhs.length); catch(Exception e) {}
         if (diff < 0)
         {
             auto oldLength = length;
@@ -178,9 +176,8 @@ struct BigInt(size_t maxSize64)
             view.unsigned.leastSignificantFirst[oldLength .. $] = 0;
         }
         else
-        if (length == 0)
+        if (rhs.length == 0)
             return false;
-        try debug writeln(diff, " ", length, " ", rhs.length); catch(Exception e) {}
         auto thisView = view;
         auto overflow = thisView.opOpAssign!op(rhs.view);
         this.sign = thisView.sign;
@@ -222,7 +219,8 @@ struct BigInt(size_t maxSize64)
     bool mulPow5(size_t degree)
     {
         // assert(approxCanMulPow5(degree));
-        assert(length);
+        if (length == 0)
+            return false;
         enum n = MaxWordPow5!size_t;
         enum wordInit = size_t(5) ^^ n;
         size_t word = wordInit;
@@ -314,6 +312,8 @@ struct BigInt(size_t maxSize64)
                     d[j] = (d[j - index] << bs) | (d[j - (index + 1)] >> ss);
                 }
                 d[index] = d.front << bs;
+                if (length < data.length)
+                    length += most != 0;
             }
             else
             {

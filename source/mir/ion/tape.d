@@ -139,7 +139,6 @@ size_t ionPutVarInt(T)(scope ubyte* ptr, const T num, bool sign)
     do ptr[s - 1 - len++] = value & 0x7F;
     while (value >>>= 7);
     auto sb = ptr[s - len] >>> 6;
-    import std.stdio;
     len += sb;
     auto r = ptr[s - len] & ~(~sb + 1);
     ptr[s - len] = cast(ubyte)r | (cast(ubyte)sign << 6);
