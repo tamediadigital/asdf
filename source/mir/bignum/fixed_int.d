@@ -324,6 +324,19 @@ struct UInt(size_t size)
     /++
     +/
     T opCast(T)() const
+        if (is(Unqual!T == bool))
+    {
+        static foreach (i; 0 .. data.length)
+        {
+            if (data[i])
+                return true;
+        }
+        return false;
+    }
+
+    /++
+    +/
+    T opCast(T)() const
         if (is(Unqual!T == ulong))
     {
         auto d = view.leastSignificantFirst;

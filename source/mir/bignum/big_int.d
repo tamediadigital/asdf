@@ -133,7 +133,8 @@ struct BigInt(size_t maxSize64)
     size_t opOpAssign(string op : "*")(size_t rhs, size_t overflow = 0u)
         @safe pure nothrow @nogc
     {
-        overflow = view.unsigned.opOpAssign!op(rhs, overflow);
+        if (length)
+            overflow = view.unsigned.opOpAssign!op(rhs, overflow);
         if (overflow && length < data.length)
         {
             putCoefficient(overflow);
@@ -153,7 +154,41 @@ struct BigInt(size_t maxSize64)
     UInt!size opOpAssign(string op : "*", size_t size)(UInt!size rhs, UInt!size overflow = 0)
         @safe pure nothrow @nogc
     {
-        return length ? view.unsigned.opOpAssign!("*")(rhs, overflow) : overflow;
+        if (length)
+            overflow = view.unsigned.opOpAssign!op(rhs, overflow);
+        if (overflow && length < data.length)
+        {
+            static if (size <= 64)
+            {
+                auto o = cast(ulong)overflow;
+                static if (size_t.sizeof == ulong.sizeof)
+                {
+                    putCoefficient(o);
+                    overflow = UInt!size.init;
+                }
+                else
+                {
+                    putCoefficient(cast(uint)o);
+                    o >>= 32;
+                    if (length < data.length)
+                    {
+                        putCoefficient(cast(uint)o);
+                        o = 0;
+                    }
+                    overflow = UInt!size(o);
+                }
+            }
+            else
+            {
+                do
+                {
+                    putCoefficient(cast(size_t)overflow);
+                    overflow >>= size_t.sizeof * 8;
+                }
+                while(overflow && length < data.length);
+            }
+        }
+        return overflow;
     }
 
     /++
@@ -347,7 +382,7 @@ struct BigInt(size_t maxSize64)
         else
         {
             this.sign = view.sign;
-            auto lhs = cast(BigUIntView!(W, endian))(cast(W[])data);
+            auto lhs = BigUIntView!W(cast(W[])data);
             auto rhs = view;
             auto overflow = lhs.coefficients.length < rhs.coefficients.length;
             auto n = overflow ? lhs.coefficients.length : rhs.coefficients.length;
