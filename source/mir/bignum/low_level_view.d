@@ -44,16 +44,16 @@ else
 package template MaxWordPow10(T)
 {
     static if (is(T == ubyte))
-        enum MaxWordPow5 = 2;
+        enum MaxWordPow10 = 2;
     else
     static if (is(T == ushort))
-        enum MaxWordPow5 = 4;
+        enum MaxWordPow10 = 4;
     else
     static if (is(T == uint))
-        enum MaxWordPow5 = 9;
+        enum MaxWordPow10 = 9;
     else
     static if (is(T == ulong))
-        enum MaxWordPow5 = 19;
+        enum MaxWordPow10 = 19;
     else
         static assert(0);
 }
@@ -2186,4 +2186,98 @@ struct BinaryView(W, WordEndian endian = TargetEndian, Exp = int)
     Exp exponent;
     ///
     BigUIntView!(W, endian) coefficient;
+}
+
+import mir.bignum.big_int;
+
+bool parseDecimal(scope const(char)[] str, ref BigInt!256 coefficient, out int exponent, out uint floatingKey)
+{
+    import mir.utility: _expect;
+    coefficient.length = 0;
+    coefficient.sign = false;
+
+    if (_expect(str.length == 0, false))
+        return false;
+
+    if (str[0] == '-')
+    {
+        coefficient.sign = true;
+        str = str[1 .. $];
+        if (_expect(str.length == 0, false))
+            return false;
+    }
+    else
+    if (_expect(str[0] == '+', false))
+    {
+        str = str[1 .. $];
+        if (_expect(str.length == 0, false))
+            return false;
+    }
+
+    size_t v;
+    size_t t = 1;
+    size_t afterDot;
+    bool dot;
+    bool hasExponent;
+
+    if (str[0] == '0')
+    {
+        str = str[1 .. $];
+        if (str.length == 0)
+            return true;
+        if (str[0] != '.')
+            return false;
+        if (_expect(str.length == 0, false))
+            return false;
+    }
+    for(;;)
+    {
+        enum mp10 = size_t(10) ^^ MaxWordPow10!size_t;
+        uint d = str[0] - '0';
+        str = str[1 .. $];
+        
+        if (_expect(d <= 10, true))
+        {
+            v *= 10;
+            t *= 10;
+            v += d;
+            afterDot += dot;
+
+            if (_expect(t == mp10, false))
+            {
+            L:
+                if (!coefficient.opOpAssign!"*"(t, v))
+                {
+                    v = 0;
+                    t = 1;
+                    if (str.length == 0)
+                        return true;
+                }
+            }
+        }
+        else
+        if (floatingKey != d)
+        {
+            floatingKey = d;
+            if (d == '.' - '0')
+            {
+                if (_expect(!dot, true))
+                {
+                    dot = true;
+                    if (str.length)
+                        continue;
+                }
+            }
+            else
+            if (d == 'e'-'0' || d == 'd'-'0' || d == 'E'-'0' || d == 'D'-'0')
+            {
+                hasExponent = true;
+                import mir.parse: parse;
+                if (parse(str, exponent) && str.length == 0)
+                    goto L;
+            }
+        }
+        break;
+    }
+    return false;
 }
