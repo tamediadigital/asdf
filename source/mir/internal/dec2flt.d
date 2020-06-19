@@ -1,7 +1,7 @@
 module mir.internal.dec2flt;
 
 import mir.bignum.fp;
-import mir.bignum.fixed_int;
+import mir.bignum.fixed;
 import std.traits;
 import mir.utility: _expect, extMul;
 import mir.bignum.low_level_view;

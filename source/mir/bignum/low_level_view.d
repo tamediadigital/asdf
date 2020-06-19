@@ -99,7 +99,7 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
     if (__traits(isUnsigned, W))
 {
     import mir.bignum.fp: Fp, half;
-    import mir.bignum.fixed_int: UInt;
+    import mir.bignum.fixed: UInt;
 
     /++
     A group of coefficients for a radix `W.max + 1`.
@@ -130,6 +130,7 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
 
     static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
+    version(mir_test)
     unittest
     {
         auto a = cast(double) BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
@@ -270,11 +271,12 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
 
     static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
+    version(mir_test)
     @safe pure
     unittest
     {
         import mir.bignum.fp: Fp;
-        import mir.bignum.fixed_int: UInt;
+        import mir.bignum.fixed: UInt;
 
         auto fp = cast(Fp!128) BigUIntView!ulong.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
         assert(fp.exponent == 0);
@@ -426,6 +428,7 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
 
     static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
+    version(mir_test)
     @safe pure
     unittest
     {
@@ -454,6 +457,7 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
 
     static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
+    version(mir_test)
     @safe pure
     unittest
     {
@@ -655,7 +659,7 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
 
     static if (isMutable!W && W.sizeof == size_t.sizeof)
     /++
-    Performs `W overflow = big *= fixed_int` operatrion.
+    Performs `W overflow = big *= fixed` operatrion.
     Precondition: non-empty coefficients
     Params:
         rhs = unsigned fixed-length integer to multiply by
@@ -951,6 +955,7 @@ struct BigUIntView(W, WordEndian endian = TargetEndian)
 }
 
 ///
+version(mir_test)
 @safe pure nothrow
 unittest
 {
@@ -1073,6 +1078,7 @@ struct BigIntView(W, WordEndian endian = TargetEndian)
 
     static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
+    version(mir_test)
     unittest
     {
         auto a = cast(double) -BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
@@ -1091,10 +1097,11 @@ struct BigIntView(W, WordEndian endian = TargetEndian)
 
     static if (W.sizeof == size_t.sizeof && endian == TargetEndian)
     ///
+    version(mir_test)
     @safe pure
     unittest
     {
-        import mir.bignum.fixed_int: UInt;
+        import mir.bignum.fixed: UInt;
         import mir.bignum.fp: Fp;
 
         auto fp = cast(Fp!128) -BigUIntView!size_t.fromHexString("afbbfae3cd0aff2714a1de7022b0029d");
@@ -1319,6 +1326,7 @@ struct BigIntView(W, WordEndian endian = TargetEndian)
 }
 
 ///
+version(mir_test)
 @safe pure nothrow
 unittest
 {
@@ -1539,6 +1547,7 @@ struct BigUIntAccumulator(W, WordEndian endian = TargetEndian)
 }
 
 ///
+version(mir_test)
 @safe pure
 unittest
 {
@@ -1571,9 +1580,10 @@ unittest
 }
 
 ///
+version(mir_test)
 unittest
 {
-    import mir.bignum.fixed_int: UInt;
+    import mir.bignum.fixed: UInt;
     import mir.bignum.low_level_view: BigUIntView;
     auto bigView = BigUIntView!size_t.fromHexString("55a325ad18b2a77120d870d987d5237473790532acab45da44bc07c92c92babf0b5e2e2c7771cd472ae5d7acdb159a56fbf74f851a058ae341f69d1eb750d7e3");
     auto fixed = UInt!256.fromHexString("55e5669576d31726f4a9b58a90159de5923adc6c762ebd3c4ba518d495229072");
@@ -1584,6 +1594,7 @@ unittest
 }
 
 /// Computes `13 * 10^^60`
+version(mir_test)
 @safe pure
 unittest
 {
@@ -1663,8 +1674,8 @@ struct DecimalView(W, WordEndian endian = TargetEndian, Exp = int)
     T opCast(T, bool wordNormalized = false, bool nonZero = false)() const
         if (isFloatingPoint!T && isMutable!T)
     {
-        import mir.bignum.big_int: BigInt;
-        import mir.bignum.fixed_int: UInt;
+        import mir.bignum.integer: BigInt;
+        import mir.bignum.fixed: UInt;
         import mir.bignum.fp: Fp, extendedMul;
         import mir.internal.dec2flt_table;
         import mir.math.common: floor;
@@ -1872,17 +1883,9 @@ struct DecimalView(W, WordEndian endian = TargetEndian, Exp = int)
 }
 
 ///
+version(mir_test)
 unittest
 {
-    // TODO: fill compiler bug
-    //  assert (2075e23 == 0xaba3d58a1f1a98p+32);
-    // TODO: fill issue 5e-324 can't compile
-    // TODO: fill issue 91e-324, 1e-322 can't compile, 0.00000000000091e-310 ditto
-    // TODO: BUG!!! number normal number 2.1e-308 is not representable, while 2.22507385851e-308 is
-    // TODO: check hexadecimnal compiler rounding
-    // TODO: 0x8p-16448 isn't representable
-    // TODO: fill issue for 1.448997445238699 
-
     alias AliasSeq(T...) = T;
 
     foreach (T; AliasSeq!(float, double, real))
@@ -2186,98 +2189,4 @@ struct BinaryView(W, WordEndian endian = TargetEndian, Exp = int)
     Exp exponent;
     ///
     BigUIntView!(W, endian) coefficient;
-}
-
-import mir.bignum.big_int;
-
-bool parseDecimal(scope const(char)[] str, ref BigInt!256 coefficient, out int exponent, out uint floatingKey)
-{
-    import mir.utility: _expect;
-    coefficient.length = 0;
-    coefficient.sign = false;
-
-    if (_expect(str.length == 0, false))
-        return false;
-
-    if (str[0] == '-')
-    {
-        coefficient.sign = true;
-        str = str[1 .. $];
-        if (_expect(str.length == 0, false))
-            return false;
-    }
-    else
-    if (_expect(str[0] == '+', false))
-    {
-        str = str[1 .. $];
-        if (_expect(str.length == 0, false))
-            return false;
-    }
-
-    size_t v;
-    size_t t = 1;
-    size_t afterDot;
-    bool dot;
-    bool hasExponent;
-
-    if (str[0] == '0')
-    {
-        str = str[1 .. $];
-        if (str.length == 0)
-            return true;
-        if (str[0] != '.')
-            return false;
-        if (_expect(str.length == 0, false))
-            return false;
-    }
-    for(;;)
-    {
-        enum mp10 = size_t(10) ^^ MaxWordPow10!size_t;
-        uint d = str[0] - '0';
-        str = str[1 .. $];
-        
-        if (_expect(d <= 10, true))
-        {
-            v *= 10;
-            t *= 10;
-            v += d;
-            afterDot += dot;
-
-            if (_expect(t == mp10, false))
-            {
-            L:
-                if (!coefficient.opOpAssign!"*"(t, v))
-                {
-                    v = 0;
-                    t = 1;
-                    if (str.length == 0)
-                        return true;
-                }
-            }
-        }
-        else
-        if (floatingKey != d)
-        {
-            floatingKey = d;
-            if (d == '.' - '0')
-            {
-                if (_expect(!dot, true))
-                {
-                    dot = true;
-                    if (str.length)
-                        continue;
-                }
-            }
-            else
-            if (d == 'e'-'0' || d == 'd'-'0' || d == 'E'-'0' || d == 'D'-'0')
-            {
-                hasExponent = true;
-                import mir.parse: parse;
-                if (parse(str, exponent) && str.length == 0)
-                    goto L;
-            }
-        }
-        break;
-    }
-    return false;
 }

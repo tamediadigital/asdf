@@ -7,7 +7,7 @@ import mir.bitop;
 import mir.utility;
 
 package enum half(size_t hs) = (){
-    import mir.bignum.fixed_int: UInt;
+    import mir.bignum.fixed: UInt;
     UInt!hs ret; ret.signBit = true; return ret;
 }();
 
@@ -16,7 +16,7 @@ package enum half(size_t hs) = (){
 struct Fp(size_t coefficientSize)
     if (coefficientSize % 64 == 0 && coefficientSize >= 64)
 {
-    import mir.bignum.fixed_int: UInt;
+    import mir.bignum.fixed: UInt;
 
     bool sign;
     sizediff_t exponent;
@@ -37,7 +37,7 @@ struct Fp(size_t coefficientSize)
     this(size_t size)(UInt!size integer, bool normalizedInteger = false)
         // nothrow
     {
-        import mir.bignum.fixed_int: UInt;
+        import mir.bignum.fixed: UInt;
         static if (size < coefficientSize)
         {
             if (normalizedInteger)
@@ -85,6 +85,7 @@ struct Fp(size_t coefficientSize)
 
     static if (coefficientSize == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -148,6 +149,7 @@ struct Fp(size_t coefficientSize)
 
     static if (coefficientSize == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -221,6 +223,7 @@ struct Fp(size_t coefficientSize)
 
     static if (coefficientSize == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -230,6 +233,7 @@ struct Fp(size_t coefficientSize)
 
     static if (coefficientSize == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -240,6 +244,7 @@ struct Fp(size_t coefficientSize)
 
     static if (coefficientSize == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -249,6 +254,7 @@ struct Fp(size_t coefficientSize)
 
     static if (coefficientSize == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -268,6 +274,7 @@ struct Fp(size_t coefficientSize)
 
     static if (coefficientSize == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -281,7 +288,7 @@ struct Fp(size_t coefficientSize)
 Fp!(coefficientizeA + coefficientizeB) extendedMul(size_t coefficientizeA, size_t coefficientizeB)(Fp!coefficientizeA a, Fp!coefficientizeB b)
     @safe pure nothrow @nogc
 {
-    import mir.bignum.fixed_int: extendedMul;
+    import mir.bignum.fixed: extendedMul;
     auto coefficient = extendedMul(a.coefficient, b.coefficient);
     auto exponent = a.exponent + b.exponent;
     auto sign = a.sign ^ b.sign;

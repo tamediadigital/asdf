@@ -1,6 +1,6 @@
 /++
 +/
-module mir.bignum.fixed_int;
+module mir.bignum.fixed;
 
 import std.traits;
 import mir.bitop;
@@ -15,7 +15,7 @@ Params:
 struct UInt(size_t size)
     if (size % (size_t.sizeof * 8) == 0 && size >= (size_t.sizeof * 8))
 {
-    import mir.bignum.fixed_int: UInt;
+    import mir.bignum.fixed: UInt;
     /++
     Payload. The data is located in the target endianness.
     +/
@@ -126,6 +126,7 @@ struct UInt(size_t size)
 
     static if (size == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -205,6 +206,7 @@ struct UInt(size_t size)
 
     static if (size == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -275,6 +277,7 @@ struct UInt(size_t size)
 
     static if (size == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -314,6 +317,7 @@ struct UInt(size_t size)
 
     static if (size == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -410,6 +414,7 @@ struct UInt(size_t size)
 
     static if (size == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -434,6 +439,7 @@ struct UInt(size_t size)
 
     static if (size == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -455,6 +461,7 @@ struct UInt(size_t size)
 
     static if (size == 128)
     ///
+    version(mir_test)
     @safe pure @nogc
     unittest
     {
@@ -487,6 +494,7 @@ struct UInt(size_t size)
     }
 
     ///
+    version(mir_test)
     unittest
     {
         auto a = UInt!128.fromHexString("dfbbfae3cd0aff2714a1de7022b0029d");
@@ -561,6 +569,8 @@ UInt!64 extendedMul()(uint a, uint b)
 }
 
 ///
+version(mir_test)
+version(mir_test)
 @safe pure @nogc
 unittest
 {
@@ -585,6 +595,7 @@ unittest
 }
 
 /// ulong
+version(mir_test)
 @safe pure @nogc
 unittest
 {
@@ -596,6 +607,7 @@ unittest
 }
 
 /// uint
+version(mir_test)
 @safe pure @nogc
 unittest
 {

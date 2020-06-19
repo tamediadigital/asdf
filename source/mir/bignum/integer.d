@@ -1,6 +1,6 @@
 /++
 +/
-module mir.bignum.big_int;
+module mir.bignum.integer;
 
 import std.traits;
 import mir.bitop;
@@ -8,12 +8,14 @@ import mir.utility;
 
 /++
 Stack-allocated big signed integer.
+Params:
+    maxSize64 = count of 64bit words in coefficient
 +/
 struct BigInt(size_t maxSize64)
     if (maxSize64 && maxSize64 <= ushort.max)
 {
     import mir.bignum.low_level_view;
-    import mir.bignum.fixed_int;
+    import mir.bignum.fixed;
 
     ///
     bool sign;
@@ -133,10 +135,12 @@ struct BigInt(size_t maxSize64)
     size_t opOpAssign(string op : "*")(size_t rhs, size_t overflow = 0u)
         @safe pure nothrow @nogc
     {
-        if (length)
-            overflow = view.unsigned.opOpAssign!op(rhs, overflow);
+        if (length == 0)
+            goto L;
+        overflow = view.unsigned.opOpAssign!op(rhs, overflow);
         if (overflow && length < data.length)
         {
+        L:
             putCoefficient(overflow);
             overflow = 0;
         }
@@ -154,10 +158,12 @@ struct BigInt(size_t maxSize64)
     UInt!size opOpAssign(string op : "*", size_t size)(UInt!size rhs, UInt!size overflow = 0)
         @safe pure nothrow @nogc
     {
-        if (length)
-            overflow = view.unsigned.opOpAssign!op(rhs, overflow);
+        if (length == 0)
+            goto L;
+        overflow = view.unsigned.opOpAssign!op(rhs, overflow);
         if (overflow && length < data.length)
         {
+        L:
             static if (size <= 64)
             {
                 auto o = cast(ulong)overflow;
@@ -409,9 +415,10 @@ struct BigInt(size_t maxSize64)
 }
 
 ///
+version(mir_test)
 unittest
 {
-    import mir.bignum.fixed_int;
+    import mir.bignum.fixed;
     import mir.bignum.low_level_view;
 
     auto a = BigInt!4.fromHexString("4b313b23aa560e1b0985f89cbe6df5460860e39a64ba92b4abdd3ee77e4e05b8");
