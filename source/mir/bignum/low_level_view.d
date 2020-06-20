@@ -1677,7 +1677,7 @@ struct DecimalView(W, WordEndian endian = TargetEndian, Exp = int)
         import mir.bignum.integer: BigInt;
         import mir.bignum.fixed: UInt;
         import mir.bignum.fp: Fp, extendedMul;
-        import mir.internal.dec2flt_table;
+        import mir.bignum.internal.dec2flt_table;
         import mir.math.common: floor;
         import mir.math.ieee: ldexp, frexp, nextDown, nextUp;
         import mir.utility: _expect;

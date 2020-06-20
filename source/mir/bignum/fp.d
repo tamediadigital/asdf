@@ -12,6 +12,9 @@ package enum half(size_t hs) = (){
 }();
 
 /++
+Software floating point bumber.
+Params:
+    coefficientSize = coefficient size in bits
 +/
 struct Fp(size_t coefficientSize)
     if (coefficientSize % 64 == 0 && coefficientSize >= 64)
