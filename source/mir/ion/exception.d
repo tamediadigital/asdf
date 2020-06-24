@@ -25,6 +25,8 @@ enum IonErrorCode
     ///
     overflowInIntegerValue,
     ///
+    overflowInDecimalValue,
+    ///
     zeroAnnotations,
     ///
     illegalBinaryData,
@@ -72,6 +74,7 @@ string ionErrorMsg(IonErrorCode code) @property
         "overflow in parseVarUInt",
         "overflow in parseVarInt",
         "overflow in integer value",
+        "overflow in decimal value",
         "at least one annotation is required",
         "illegal binary data",
         "illegal timestamp",

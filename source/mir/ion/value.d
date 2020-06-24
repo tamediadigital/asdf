@@ -1,10 +1,12 @@
 ///
 module mir.ion.value;
 
+import mir.bignum.decimal: Decimal;
 import mir.bignum.low_level_view;
+import mir.bignum.low_level_view: BigUIntView;
 import mir.ion.exception;
 import mir.utility: _expect;
-import std.traits: isIntegral, isSigned, isUnsigned, Unsigned, Signed, isFloatingPoint;
+import std.traits: isMutable, isIntegral, isSigned, isUnsigned, Unsigned, Signed, isFloatingPoint;
 
 /++
 Ion Version Marker
@@ -885,12 +887,35 @@ unittest
 +/
 struct IonDescribedDecimal
 {
-    import std.traits: isFloatingPoint;
-
     ///
-    sizediff_t exponent;
+    int exponent;
     ///
     IonIntField coefficient;
+
+    ///
+    IonErrorCode getDecimal(size_t maxW64bitSize)(scope ref Decimal!maxW64bitSize value)
+        @safe pure nothrow @nogc const
+    {
+        const length = coefficient.data.length;
+        enum maxLength = maxW64bitSize * 8;
+        if (_expect(length > maxLength, false))
+            return IonErrorCode.overflowInDecimalValue;
+        value.exponent = exponent;
+        value.coefficient.length = cast(uint) (length / size_t.sizeof + (length % size_t.sizeof != 0));
+        value.coefficient.sign = false;
+        if (value.coefficient.length == 0)
+            return IonErrorCode.none;
+        value.coefficient.view.unsigned.mostSignificant = 0;
+        auto lhs = value.coefficient.view.unsigned.opCast!(BigUIntView!ubyte).leastSignificantFirst[0 .. length];
+        import mir.ndslice.topology: retro;
+        lhs[] = coefficient.data.retro;
+        if (bool sign = coefficient.data[$ - 1] >> 7)
+        {
+            value.coefficient.sign = true;
+            lhs[$ - 1] &= 0x7F;
+        }
+        return IonErrorCode.none;
+    }
 
     /++
     Params:
@@ -900,20 +925,12 @@ struct IonDescribedDecimal
     +/
     IonErrorCode get(T)(scope ref T value)
         @safe pure nothrow @nogc const
-        if (isFloatingPoint!T)
+        if (isFloatingPoint!T && isMutable!T)
     {
-        // TODO: more precise algorithm
-        long coeff;
-        if (auto error = coefficient.get(coeff))
-            return error;
-        T v = coeff;
-        if (v)
-        {
-            import mir.utility: min, max;
-            import mir.math.common: powi;
-            v *= powi(T(10), cast(int) exponent.max(int.min).max(int.min));
-        }
-        value = v;
+        Decimal!256  decimal;
+        if (auto ret = this.getDecimal!256(decimal))
+            return ret;
+        value = cast(T) decimal;
         return IonErrorCode.none;
     }
 
@@ -938,12 +955,12 @@ struct IonDescribedDecimal
     Returns: $(SUBREF exception, IonErrorCode)
     Precondition: `this != null`.
     +/
-    IonErrorCode getErrorCode(T = double)()
+    IonErrorCode getErrorCode()()
         @trusted pure nothrow @nogc const
         if (isFloatingPoint!T)
     {
-        T value;
-        return get!T(value);
+        Decimal!256 decimal;
+        return get!T(decimal);
     }
 }
 
@@ -1042,6 +1059,10 @@ unittest
     auto describedDecimal = IonValue([0x56, 0x50, 0xcb, 0x80, 0xbc, 0x2d, 0x86]).describe.get!IonDecimal.get;
     assert(describedDecimal.exponent == -2123);
     assert(describedDecimal.coefficient.get!int == -12332422);
+
+    describedDecimal = IonValue([0x56, 0x00, 0xcb, 0x80, 0xbc, 0x2d, 0x86]).describe.get!IonDecimal.get;
+    assert(describedDecimal.get!double == -12332422e75);
+
     assert(IonValue([0x50]).describe.get!IonDecimal.get!double == 0);
     assert(IonValue([0x51, 0x83]).describe.get!IonDecimal.get!double == 0);
 }

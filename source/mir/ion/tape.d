@@ -1,34 +1,11 @@
 ///
 module mir.ion.tape;
 
-import std.traits;
+import core.stdc.string: memmove, memcpy;
+import mir.bignum.low_level_view;
 import mir.bitop;
 import mir.utility: _expect;
-
-@system pure nothrow @nogc:
-
-/++
-+/
-struct SmallDecimal(T)
-    if (is(T == ulong) || is(T == uint))
-{
-    T coefficient;
-    uint exponent;
-    bool sign;
-    bool exponentSign;
-
-@safe pure nothrow @nogc:
-
-    /++
-    +/
-    this(bool sign, T coefficient, bool exponentSign, uint exponent)
-    {
-        this.coefficient = coefficient;
-        this.exponent = exponent;
-        this.sign = sign;
-        this.exponentSign = exponentSign;
-    }
-}
+import std.traits;
 
 size_t ionPutVarUInt(T)(scope ubyte* ptr, const T num)
     if (isUnsigned!T)
@@ -44,6 +21,7 @@ size_t ionPutVarUInt(T)(scope ubyte* ptr, const T num)
     return len;
 }
 
+@system pure nothrow @nogc
 unittest
 {
     ubyte[10] data;
@@ -125,6 +103,12 @@ unittest
     assert(data[9] == 0xFF);
 }
 
+size_t ionPutVarInt(T)(scope ubyte* ptr, const T num)
+    if (isSigned!T)
+{
+    return .ionPutVarInt!(Unsigned!T)(ptr, num < 0 ? -num : num, num < 0);
+}
+
 size_t ionPutVarInt(T)(scope ubyte* ptr, const T num, bool sign)
     if (isUnsigned!T)
 {
@@ -148,6 +132,7 @@ size_t ionPutVarInt(T)(scope ubyte* ptr, const T num, bool sign)
     return len;
 }
 
+@system pure nothrow @nogc
 unittest
 {
     ubyte[10] data;
@@ -304,6 +289,36 @@ unittest
     assert(data[9] == 0xFF);
 }
 
+size_t ionPutUIntField(W, WordEndian endian)(
+    scope ubyte* ptr,
+    BigUIntView!(const W, endian) value,
+    )
+    if (isUnsigned!W && (W.sizeof == 1 || endian == TargetEndian))
+{
+    pragma(inline, false);
+    auto data = value.mostSignificantFirst;
+    size_t ret;
+    static if (W.sizeof > 1)
+    {
+        if (data.length)
+        {
+            ret = .ionPutUIntField(ptr, data[0]);
+            data.popFront;
+        }
+    }
+    foreach (W d; data)
+    {
+        version (LittleEndian)
+        {
+            import core.bitop: bswap;
+            d = bswap(d);
+        }
+        *cast(ubyte[W.sizeof]*)(ptr + ret) = cast(ubyte[W.sizeof])cast(W[1])[d];
+        ret += W.sizeof;
+    }
+    return ret;
+}
+
 size_t ionPutUIntField(T)(scope ubyte* ptr, const T num)
     if (isUnsigned!T && T.sizeof >= 4)
 {
@@ -320,17 +335,20 @@ size_t ionPutUIntField(T)(scope ubyte* ptr, const T num)
     return T.sizeof - c;
 }
 
-size_t ionPutUIntField(T : ubyte)(scope ubyte* ptr, const T num)
+size_t ionPutUIntField(T)(scope ubyte* ptr, const T num)
+    if (is(T == ubyte))
 {
     *ptr = num;
     return num != 0;
 }
 
-size_t ionPutUIntField(T : ushort)(scope ubyte* ptr, const T num)
+size_t ionPutUIntField(T)(scope ubyte* ptr, const T num)
+    if (is(T == ushort))
 {
     return ionPutUIntField!uint(ptr, num);
 }
 
+@system pure nothrow @nogc
 unittest
 {
     ubyte[8] data;
@@ -418,6 +436,31 @@ unittest
     assert(data[7] == 0xFF);
 }
 
+size_t ionPutIntField(W, WordEndian endian)(
+    scope ubyte* ptr,
+    BigIntView!(const W, endian) value,
+    )
+    if (isUnsigned!W && (W.sizeof == 1 || endian == TargetEndian))
+{
+    pragma(inline, false);
+    auto data = value.unsigned.mostSignificantFirst;
+    if (data.length == 0)
+        return 0;
+    size_t ret = .ionPutIntField(ptr, data[0], value.sign);
+    data.popFront;
+    foreach (W d; data)
+    {
+        version (LittleEndian)
+        {
+            import core.bitop: bswap;
+            d = bswap(d);
+        }
+        *cast(ubyte[W.sizeof]*)(ptr + ret) = cast(ubyte[W.sizeof])cast(W[1])[d];
+        ret += W.sizeof;
+    }
+    return ret;
+}
+
 size_t ionPutIntField(T)(scope ubyte* ptr, const T num)
     if (isSigned!T && isIntegral!T)
 {
@@ -456,6 +499,7 @@ size_t ionPutIntField(T)(scope ubyte* ptr, const T num, bool sign)
     }
 }
 
+@system pure nothrow @nogc
 unittest
 {
     ubyte[9] data;
@@ -567,6 +611,7 @@ size_t ionPut(T : typeof(null))(scope ubyte* ptr, const T)
     return 1;
 }
 
+@system pure nothrow @nogc
 unittest
 {
     ubyte[1] data;
@@ -580,6 +625,7 @@ size_t ionPut(T : bool)(scope ubyte* ptr, const T value)
     return 1;
 }
 
+@system pure nothrow @nogc
 unittest
 {
     ubyte[1] data;
@@ -604,6 +650,7 @@ size_t ionPut(T)(scope ubyte* ptr, const T value, bool sign = false)
     }
 }
 
+@system pure nothrow @nogc
 unittest
 {
     ubyte[10] data;
@@ -640,6 +687,7 @@ size_t ionPut(T)(scope ubyte* ptr, const T value)
     return ionPut!(Unsigned!T)(ptr, num, sign);
 }
 
+@system pure nothrow @nogc
 unittest
 {
     ubyte[10] data;
@@ -668,6 +716,7 @@ size_t ionPut(T)(scope ubyte* ptr, const T value)
     return 1 + s;
 }
 
+@system pure nothrow @nogc
 unittest
 {
     ubyte[5] data;
@@ -704,6 +753,7 @@ size_t ionPut(T)(scope ubyte* ptr, const T value)
     return 1 + s;
 }
 
+@system pure nothrow @nogc
 unittest
 {
     ubyte[9] data;
@@ -739,6 +789,7 @@ size_t ionPut(T)(scope ubyte* ptr, const T value)
     return ionPut!double(ptr, value);
 }
 
+@system pure nothrow @nogc
 unittest
 {
     ubyte[9] data;
@@ -768,53 +819,131 @@ unittest
     assert(data[8] == 0x00);
 }
 
-size_t ionPut(T)(
+size_t ionPut(W, WordEndian endian)(
     scope ubyte* ptr,
-    const T value,
+    BigUIntView!(const W, endian) value,
     )
-    if (is(T == SmallDecimal!U, U))
+    if (isUnsigned!W && (W.sizeof == 1 || endian == TargetEndian))
 {
-    with(value)
+    return ionPut(ptr, value.signed);
+}
+
+pure
+unittest
+{
+    ubyte[32] data;
+    // big unsigned integer
+    assert(ionPut(data.ptr, BigUIntView!size_t.fromHexString("88BF4748507FB9900ADB624CCFF8D78897DC900FB0460327D4D86D327219").lightConst) == 32);
+    assert(data[0] == 0x2E);
+    assert(data[1] == 0x9E);
+    assert(data[2 .. 32] == BigUIntView!(ubyte, WordEndian.big).fromHexString("88BF4748507FB9900ADB624CCFF8D78897DC900FB0460327D4D86D327219").coefficients);
+}
+
+size_t ionPut(W, WordEndian endian)(
+    scope ubyte* ptr,
+    BigIntView!(const W, endian) value,
+    )
+    if (isUnsigned!W && (W.sizeof == 1 || endian == TargetEndian))
+{
+    auto length = ionPutUIntField(ptr + 1, value.unsigned);
+    auto q = 0x20 | (value.sign << 4);
+    if (_expect(length < 0xE, true))
     {
-        if ((coefficient | exponent | sign) == 0)
-        {
-            *ptr = 0x50;
-            return 1;
-        }
-        auto L = .ionPutVarInt(ptr + 1, exponent, exponentSign);
-        L += .ionPutIntField(ptr + 1 + L, coefficient, sign);
-        // should always fits into 1+14 bytes
-        assert(L <= 14);
-        *ptr = cast(ubyte)(0x50 | L);
-        return L + 1;
+        *ptr = cast(ubyte)(q | length);
+        return length + 1;
+    }
+    else
+    {
+        *ptr = cast(ubyte)(q | 0xE);
+        ubyte[8] lengthPayload;
+        auto lengthLength = ionPutVarUInt(lengthPayload.ptr, length);
+        memmove(ptr + 1 + lengthLength, ptr + 1, length);
+        memcpy(ptr + 1, lengthPayload.ptr, lengthLength);
+        return length + 1 + lengthLength;
     }
 }
 
+pure
 unittest
 {
-    ubyte[15] data;
+    ubyte[3] data;
+    // big unsigned integer
+    assert(ionPut(data.ptr, -BigUIntView!size_t.fromHexString("45be").lightConst) == 3);
+    assert(data[0] == 0x32);
+    assert(data[1] == 0x45);
+    assert(data[2] == 0xbe);
+}
+
+size_t ionPut(W, WordEndian endian)(
+    scope ubyte* ptr,
+    DecimalView!(const W, endian) value,
+    )
+    if (isUnsigned!W && (W.sizeof == 1 || endian == TargetEndian))
+{
+    size_t length;
+    if (value.coefficient.coefficients.length == 0)
+        goto L;
+    length = ionPutVarInt(ptr + 1, value.exponent);
+    length += ionPutIntField(ptr + 1 + length, value.signedCoefficient);
+    if (_expect(length < 0xE, true))
+    {
+    L:
+        *ptr = cast(ubyte)(0x50 | length);
+        return length + 1;
+    }
+    else
+    {
+        *ptr = 0x5E;
+        ubyte[8] lengthPayload;
+        auto lengthLength = ionPutVarUInt(lengthPayload.ptr, length);
+        memmove(ptr + 1 + lengthLength, ptr + 1, length);
+        memcpy(ptr + 1, lengthPayload.ptr, lengthLength);
+        return length + 1 + lengthLength;
+    }
+}
+
+pure
+unittest
+{
+    ubyte[34] data;
     // 0.6
-    assert(ionPut(data.ptr, SmallDecimal!ulong(false, 0x06u, true, 1)) == 3);
+    assert(ionPut(data.ptr, DecimalView!size_t(false, -1, BigUIntView!size_t.fromHexString("06")).lightConst) == 3);
     assert(data[0] == 0x52);
     assert(data[1] == 0xC1);
     assert(data[2] == 0x06);
 
+    // -0.6
+    assert(ionPut(data.ptr, DecimalView!size_t(true, -1, BigUIntView!size_t.fromHexString("06")).lightConst) == 3);
+    assert(data[0] == 0x52);
+    assert(data[1] == 0xC1);
+    assert(data[2] == 0x86);
+
+
     // 0e-3
-    assert(ionPut(data.ptr, SmallDecimal!ulong(false, 0x00u, false, 3)) == 2);
+    assert(ionPut(data.ptr, DecimalView!size_t(false, 3, BigUIntView!size_t.fromHexString("00")).lightConst) == 2);
     assert(data[0] == 0x51);
     assert(data[1] == 0x83);
 
-    // 0e-0
-    assert(ionPut(data.ptr, SmallDecimal!ulong(false, 0x00u, true, 0)) == 1);
-    assert(data[0] == 0x50);
-
     // -0e+0
-    assert(ionPut(data.ptr, SmallDecimal!ulong(true, 0x00u, false, 0)) == 3);
+    assert(ionPut(data.ptr, DecimalView!size_t(true, 0, BigUIntView!size_t.fromHexString("00")).lightConst) == 3);
     assert(data[0] == 0x52);
     assert(data[1] == 0x80);
     assert(data[2] == 0x80);
 
     // 0e+0
-    assert(ionPut(data.ptr, SmallDecimal!ulong(false, 0x00u, false, 0)) == 1);
+    assert(ionPut(data.ptr, DecimalView!size_t(false, 0, BigUIntView!size_t.fromHexString("00")).lightConst) == 2);
+    assert(data[0] == 0x51);
+    assert(data[1] == 0x80);
+
+    // 0e+0 (minimal)
+    assert(ionPut(data.ptr, DecimalView!size_t(false, 0, BigUIntView!size_t.init).lightConst) == 1);
     assert(data[0] == 0x50);
+
+    // big decimal
+    assert(ionPut(data.ptr, DecimalView!size_t(false, -9, BigUIntView!size_t.fromHexString("88BF4748507FB9900ADB624CCFF8D78897DC900FB0460327D4D86D327219")).lightConst) == 34);
+    assert(data[0] == 0x5E);
+    assert(data[1] == 0xA0);
+    assert(data[2] == 0xC9);
+    assert(data[3] == 0x00);
+    assert(data[4 .. 34] == BigUIntView!(ubyte, WordEndian.big).fromHexString("88BF4748507FB9900ADB624CCFF8D78897DC900FB0460327D4D86D327219").coefficients);
 }
