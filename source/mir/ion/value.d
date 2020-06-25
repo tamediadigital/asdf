@@ -1,10 +1,13 @@
-///
+/++
++/
 module mir.ion.value;
 
 import mir.bignum.decimal: Decimal;
 import mir.bignum.low_level_view;
 import mir.bignum.low_level_view: BigUIntView;
 import mir.ion.exception;
+import mir.ion.lob;
+import mir.ion.type_code;
 import mir.utility: _expect;
 import std.traits: isMutable, isIntegral, isSigned, isUnsigned, Unsigned, Signed, isFloatingPoint;
 
@@ -19,99 +22,7 @@ struct IonVersionMarker
     ushort minor = 0;
 }
 
-/++
-Codes for $(HTTP amzn.github.io/ion-docs/docs/binary.html#typed-value-formats, Typed Value Formats)
-+/
-enum IonTypeCode
-{
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#0-null, 0: null)
-    D_type: `typeof(null)`.
-    +/
-    null_,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#1-bool, 1: bool)
-    D_type: $(LREF IonBool)
-    +/
-    bool_,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#2-and-3-int, 2 and 3: int)
-    D_type: $(LREF IonUInt) and $(LREF IonNInt)
-    +/
-    uInt,
-    /// ditto
-    nInt,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#4-float, 4: float)
-    D_type: $(LREF IonFloat)
-    +/
-    float_,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#5-decimal, 5: decimal)
-    D_type: $(LREF IonDecimal)
-    +/
-    decimal,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#6-timestamp, 6: timestamp)
-    D_type: $(LREF IonTimestampValue)
-    +/
-    timestamp,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#7-symbol, 7: symbol)
-    D_type: $(LREF IonSymbol)ID
-    +/
-    symbol,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#8-string, 8: string)
-    D_type: $(LREF IonString)
-    +/
-    string,
-
-    /++
-    Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#9-clob, 9: clob)
-    D_type: $(LREF IonClob)
-    +/
-    clob,
-
-    /++
-    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#0-blob, 10: blob)
-    D_type: $(LREF IonBlob)
-    +/
-    blob,
-
-    /++
-    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#1-list, 11: list)
-    D_type: $(LREF IonList)
-    +/
-    list,
-
-    /++
-    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#2-sexp, 12: sexp)
-    D_type: $(LREF IonSexp)
-    +/
-    sexp,
-
-    /++
-    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#3-struct, 13: struct)
-    D_type: $(LREF IonStruct)
-    +/
-    struct_,
-
-    /++
-    Spec: $(HTTP 1http://amzn.github.io/ion-docs/docs/binary.html#4-annotations, 14: Annotations)
-    D_type: $(LREF IonAnnotationWrapper)
-    +/
-    annotations,
-}
-
-/// Aliases the $(LREF IonTypeCode) to the corresponding Ion Typed Value type.
+/// Aliases the $(SUBREF type_code, IonTypeCode) to the corresponding Ion Typed Value type.
 alias IonType(IonTypeCode code : IonTypeCode.null_) = typeof(null);
 /// ditto
 alias IonType(IonTypeCode code : IonTypeCode.bool_) = IonBool;
@@ -142,7 +53,7 @@ alias IonType(IonTypeCode code : IonTypeCode.struct_) = IonStruct;
 /// ditto
 alias IonType(IonTypeCode code : IonTypeCode.annotations) = IonAnnotationWrapper;
 
-/// Aliases the type to the corresponding $(LREF IonTypeCode).
+/// Aliases the type to the corresponding $(SUBREF type_code, IonTypeCode).
 alias IonTypeCodeOf(T : typeof(null)) = IonTypeCode.null_;
 /// ditto
 alias IonTypeCodeOf(T : IonBool) = IonTypeCode.bool_;
@@ -175,7 +86,7 @@ alias IonTypeCodeOf(T : IonAnnotationWrapper) = IonTypeCode.annotations;
 
 /++
 A template to check if the type is one of Ion Typed Value types.
-See_also: $(LREF IonTypeCode)
+See_also: $(SUBREF type_code, IonTypeCode)
 +/
 enum isIonType(T) = false;
 /// ditto
@@ -1385,73 +1296,6 @@ unittest
     assert(IonValue([0x80]).describe.get!IonString.data == "");
 
     assert(IonValue([0x85, 0x63, 0x6f, 0x76, 0x69, 0x64]).describe.get!IonString.data == "covid");
-}
-
-/++
-Ion Clob
-
-Values of type clob are encoded as a sequence of octets that should be interpreted as text
-with an unknown encoding (and thus opaque to the application).
-+/
-struct IonClob
-{
-    ///
-    const(char)[] data;
-
-    /++
-    Returns: true if the clob is `null.clob`.
-    +/
-    bool opEquals(typeof(null))
-        @safe pure nothrow @nogc const
-    {
-        return data is null;
-    }
-}
-
-///
-@safe pure
-unittest
-{
-    // null.string
-    assert(IonValue([0x9F]).describe.get!IonClob == null);
-    // empty string
-    assert(IonValue([0x90]).describe.get!IonClob != null);
-    assert(IonValue([0x90]).describe.get!IonClob.data == "");
-
-    assert(IonValue([0x95, 0x63, 0x6f, 0x76, 0x69, 0x64]).describe.get!IonClob.data == "covid");
-}
-
-/++
-Ion Blob
-
-This is a sequence of octets with no interpretation (and thus opaque to the application).
-+/
-struct IonBlob
-{
-    ///
-    const(ubyte)[] data;
-
-    /++
-    Returns: true if the blob is `null.blob`.
-    +/
-    bool opEquals(typeof(null))
-        @safe pure nothrow @nogc const
-    {
-        return data is null;
-    }
-}
-
-///
-@safe pure
-unittest
-{
-    // null.string
-    assert(IonValue([0xAF]).describe.get!IonBlob == null);
-    // empty string
-    assert(IonValue([0xA0]).describe.get!IonBlob != null);
-    assert(IonValue([0xA0]).describe.get!IonBlob.data == "");
-
-    assert(IonValue([0xA5, 0x63, 0x6f, 0x76, 0x69, 0x64]).describe.get!IonBlob.data == "covid");
 }
 
 /++

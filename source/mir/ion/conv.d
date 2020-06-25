@@ -3,6 +3,7 @@ module mir.ion.conv;
 
 import mir.ion.exception;
 import mir.ion.value;
+import mir.ion.type_code;
 
 /++
 +/

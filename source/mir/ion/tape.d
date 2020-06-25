@@ -1,12 +1,16 @@
-///
+/++
++/
+// TODO: tape building for Annotations
 module mir.ion.tape;
 
 import core.stdc.string: memmove, memcpy;
 import mir.bignum.low_level_view;
 import mir.bitop;
-import mir.utility: _expect;
-import mir.ion.timestamp: IonTimestamp;
 import mir.date;
+import mir.ion.lob;
+import mir.ion.timestamp: IonTimestamp;
+import mir.ion.type_code;
+import mir.utility: _expect;
 import std.traits;
 
 size_t ionPutVarUInt(T)(scope ubyte* ptr, const T num)
@@ -857,7 +861,7 @@ size_t ionPut(W, WordEndian endian)(
     else
     {
         *ptr = cast(ubyte)(q | 0xE);
-        ubyte[8] lengthPayload;
+        ubyte[10] lengthPayload;
         auto lengthLength = ionPutVarUInt(lengthPayload.ptr, length);
         memmove(ptr + 1 + lengthLength, ptr + 1, length);
         memcpy(ptr + 1, lengthPayload.ptr, lengthLength);
@@ -896,7 +900,7 @@ size_t ionPut(W, WordEndian endian)(
     else
     {
         *ptr = 0x5E;
-        ubyte[8] lengthPayload;
+        ubyte[10] lengthPayload;
         auto lengthLength = ionPutVarUInt(lengthPayload.ptr, length);
         memmove(ptr + 1 + lengthLength, ptr + 1, length);
         memcpy(ptr + 1, lengthPayload.ptr, lengthLength);
@@ -1079,61 +1083,145 @@ unittest
     assert(data[0 .. ionPut(data.ptr, str)] == result);
 }
 
-size_t ionPutClob()(scope ubyte* ptr, const(char)[] value)
+size_t ionPut(T)(scope ubyte* ptr, const T value)
+    if (is(T == IonClob))
 {
     size_t ret = 1;
-    if (value.length < 0xE)
+    if (value.data.length < 0xE)
     {
-        *ptr = cast(ubyte) (0x90 | value.length);
+        *ptr = cast(ubyte) (0x90 | value.data.length);
     }
     else
     {
         *ptr = 0x9E;
-        ret += ionPutVarUInt(ptr + 1, value.length);
+        ret += ionPutVarUInt(ptr + 1, value.data.length);
     }
-    memcpy(ptr + ret, value.ptr, value.length);
-    return ret + value.length;
+    memcpy(ptr + ret, value.data.ptr, value.data.length);
+    return ret + value.data.length;
 }
 
 unittest
 {
+    import mir.ion.lob;
+
     ubyte[18] data;
 
     ubyte[] result = [0x95, 'v', 'a', 'l', 'u', 'e'];
-    auto str = "value";
-    assert(data[0 .. ionPutClob(data.ptr, str)] == result);
+    auto str = IonClob("value");
+    assert(data[0 .. ionPut(data.ptr, str)] == result);
 
     result = [ubyte(0x9E), ubyte(0x90)] ~ cast(ubyte[])"hexadecimal23456";
-    str = "hexadecimal23456";
-    assert(data[0 .. ionPutClob(data.ptr, str)] == result);
+    str = IonClob("hexadecimal23456");
+    assert(data[0 .. ionPut(data.ptr, str)] == result);
 }
 
-
-size_t ionPutBlob()(scope ubyte* ptr, const(ubyte)[] value)
+size_t ionPut(T)(scope ubyte* ptr, const T value)
+    if (is(T == IonBlob))
 {
     size_t ret = 1;
-    if (value.length < 0xE)
+    if (value.data.length < 0xE)
     {
-        *ptr = cast(ubyte) (0xA0 | value.length);
+        *ptr = cast(ubyte) (0xA0 | value.data.length);
     }
     else
     {
         *ptr = 0xAE;
-        ret += ionPutVarUInt(ptr + 1, value.length);
+        ret += ionPutVarUInt(ptr + 1, value.data.length);
     }
-    memcpy(ptr + ret, value.ptr, value.length);
-    return ret + value.length;
+    memcpy(ptr + ret, value.data.ptr, value.data.length);
+    return ret + value.data.length;
 }
 
 unittest
 {
+    import mir.ion.lob;
+
     ubyte[18] data;
 
     ubyte[] result = [0xA5, 'v', 'a', 'l', 'u', 'e'];
-    auto payload = cast(ubyte[])"value";
-    assert(data[0 .. ionPutBlob(data.ptr, payload)] == result);
+    auto payload = IonBlob(cast(ubyte[])"value");
+    assert(data[0 .. ionPut(data.ptr, payload)] == result);
 
     result = [ubyte(0xAE), ubyte(0x90)] ~ cast(ubyte[])"hexadecimal23456";
-    payload = cast(ubyte[])"hexadecimal23456";
-    assert(data[0 .. ionPutBlob(data.ptr, payload)] == result);
+    payload = IonBlob(cast(ubyte[])"hexadecimal23456");
+    assert(data[0 .. ionPut(data.ptr, payload)] == result);
+}
+
+size_t ionPutStart(IonTypeCode tc)(ubyte* startPtr)
+    if (tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_)
+{
+    return 3;
+}
+
+size_t ionPutEnd(IonTypeCode tc)(ubyte* startPtr, size_t totalElementLength)
+    if (tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_)
+{
+    if (totalElementLength < 0x80)
+    {
+        if (totalElementLength < 0xE)
+        {
+            *startPtr = cast(ubyte) ((tc << 4) | totalElementLength);
+            memmove(startPtr + 1, startPtr + 3, 16);
+            return 1 + totalElementLength;
+        }
+        else
+        {
+            *startPtr = cast(ubyte)((tc << 4) | 0xE);
+            startPtr[1] = cast(ubyte) (0x80 | totalElementLength);
+            memmove(startPtr + 2, startPtr + 3, 128);
+            return 2 + totalElementLength;
+        }
+    }
+    else
+    {
+        *startPtr = cast(ubyte)((tc << 4) | 0xE);
+        if (_expect(totalElementLength < 0x4000, true))
+        {
+            startPtr[1] = cast(ubyte) (totalElementLength >> 7);
+            startPtr[2] = cast(ubyte) (totalElementLength | 0x80);
+            return 3 + totalElementLength;
+        }
+        else
+        {
+            ubyte[10] lengthPayload;
+            auto lengthLength = ionPutVarUInt(lengthPayload.ptr, totalElementLength);
+            memmove(startPtr + 1 + lengthLength, startPtr + 3, totalElementLength);
+            memcpy(startPtr + 1, lengthPayload.ptr, lengthLength);
+            return totalElementLength + 1 + lengthLength;
+        }
+    }
+}
+
+unittest
+{
+    ubyte[1024] data;
+    auto pos = ionPutStart!(IonTypeCode.list)(data.ptr);
+
+    ubyte[] result = [0xB0];
+    assert(data[0 .. ionPutEnd!(IonTypeCode.list)(data.ptr, 0)] == result);
+
+    result = [ubyte(0xB6), ubyte(0x85)] ~ cast(ubyte[])"hello";
+    auto len = ionPut(data.ptr + pos, "hello");
+    assert(data[0 .. ionPutEnd!(IonTypeCode.list)(data.ptr, len)] == result);
+
+    result = [0xBE, 0x90, 0x8E, 0x8E];
+    result ~= cast(ubyte[])"hello world!!!";
+    len = ionPut(data.ptr + pos, "hello world!!!");
+    assert(data[0 .. ionPutEnd!(IonTypeCode.list)(data.ptr, len)] == result);
+
+    auto bm = `
+Generating test runner configuration 'mir-ion-test-library' for 'library' (library).
+Performing "unittest" build using /Users/9il/dlang/ldc2/bin/ldc2 for x86_64.
+mir-core 1.1.7: target for configuration "library" is up to date.
+mir-algorithm 3.9.2: target for configuration "default" is up to date.
+mir-cpuid 1.2.6: target for configuration "library" is up to date.
+mir-ion 0.5.7+commit.70.g7dcac11: building configuration "mir-ion-test-library"...
+Linking...
+To force a rebuild of up-to-date targets, run again with --force.
+Running ./mir-ion-test-library`;
+
+    result = [0xBE, 0x04, 0xB0, 0x8E, 0x04, 0xAD];
+    result ~= cast(ubyte[])bm;
+    len = ionPut(data.ptr + pos, bm);
+    assert(data[0 .. ionPutEnd!(IonTypeCode.list)(data.ptr, len)] == result);
 }
