@@ -1148,13 +1148,13 @@ unittest
 }
 
 size_t ionPutStart(IonTypeCode tc)(ubyte* startPtr)
-    if (tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_)
+    if (tc == IonTypeCode.string || tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_)
 {
     return 3;
 }
 
 size_t ionPutEnd(IonTypeCode tc)(ubyte* startPtr, size_t totalElementLength)
-    if (tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_)
+    if (tc == IonTypeCode.string || tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_)
 {
     if (totalElementLength < 0x80)
     {
