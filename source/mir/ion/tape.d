@@ -987,7 +987,7 @@ size_t ionPut(T)(scope ubyte* ptr, const T value)
     else
     {
         memmove(ptr + 2, ptr + 1, length);
-        *ptr = cast(ubyte) 0x6E;
+        *ptr = 0x6E;
         ptr[1] = cast(ubyte) (0x80 | length);
         return ret + 1;
     }
@@ -1015,7 +1015,7 @@ size_t ionPut(T)(scope ubyte* ptr, const T value)
 {
     size_t ret = 1;
     auto ymd = value.yearMonthDay;
-    ptr[ret++] = cast(ubyte) 0x80;
+    ptr[ret++] = 0x80;
     ret += ionPutVarUInt(ptr + ret, cast(ushort)value.year);
     ptr[ret++] = cast(ubyte) (0x80 | value.month);
     ptr[ret++] = cast(ubyte) (0x80 | value.day);
@@ -1031,4 +1031,109 @@ unittest
     ubyte[] result = [0x65, 0x80, 0x0F, 0xD0, 0x87, 0x88];
     auto ts = Date(2000, 7, 8);
     assert(data[0 .. ionPut(data.ptr, ts)] == result);
+}
+
+size_t ionPutSymbolId(T)(scope ubyte* ptr, const T value)
+    if (isUnsigned!T)
+{
+    auto length = ionPutVarUInt(ptr + 1, value);
+    *ptr = cast(ubyte)(0x70 | length);
+    return length + 1;
+}
+
+unittest
+{
+    ubyte[8] data;
+
+    ubyte[] result = [0x72, 0x01, 0xFF];
+    auto id = 0xFFu;
+    assert(data[0 .. ionPutSymbolId(data.ptr, id)] == result);
+}
+
+size_t ionPut()(scope ubyte* ptr, const(char)[] value)
+{
+    size_t ret = 1;
+    if (value.length < 0xE)
+    {
+        *ptr = cast(ubyte) (0x80 | value.length);
+    }
+    else
+    {
+        *ptr = 0x8E;
+        ret += ionPutVarUInt(ptr + 1, value.length);
+    }
+    memcpy(ptr + ret, value.ptr, value.length);
+    return ret + value.length;
+}
+
+unittest
+{
+    ubyte[18] data;
+
+    ubyte[] result = [0x85, 'v', 'a', 'l', 'u', 'e'];
+    auto str = "value";
+    assert(data[0 .. ionPut(data.ptr, str)] == result);
+
+    result = [ubyte(0x8E), ubyte(0x90)] ~ cast(ubyte[])"hexadecimal23456";
+    str = "hexadecimal23456";
+    assert(data[0 .. ionPut(data.ptr, str)] == result);
+}
+
+size_t ionPutClob()(scope ubyte* ptr, const(char)[] value)
+{
+    size_t ret = 1;
+    if (value.length < 0xE)
+    {
+        *ptr = cast(ubyte) (0x90 | value.length);
+    }
+    else
+    {
+        *ptr = 0x9E;
+        ret += ionPutVarUInt(ptr + 1, value.length);
+    }
+    memcpy(ptr + ret, value.ptr, value.length);
+    return ret + value.length;
+}
+
+unittest
+{
+    ubyte[18] data;
+
+    ubyte[] result = [0x95, 'v', 'a', 'l', 'u', 'e'];
+    auto str = "value";
+    assert(data[0 .. ionPutClob(data.ptr, str)] == result);
+
+    result = [ubyte(0x9E), ubyte(0x90)] ~ cast(ubyte[])"hexadecimal23456";
+    str = "hexadecimal23456";
+    assert(data[0 .. ionPutClob(data.ptr, str)] == result);
+}
+
+
+size_t ionPutBlob()(scope ubyte* ptr, const(ubyte)[] value)
+{
+    size_t ret = 1;
+    if (value.length < 0xE)
+    {
+        *ptr = cast(ubyte) (0xA0 | value.length);
+    }
+    else
+    {
+        *ptr = 0xAE;
+        ret += ionPutVarUInt(ptr + 1, value.length);
+    }
+    memcpy(ptr + ret, value.ptr, value.length);
+    return ret + value.length;
+}
+
+unittest
+{
+    ubyte[18] data;
+
+    ubyte[] result = [0xA5, 'v', 'a', 'l', 'u', 'e'];
+    auto payload = cast(ubyte[])"value";
+    assert(data[0 .. ionPutBlob(data.ptr, payload)] == result);
+
+    result = [ubyte(0xAE), ubyte(0x90)] ~ cast(ubyte[])"hexadecimal23456";
+    payload = cast(ubyte[])"hexadecimal23456";
+    assert(data[0 .. ionPutBlob(data.ptr, payload)] == result);
 }
