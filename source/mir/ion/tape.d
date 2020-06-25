@@ -1147,26 +1147,26 @@ unittest
     assert(data[0 .. ionPut(data.ptr, payload)] == result);
 }
 
-size_t ionPutStart(IonTypeCode tc)(ubyte* startPtr)
-    if (tc == IonTypeCode.string || tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_)
+size_t ionPutStart()(ubyte* startPtr)
 {
     return 3;
 }
 
-size_t ionPutEnd(IonTypeCode tc)(ubyte* startPtr, size_t totalElementLength)
-    if (tc == IonTypeCode.string || tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_)
+size_t ionPutEnd()(ubyte* startPtr, IonTypeCode tc, size_t totalElementLength)
 {
+    assert (tc == IonTypeCode.string || tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_);
+    auto tck = tc << 4;
     if (totalElementLength < 0x80)
     {
         if (totalElementLength < 0xE)
         {
-            *startPtr = cast(ubyte) ((tc << 4) | totalElementLength);
+            *startPtr = cast(ubyte) (tck | totalElementLength);
             memmove(startPtr + 1, startPtr + 3, 16);
             return 1 + totalElementLength;
         }
         else
         {
-            *startPtr = cast(ubyte)((tc << 4) | 0xE);
+            *startPtr = cast(ubyte)(tck | 0xE);
             startPtr[1] = cast(ubyte) (0x80 | totalElementLength);
             memmove(startPtr + 2, startPtr + 3, 128);
             return 2 + totalElementLength;
@@ -1174,7 +1174,7 @@ size_t ionPutEnd(IonTypeCode tc)(ubyte* startPtr, size_t totalElementLength)
     }
     else
     {
-        *startPtr = cast(ubyte)((tc << 4) | 0xE);
+        *startPtr = cast(ubyte)(tck | 0xE);
         if (_expect(totalElementLength < 0x4000, true))
         {
             startPtr[1] = cast(ubyte) (totalElementLength >> 7);
@@ -1195,19 +1195,19 @@ size_t ionPutEnd(IonTypeCode tc)(ubyte* startPtr, size_t totalElementLength)
 unittest
 {
     ubyte[1024] data;
-    auto pos = ionPutStart!(IonTypeCode.list)(data.ptr);
+    auto pos = ionPutStart(data.ptr);
 
     ubyte[] result = [0xB0];
-    assert(data[0 .. ionPutEnd!(IonTypeCode.list)(data.ptr, 0)] == result);
+    assert(data[0 .. ionPutEnd(data.ptr, IonTypeCode.list, 0)] == result);
 
     result = [ubyte(0xB6), ubyte(0x85)] ~ cast(ubyte[])"hello";
     auto len = ionPut(data.ptr + pos, "hello");
-    assert(data[0 .. ionPutEnd!(IonTypeCode.list)(data.ptr, len)] == result);
+    assert(data[0 .. ionPutEnd(data.ptr, IonTypeCode.list, len)] == result);
 
-    result = [0xBE, 0x90, 0x8E, 0x8E];
+    result = [0xCE, 0x90, 0x8E, 0x8E];
     result ~= cast(ubyte[])"hello world!!!";
     len = ionPut(data.ptr + pos, "hello world!!!");
-    assert(data[0 .. ionPutEnd!(IonTypeCode.list)(data.ptr, len)] == result);
+    assert(data[0 .. ionPutEnd(data.ptr, IonTypeCode.sexp, len)] == result);
 
     auto bm = `
 Generating test runner configuration 'mir-ion-test-library' for 'library' (library).
@@ -1223,5 +1223,5 @@ Running ./mir-ion-test-library`;
     result = [0xBE, 0x04, 0xB0, 0x8E, 0x04, 0xAD];
     result ~= cast(ubyte[])bm;
     len = ionPut(data.ptr + pos, bm);
-    assert(data[0 .. ionPutEnd!(IonTypeCode.list)(data.ptr, len)] == result);
+    assert(data[0 .. ionPutEnd(data.ptr, IonTypeCode.list, len)] == result);
 }

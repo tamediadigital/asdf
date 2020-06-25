@@ -271,4 +271,6 @@ unittest
     {
         assert (qbits[i] == (i == 70 || i == 75));
     }
+
+    //4992
 }
