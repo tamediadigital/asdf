@@ -58,7 +58,7 @@ enum IonTypeCode
 
     /++
     Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#6-timestamp, 6: timestamp)
-    D_type: $(LREF IonTimestamp)
+    D_type: $(LREF IonTimestampValue)
     +/
     timestamp,
 
@@ -124,7 +124,7 @@ alias IonType(IonTypeCode code : IonTypeCode.float_) = IonFloat;
 /// ditto
 alias IonType(IonTypeCode code : IonTypeCode.decimal) = IonDecimal;
 /// ditto
-alias IonType(IonTypeCode code : IonTypeCode.timestamp) = IonTimestamp;
+alias IonType(IonTypeCode code : IonTypeCode.timestamp) = IonTimestampValue;
 /// ditto
 alias IonType(IonTypeCode code : IonTypeCode.symbol) = IonSymbolID;
 /// ditto
@@ -155,7 +155,7 @@ alias IonTypeCodeOf(T : IonFloat) = IonTypeCode.float_;
 /// ditto
 alias IonTypeCodeOf(T : IonDecimal) = IonTypeCode.decimal;
 /// ditto
-alias IonTypeCodeOf(T : IonTimestamp) = IonTypeCode.timestamp;
+alias IonTypeCodeOf(T : IonTimestampValue) = IonTypeCode.timestamp;
 /// ditto
 alias IonTypeCodeOf(T : IonSymbolID) = IonTypeCode.symbol;
 /// ditto
@@ -191,7 +191,7 @@ enum isIonType(T : IonFloat) = true;
 /// ditto
 enum isIonType(T : IonDecimal) = true;
 /// ditto
-enum isIonType(T : IonTimestamp) = true;
+enum isIonType(T : IonTimestampValue) = true;
 /// ditto
 enum isIonType(T : IonSymbolID) = true;
 /// ditto
@@ -1075,8 +1075,10 @@ The 2 non-optional components are offset and year.
 The 5 optional components are (from least precise to most precise): `month`, `day`, `hour` and `minute`, `second`, `fraction_exponent` and `fraction_coefficient`.
 All of these 7 components are in Universal Coordinated Time (UTC).
 +/
-struct IonTimestamp
+struct IonTimestampValue
 {
+    import mir.ion.timestamp;
+
     ///
     const(ubyte)[] data;
 
@@ -1092,19 +1094,19 @@ struct IonTimestamp
     /++
     Describes decimal (nothrow version).
     Params:
-        value = (out) $(LREF IonDescribedTimestamp)
+        value = (out) $(LREF IonTimestamp)
     Returns: $(SUBREF exception, IonErrorCode)
     +/
-    IonErrorCode get(T : IonDescribedTimestamp)(scope ref T value)
+    IonErrorCode get(T : IonTimestamp)(scope ref T value)
         @safe pure nothrow @nogc const
     {
         pragma(inline, false);
         assert(this != null);
         auto d = data[];
-        IonDescribedTimestamp v;
+        IonTimestamp v;
         if (auto error = parseVarInt(d, v.offset))
             return error;
-        if (auto error = parseVarInt(d, v.year))
+        if (auto error = parseVarUInt(d, v.year))
             return error;
 
         if (d.length == 0)
@@ -1196,9 +1198,9 @@ struct IonTimestamp
     {
         /++
         Describes decimal.
-        Returns: $(LREF IonDescribedTimestamp)
+        Returns: $(LREF IonTimestamp)
         +/
-        IonDescribedTimestamp get(T = IonDescribedTimestamp)()
+        IonTimestamp get(T = IonTimestamp)()
             @safe pure @nogc const
         {
             T ret;
@@ -1212,7 +1214,7 @@ struct IonTimestamp
     Returns: $(SUBREF exception, IonErrorCode)
     Precondition: `this != null`.
     +/
-    IonErrorCode getErrorCode(T = IonDescribedTimestamp)()
+    IonErrorCode getErrorCode(T = IonTimestamp)()
         @trusted pure nothrow @nogc const
     {
         T value;
@@ -1224,8 +1226,10 @@ struct IonTimestamp
 @safe pure
 unittest
 {
+    import mir.ion.timestamp;
+
     // null.timestamp
-    assert(IonValue([0x6F]).describe.get!IonTimestamp == null);
+    assert(IonValue([0x6F]).describe.get!IonTimestampValue == null);
 
     ubyte[][] set = [
         [0x68, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84,         ], // 2000-07-08T02:03:04Z with no fractional seconds
@@ -1235,216 +1239,24 @@ unittest
         [0x69, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84, 0x81,   ], // The same instant with 0d1 fractional seconds
     ];
 
-    auto r = IonDescribedTimestamp(2000, 7, 8, 2, 3, 4);
+    auto r = IonTimestamp(2000, 7, 8, 2, 3, 4);
 
     foreach(data; set)
     {
-        assert(IonValue(data).describe.get!IonTimestamp.get == r);
+        assert(IonValue(data).describe.get!IonTimestampValue.get == r);
     }
 
     assert(IonValue([0x69, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84, 0xC2])
         .describe
-        .get!IonTimestamp
+        .get!IonTimestampValue
         .get ==
-            IonDescribedTimestamp(2000, 7, 8, 2, 3, 4, -2, 0));
+            IonTimestamp(2000, 7, 8, 2, 3, 4, -2, 0));
 
     assert(IonValue([0x6A, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84, 0xC3, 0x10])
         .describe
-        .get!IonTimestamp
+        .get!IonTimestampValue
         .get ==
-            IonDescribedTimestamp(2000, 7, 8, 2, 3, 4, -3, 16));
-}
-
-/++
-Ion Described Timestamp
-
-Note: The component values in the binary encoding are always in UTC, while components in the text encoding are in the local time! This means that transcoding requires a conversion between UTC and local time.
-
-`IonDescribedTimestamp` precision is up to `10^-12` seconds;
-+/
-struct IonDescribedTimestamp
-{
-    ///
-    enum Precision : ubyte
-    {
-        ///
-        year,
-        ///
-        month,
-        ///
-        day,
-        ///
-        minute,
-        ///
-        second,
-        ///
-        fraction,
-    }
-
-    /++
-    The offset denotes the local-offset portion of the timestamp, in minutes difference from UTC.
-    +/
-    short offset;
-    /++
-    Year
-    +/
-    short year;
-    /++
-    +/
-    Precision precision;
-
-    /++
-    Month
-    
-    If the value equals to thero then this and all the following members are undefined.
-    +/
-    ubyte month;
-    /++
-    Day
-    
-    If the value equals to thero then this and all the following members are undefined.
-    +/
-    ubyte day;
-    /++
-    Hour
-    +/
-    ubyte hour;
-
-    version(D_Ddoc)
-    {
-    
-        /++
-        Minute
-
-        Note: the field is implemented as property.
-        +/
-        ubyte minute;
-        /++
-        Second
-
-        Note: the field is implemented as property.
-        +/
-        ubyte second;
-        /++
-        Fraction
-
-        The `fraction_exponent` and `fraction_coefficient` denote the fractional seconds of the timestamp as a decimal value
-        The fractional seconds’ value is `coefficient * 10 ^ exponent`.
-        It must be greater than or equal to zero and less than 1.
-        A missing coefficient defaults to zero.
-        Fractions whose coefficient is zero and exponent is greater than -1 are ignored.
-        
-        'fractionCoefficient' allowed values are [0 ... 10^12-1].
-        'fractionExponent' allowed values are [-12 ... 0].
-
-        Note: the fields are implemented as property.
-        +/
-        byte fractionExponent;
-        /// ditto
-        ulong fractionCoefficient;
-    }
-    else
-    {
-        import mir.bitmanip: bitfields;
-        version (LittleEndian)
-        {
-
-            mixin(bitfields!(
-                    ubyte, "minute", 8,
-                    ubyte, "second", 8,
-                    byte, "fractionExponent", 8,
-                    ulong, "fractionCoefficient", 40,
-            ));
-        }
-        else
-        {
-            mixin(bitfields!(
-                    ulong, "fractionCoefficient", 40,
-                    byte, "fractionExponent", 8,
-                    ubyte, "second", 8,
-                    ubyte, "minute", 8,
-            ));
-        }
-    }
-
-    ///
-    @safe pure nothrow @nogc
-    this(short year)
-    {
-        this.year = year;
-        this.precision = Precision.year;
-    }
-
-    ///
-    @safe pure nothrow @nogc
-    this(short year, ubyte month)
-    {
-        this.year = year;
-        this.month = month;
-        this.precision = Precision.month;
-    }
-
-    ///
-    @safe pure nothrow @nogc
-    this(short year, ubyte month, ubyte day)
-    {
-        this.year = year;
-        this.month = month;
-        this.day = day;
-        this.precision = Precision.day;
-    }
-
-    ///
-    @safe pure nothrow @nogc
-    this(short year, ubyte month, ubyte day, ubyte hour, ubyte minute)
-    {
-        this.year = year;
-        this.month = month;
-        this.day = day;
-        this.hour = hour;
-        this.minute = minute;
-        this.precision = Precision.minute;
-    }
-
-    ///
-    @safe pure nothrow @nogc
-    this(short year, ubyte month, ubyte day, ubyte hour, ubyte minute, ubyte second)
-    {
-        this.year = year;
-        this.month = month;
-        this.day = day;
-        this.hour = hour;
-        this.day = day;
-        this.minute = minute;
-        this.second = second;
-        this.precision = Precision.second;
-    }
-
-    ///
-    @safe pure nothrow @nogc
-    this(short year, ubyte month, ubyte day, ubyte hour, ubyte minute, ubyte second, byte fractionExponent, ulong fractionCoefficient)
-    {
-        this.year = year;
-        this.month = month;
-        this.day = day;
-        this.hour = hour;
-        this.day = day;
-        this.minute = minute;
-        this.second = second;
-        assert(fractionExponent < 0);
-        this.fractionExponent = fractionExponent;
-        this.fractionCoefficient = fractionCoefficient;
-        this.precision = Precision.fraction;
-    }
-
-    ///
-    @safe pure nothrow @nogc const
-    IonDescribedTimestamp withOffset(ushort offset)
-    {
-        IonDescribedTimestamp ret = this;
-        ret.offset = offset;
-        return ret;
-    }
+            IonTimestamp(2000, 7, 8, 2, 3, 4, -3, 16));
 }
 
 /++

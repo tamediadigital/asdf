@@ -5,6 +5,8 @@ import core.stdc.string: memmove, memcpy;
 import mir.bignum.low_level_view;
 import mir.bitop;
 import mir.utility: _expect;
+import mir.ion.timestamp: IonTimestamp;
+import mir.date;
 import std.traits;
 
 size_t ionPutVarUInt(T)(scope ubyte* ptr, const T num)
@@ -106,7 +108,7 @@ unittest
 size_t ionPutVarInt(T)(scope ubyte* ptr, const T num)
     if (isSigned!T)
 {
-    return .ionPutVarInt!(Unsigned!T)(ptr, num < 0 ? -num : num, num < 0);
+    return .ionPutVarInt!(Unsigned!T)(ptr, num < 0 ? cast(Unsigned!T)(0-num) : num, num < 0);
 }
 
 size_t ionPutVarInt(T)(scope ubyte* ptr, const T num, bool sign)
@@ -946,4 +948,87 @@ unittest
     assert(data[2] == 0xC9);
     assert(data[3] == 0x00);
     assert(data[4 .. 34] == BigUIntView!(ubyte, WordEndian.big).fromHexString("88BF4748507FB9900ADB624CCFF8D78897DC900FB0460327D4D86D327219").coefficients);
+}
+
+size_t ionPut(T)(scope ubyte* ptr, const T value)
+    if (is(T == IonTimestamp))
+{
+    size_t ret = 1;
+    ret += ionPutVarInt(ptr + ret, value.offset);
+    ret += ionPutVarUInt(ptr + ret, value.year);
+    if (value.precision >= IonTimestamp.precision.month)
+    {
+        ptr[ret++] = cast(ubyte) (0x80 | value.month);
+        if (value.precision >= IonTimestamp.precision.day)
+        {
+            ptr[ret++] = cast(ubyte) (0x80 | value.day);
+            if (value.precision >= IonTimestamp.precision.minute)
+            {
+                ptr[ret++] = cast(ubyte) (0x80 | value.hour);
+                ptr[ret++] = cast(ubyte) (0x80 | value.minute);
+                if (value.precision >= IonTimestamp.precision.second)
+                {
+                    ptr[ret++] = cast(ubyte) (0x80 | value.second);
+                    if (value.precision > IonTimestamp.precision.second) //fraction
+                    {
+                        ret += ionPutVarInt(ptr + ret, value.fractionExponent);
+                        ret += ionPutIntField(ptr + ret, value.fractionCoefficient);
+                    }
+                }
+            }
+        }
+    }
+    auto length = ret - 1;
+    if (_expect(ret < 0xF, true))
+    {
+        *ptr = cast(ubyte) (0x60 | length);
+        return ret;
+    }
+    else
+    {
+        memmove(ptr + 2, ptr + 1, length);
+        *ptr = cast(ubyte) 0x6E;
+        ptr[1] = cast(ubyte) (0x80 | length);
+        return ret + 1;
+    }
+}
+
+unittest
+{
+    ubyte[13] data;
+
+    ubyte[] result = [0x68, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84];
+    auto ts = IonTimestamp(2000, 7, 8, 2, 3, 4);
+    assert(data[0 .. ionPut(data.ptr, ts)] == result);
+
+    result = [0x69, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84, 0xC2];
+    ts = IonTimestamp(2000, 7, 8, 2, 3, 4, -2, 0);
+    assert(data[0 .. ionPut(data.ptr, ts)] == result);
+
+    result = [0x6A, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84, 0xC3, 0x10];
+    ts = IonTimestamp(2000, 7, 8, 2, 3, 4, -3, 16);
+    assert(data[0 .. ionPut(data.ptr, ts)] == result);
+}
+
+size_t ionPut(T)(scope ubyte* ptr, const T value)
+    if (is(T == Date))
+{
+    size_t ret = 1;
+    auto ymd = value.yearMonthDay;
+    ptr[ret++] = cast(ubyte) 0x80;
+    ret += ionPutVarUInt(ptr + ret, cast(ushort)value.year);
+    ptr[ret++] = cast(ubyte) (0x80 | value.month);
+    ptr[ret++] = cast(ubyte) (0x80 | value.day);
+    auto length = ret - 1;
+    *ptr = cast(ubyte) (0x60 | length);
+    return ret;
+}
+
+unittest
+{
+    ubyte[13] data;
+
+    ubyte[] result = [0x65, 0x80, 0x0F, 0xD0, 0x87, 0x88];
+    auto ts = Date(2000, 7, 8);
+    assert(data[0 .. ionPut(data.ptr, ts)] == result);
 }
