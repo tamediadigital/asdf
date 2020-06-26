@@ -2,6 +2,7 @@ module mir.ion.internal.stage1;
 
 version(LDC) import ldc.attributes;
 import mir.bitop;
+import mir.checkedint: addu;
 import mir.ion.internal.simd;
 
 version (ARM)
@@ -101,7 +102,7 @@ private template stage1_impl(string arch)
 
         size_t count;
         assert(n);
-        int beb = backwardEscapeBit;
+        bool beb = backwardEscapeBit;
         do
         {
             version (ARM_Any)
@@ -162,38 +163,17 @@ private template stage1_impl(string arch)
                     maskPair[1] |= b == escape;
                 }
             }
-            pairedMask++[0] = maskPair;
-            if (maskPair[1] == ulong.max) //need this
-                continue; // preserve backwardEscapeBit 
-            auto fe = (maskPair[1] << 1) | beb;
-            count += cast(size_t) ctpop(maskPair[0]);
-            auto rc = ctlz(maskPair[1]);
-            auto m = maskPair[0] & fe;
-            beb = rc & 1; // even escape count
-            if (m == 0)
-                continue;
-            auto le = 64;
-            fe = ~fe;
-            do
-            {
-                auto c = ctlz(m);
-                auto d = c + 1;
-                fe <<= d;
-                le -= d;
-                auto gf = ctlz(fe);
-                m <<= d;
-                if (gf & 1) // reset the bit
-                {
-                    auto b = 1UL << le;
-                    assert(maskPair[0] & b);
-                    maskPair[0] ^= 1UL << le;
-                }
-            }
-            while(m);
-            pairedMask[-1][0] = maskPair[0];
+            maskPair[1] &= ~ulong(beb);
+            auto followsEscape = (maskPair[1] << 1) | beb;
+            auto evenBits = 0x5555555555555555UL;
+            auto odds = maskPair[1] & ~(evenBits | followsEscape);
+            auto inversion = addu(odds, maskPair[1], beb) << 1;
+            maskPair[1] = (evenBits ^ inversion) & followsEscape;
+            maskPair[0] &= ~maskPair[1];
+            *pairedMask++ = maskPair;
         }
         while(--n);
-        backwardEscapeBit = beb & 1;
+        backwardEscapeBit = beb;
         return count;
     }
 }
@@ -222,7 +202,7 @@ unittest
     foreach (i; 0 .. 128)
     {
         assert (qbits[i] == (i == '\"'));
-        assert (ebits[i] == (i == '\\'));
+        assert (i == 0 || ebits[i] == (i-1 == '\\'));
     }
 
     foreach (i; 128 .. 256)
