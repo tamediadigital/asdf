@@ -1147,7 +1147,7 @@ unittest
     assert(data[0 .. ionPut(data.ptr, payload)] == result);
 }
 
-size_t ionPutStart()(ubyte* startPtr)
+size_t ionPutStartLength()()
 {
     return 3;
 }
@@ -1195,7 +1195,7 @@ size_t ionPutEnd()(ubyte* startPtr, IonTypeCode tc, size_t totalElementLength)
 unittest
 {
     ubyte[1024] data;
-    auto pos = ionPutStart(data.ptr);
+    auto pos = ionPutStartLength();
 
     ubyte[] result = [0xB0];
     assert(data[0 .. ionPutEnd(data.ptr, IonTypeCode.list, 0)] == result);

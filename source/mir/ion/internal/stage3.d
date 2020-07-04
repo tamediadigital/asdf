@@ -1,8 +1,11 @@
 module mir.ion.internal.stage3;
 
+import core.stdc.string: memcpy;
 import mir.utility: _expect;
 import mir.primitives;
 import mir.bitop;
+import mir.ion.tape;
+import mir.ion.type_code;
 import std.traits;
 import std.meta: AliasSeq, aliasSeqOf;
 
@@ -185,9 +188,8 @@ struct JsonParser
     const(ubyte[64])* vector;
     ulong[2]* pairedMask1;
     ulong[2]* pairedMask2;
-    ubyte* tapePtr;
+    ubyte[] tape;
     ubyte* currentTapePtr;
-    size_t length;
 
     bool delegate(scope const(ubyte[64])* vector, scope ulong[2]* pairedMask1, scope ulong[2]* pairedMask2) fetchNext;
 
@@ -315,8 +317,6 @@ struct JsonParser
         {
             uint e = 0;
             size_t i = 4;
-            if (prepareSmallInput < 4)
-                return 1;
             do
             {
                 int c = uniFlags[strPtr[index++]];
@@ -330,70 +330,6 @@ struct JsonParser
             while(--i);
             d = e;
             return 0;
-        }
-
-        @minsize
-        int readEscaped()(ref dchar d)
-        {
-            assert(strPtr[index] == '\\');
-            index++;
-            if (index == maxLength && !prepareInput)
-                goto string_unexpectedEnd;
-            c = strPtr[index];
-            switch(c)
-            {
-                case '/' :
-                case '\"':
-                case '\\':
-                    d = cast(ubyte) c;
-                    goto StringLoop;
-                case 'b' : d = '\b'; goto StringLoop;
-                case 'f' : d = '\f'; goto StringLoop;
-                case 'n' : d = '\n'; goto StringLoop;
-                case 'r' : d = '\r'; goto StringLoop;
-                case 't' : d = '\t'; goto StringLoop;
-                case 'u' :
-                    uint wur = void;
-                    dchar d = void;
-                    if (auto r = (readUnicode(d)))
-                    {
-                        if (r == 1)
-                            goto string_unexpectedEnd;
-                        goto string_unexpectedValue;
-                    }
-                    if (_expect(0xD800 <= d && d <= 0xDFFF, false))
-                    {
-                        if (d >= 0xDC00)
-                            goto string_unexpectedValue;
-                        if (index == maxLength && !prepareInput)
-                            goto string_unexpectedEnd;
-                        if (strPtr[index++] != '\\')
-                            goto string_unexpectedValue;
-                        if (index == maxLength && !prepareInput)
-                            goto string_unexpectedEnd;
-                        if (strPtr[index++] != 'u')
-                            goto string_unexpectedValue;
-                        d = (d & 0x3FF) << 10;
-                        dchar trailing;
-                        if (auto r = (readUnicode(trailing)))
-                        {
-                            if (r == 1)
-                                goto string_unexpectedEnd;
-                            goto string_unexpectedValue;
-                        }
-                        if (!(0xDC00 <= trailing && trailing <= 0xDFFF))
-                            goto invalid_trail_surrogate;
-                        {
-                            d |= trailing & 0x3FF;
-                            d += 0x10000;
-                        }
-                    }
-                    if (!(d < 0xD800 || (d > 0xDFFF && d <= 0x10FFFF)))
-                        goto invalid_utf_value;
-                    encodeUTF8(d, dataPtr);
-                    goto StringLoop;
-                default: goto string_unexpectedValue;
-            }
         }
 
         Stack stack;
@@ -554,12 +490,12 @@ struct JsonParser
                             goto null_unexpectedValue;
                     }
                     static if (name == "null")
-                        *dataPtr++ = AsdfKind.null_;
+                        currentTapePtr += ionPut(currentTapePtr, null);
                     else
                     static if (name == "false")
-                        *dataPtr++ = AsdfKind.false_;
+                        currentTapePtr += ionPut(currentTapePtr, false);
                     else
-                        *dataPtr++ = AsdfKind.true_;
+                        currentTapePtr += ionPut(currentTapePtr, true);
                     strPtr += name.length;
                     goto next;
             }
@@ -567,97 +503,129 @@ struct JsonParser
         }
 
     string:
-        debug assert(strPtr[index] == '"', "Internal ASDF logic error. Please report an issue.");
+        assert(strPtr[index] == '"', "Internal ASDF logic error. Please report an issue.");
         index++;
-
     StringLoop: {
         
-        // size_t strLength;
-        auto strEndIndex = index;
+        auto stringLengthStart = currentTapePtr;
+        currentTapePtr += ionPutStartLength;
         for(;;)
         {
-            F: if (_expect(index < maxLength, true))
-            {
-            L:
-                auto indexG = index >> 6;
-                auto indexL = index & 0x3F;
-                auto mask = pairedMask1[indexG];
-                mask[0] <<= indexL;
-                mask[1] <<= indexL;
-                auto strMask = mask[0] | mask[1];
-                if (strMask)
-                {
-                    auto value = ctlz(strMask);
-                    strEndIndex += value;
-                    if ((mask[1] >> value) & 1) // escape value
-                    {
-                        readUnicode();
-                    }
-                }
-                else
-                {
-                    index = (indexG + 1) << 6;
-                    goto F;
-                }
-            }
-            else
-            {
-                if (prepareInput)
-                    goto L;
-                return false;
-            }
-
-            if (index == maxLength && !prepareInput)
+            int smallInputLength = prepareSmallInput;
+            auto indexG = index >> 6;
+            auto indexL = index & 0x3F;
+            auto mask = pairedMask1[indexG];
+            mask[0] >>= indexL;
+            mask[1] >>= indexL;
+            auto strMask = mask[0] | mask[1];
+            // TODO: memcpy optimisation for DMD
+            memcpy(currentTapePtr, strPtr + index, 64);
+            auto value = strMask == 0 ? ctlz(strMask) : 64 - indexL;
+            smallInputLength -= cast(int) value;
+            if (smallInputLength <= 0)
                 goto string_unexpectedEnd;
-        }
-
-        for(;;)
-        {
-            if (index == maxLength && !prepareInput)
-                goto string_unexpectedEnd;
-            while(index < maxLength)
+            currentTapePtr += value;
+            index += value;
+            if (strMask == 0)
+                continue;
+            if (_expect(((mask[1] >> value) & 1) == 0, true)) // no escape value
             {
-                char c0 = strPtr[index]; if (!isPlainJsonCharacter(c0)) goto string_found; dataPtr[0] = c0;
-                index++;
-                dataPtr += 1;
-            }
-        }
-        string_found:
-
-        uint c = strPtr[index];
-        if (c == '\"')
-        {
-            index++;
-            if (currIsKey)
-            {
-                auto stringLength = dataPtr - stringAndNumberShift - 1;
-                if (stringLength > ubyte.max)
-                    goto key_is_to_large;
-                *cast(ubyte*)stringAndNumberShift = cast(ubyte) stringLength;
-                if (!skipSpaces)
-                    goto failed_to_read_after_key;
-                if (strPtr[index] != ':')
-                    goto unexpected_character_after_key;
-                index++;
-                goto value;
-            }
-            else
-            {
-                auto stringLength = dataPtr - stringAndNumberShift - 4;
-                if (stringLength > uint.max)
-                    goto string_length_is_too_large;
-                version(X86_Any)
-                    *cast(uint*)stringAndNumberShift = cast(uint) stringLength;
-                else
-                    *cast(ubyte[4]*)stringAndNumberShift = cast(ubyte[4]) cast(uint[1]) [cast(uint) stringLength];
+                assert(strPtr[index] == '"');
+                auto stringLength = currentTapePtr - (stringLengthStart + ionPutStartLength);
+                if (currIsKey)
+                {
+                    ionPutEnd(data.ptr, IonTypeCode.string, stringLength);
+                    goto value;
+                }
+                currentTapePtr -= stringLength;
+                auto key = currentTapePtr[0 .. stringLength];
+                currentTapePtr -= ionPutStartLength;
+                size_t id;
+                // TODO find id using the key
+                ionPutSymbolId(currentTapePtr, id);
                 goto next;
             }
+            else
+            {
+                assert(strPtr[index] == '\\');
+                if ((smallInputLength -= 2) <= 0)
+                    goto string_unexpectedEnd;
+                dchar d = void;
+                auto c = strPtr[index + 1];
+                index += 2;
+                switch(c)
+                {
+                    case '/' :
+                    case '\"':
+                    case '\\':
+                        d = cast(ubyte) c;
+                        goto PutASCII;
+                    case 'b' : d = '\b'; goto PutASCII;
+                    case 'f' : d = '\f'; goto PutASCII;
+                    case 'n' : d = '\n'; goto PutASCII;
+                    case 'r' : d = '\r'; goto PutASCII;
+                    case 't' : d = '\t'; goto PutASCII;
+                    case 'u' :
+                        if ((smallInputLength -= 4) <= 0)
+                            goto string_unexpectedEnd;
+                        if (auto r = readUnicode(d))
+                            goto unexpectedValue; //unexpected \u
+                        if (_expect(0xD800 <= d && d <= 0xDFFF, false))
+                        {
+                            if (d >= 0xDC00)
+                                goto invalid_utf_value;
+                            if ((smallInputLength -= 6) < 0)
+                                goto string_unexpectedEnd;
+                            if (strPtr[index++] != '\\')
+                                goto invalid_utf_value;
+                            if (strPtr[index++] != 'u')
+                                goto invalid_utf_value;
+                            d = (d & 0x3FF) << 10;
+                            dchar trailing = void;
+                            if (auto r = readUnicode(trailing))
+                                goto unexpectedValue; //unexpected \u
+                            if (!(0xDC00 <= trailing && trailing <= 0xDFFF))
+                                goto invalid_trail_surrogate;
+                            {
+                                d |= trailing & 0x3FF;
+                                d += 0x10000;
+                            }
+                        }
+                        if (d < 0x80)
+                        {
+                        PutASCII:
+                            currentTapePtr[0] = cast(ubyte) (d);
+                            currentTapePtr += 1;
+                            continue;
+                        }
+                        if (d < 0x800)
+                        {
+                            currentTapePtr[0] = cast(ubyte) (0xC0 | (d >> 6));
+                            currentTapePtr[1] = cast(ubyte) (0x80 | (d & 0x3F));
+                            currentTapePtr += 2;
+                            continue;
+                        }
+                        if (!(d < 0xD800 || (d > 0xDFFF && d <= 0x10FFFF)))
+                            goto invalid_trail_surrogate;
+                        if (d < 0x10000)
+                        {
+                            currentTapePtr[0] = cast(ubyte) (0xE0 | (d >> 12));
+                            currentTapePtr[1] = cast(ubyte) (0x80 | ((d >> 6) & 0x3F));
+                            currentTapePtr[2] = cast(ubyte) (0x80 | (d & 0x3F));
+                            currentTapePtr += 3;
+                            continue;
+                        }
+                        //    assert(d < 0x200000);
+                        currentTapePtr[0] = cast(ubyte) (0xF0 | (d >> 18));
+                        currentTapePtr[1] = cast(ubyte) (0x80 | ((d >> 12) & 0x3F));
+                        currentTapePtr[2] = cast(ubyte) (0x80 | ((d >> 6) & 0x3F));
+                        currentTapePtr[3] = cast(ubyte) (0x80 | (d & 0x3F));
+                        currentTapePtr += 4;
+                        continue;
+                    default: goto unexpectedValue; // unexpected escape
+                }
+            }
         }
-        if (c == '\\')
-        {
-
-        }
-        goto string_unexpectedValue;
     }
 
     ret_error:
@@ -839,38 +807,4 @@ enum AsdfKind : ubyte
     string = 0x05,
     array  = 0x09,
     object = 0x0A,
-}
-
-pragma(inline, true)
-void encodeUTF8()(dchar c, ref ubyte* ptr)
-{
-    if (c < 0x80)
-    {
-        ptr[0] = cast(ubyte) (c);
-        ptr += 1;
-    }
-    else
-    if (c < 0x800)
-    {
-        ptr[0] = cast(ubyte) (0xC0 | (c >> 6));
-        ptr[1] = cast(ubyte) (0x80 | (c & 0x3F));
-        ptr += 2;
-    }
-    else
-    if (c < 0x10000)
-    {
-        ptr[0] = cast(ubyte) (0xE0 | (c >> 12));
-        ptr[1] = cast(ubyte) (0x80 | ((c >> 6) & 0x3F));
-        ptr[2] = cast(ubyte) (0x80 | (c & 0x3F));
-        ptr += 3;
-    }
-    else
-    {
-    //    assert(c < 0x200000);
-        ptr[0] = cast(ubyte) (0xF0 | (c >> 18));
-        ptr[1] = cast(ubyte) (0x80 | ((c >> 12) & 0x3F));
-        ptr[2] = cast(ubyte) (0x80 | ((c >> 6) & 0x3F));
-        ptr[3] = cast(ubyte) (0x80 | (c & 0x3F));
-        ptr += 4;
-    }
 }
