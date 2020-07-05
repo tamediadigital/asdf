@@ -1225,3 +1225,84 @@ Running ./mir-ion-test-library`;
     len = ionPut(data.ptr + pos, bm);
     assert(data[0 .. ionPutEnd(data.ptr, IonTypeCode.list, len)] == result);
 }
+
+size_t ionPutStartLength()(ubyte* startPtr, IonTypeCode tc)
+{
+    *startPtr = cast(ubyte)(tc << 4);
+    return ionPutStartLength;
+}
+
+size_t ionPutEnd()(ubyte* startPtr, size_t totalElementLength)
+{
+    if (totalElementLength < 0x80)
+    {
+        if (totalElementLength < 0xE)
+        {
+            *startPtr |= cast(ubyte) (totalElementLength);
+            memmove(startPtr + 1, startPtr + 3, 16);
+            return 1 + totalElementLength;
+        }
+        else
+        {
+            *startPtr |= cast(ubyte)(0xE);
+            startPtr[1] = cast(ubyte) (0x80 | totalElementLength);
+            memmove(startPtr + 2, startPtr + 3, 128);
+            return 2 + totalElementLength;
+        }
+    }
+    else
+    {
+        *startPtr |= cast(ubyte)(0xE);
+        if (_expect(totalElementLength < 0x4000, true))
+        {
+            startPtr[1] = cast(ubyte) (totalElementLength >> 7);
+            startPtr[2] = cast(ubyte) (totalElementLength | 0x80);
+            return 3 + totalElementLength;
+        }
+        else
+        {
+            ubyte[10] lengthPayload;
+            auto lengthLength = ionPutVarUInt(lengthPayload.ptr, totalElementLength);
+            memmove(startPtr + 1 + lengthLength, startPtr + 3, totalElementLength);
+            memcpy(startPtr + 1, lengthPayload.ptr, lengthLength);
+            return totalElementLength + 1 + lengthLength;
+        }
+    }
+}
+
+unittest
+{
+    ubyte[1024] data;
+    auto pos = ionPutStartLength(data.ptr, IonTypeCode.list);
+
+    ubyte[] result = [0xB0];
+    assert(data[0 .. ionPutEnd(data.ptr, 0)] == result);
+
+    result = [ubyte(0xB6), ubyte(0x85)] ~ cast(ubyte[])"hello";
+    pos = ionPutStartLength(data.ptr, IonTypeCode.list);
+    auto len = ionPut(data.ptr + pos, "hello");
+    assert(data[0 .. ionPutEnd(data.ptr, len)] == result);
+
+    result = [0xCE, 0x90, 0x8E, 0x8E];
+    result ~= cast(ubyte[])"hello world!!!";
+    pos = ionPutStartLength(data.ptr, IonTypeCode.sexp);
+    len = ionPut(data.ptr + pos, "hello world!!!");
+    assert(data[0 .. ionPutEnd(data.ptr, IonTypeCode.sexp, len)] == result);
+
+    auto bm = `
+Generating test runner configuration 'mir-ion-test-library' for 'library' (library).
+Performing "unittest" build using /Users/9il/dlang/ldc2/bin/ldc2 for x86_64.
+mir-core 1.1.7: target for configuration "library" is up to date.
+mir-algorithm 3.9.2: target for configuration "default" is up to date.
+mir-cpuid 1.2.6: target for configuration "library" is up to date.
+mir-ion 0.5.7+commit.70.g7dcac11: building configuration "mir-ion-test-library"...
+Linking...
+To force a rebuild of up-to-date targets, run again with --force.
+Running ./mir-ion-test-library`;
+
+    result = [0xBE, 0x04, 0xB0, 0x8E, 0x04, 0xAD];
+    result ~= cast(ubyte[])bm;
+    pos = ionPutStartLength(data.ptr, IonTypeCode.list);
+    len = ionPut(data.ptr + pos, bm);
+    assert(data[0 .. ionPutEnd(data.ptr, len)] == result);
+}

@@ -13,14 +13,6 @@ version(LDC)
 {
     import ldc.attributes: optStrategy;
     enum minsize = optStrategy("minsize");
-
-    static if (__traits(targetHasFeature, "sse4.2"))
-    {
-        import core.simd;
-        import ldc.simd;
-        import ldc.gccbuiltins_x86;
-        version = SSE42;
-    }
 }
 else
 {
@@ -36,14 +28,6 @@ enum TapeState : ubyte
     inObject,
 }
 
-struct TapeStack
-{
-    enum maxLength = 1024;
-    size_t position = maxLength;
-    uint[maxLength] tapeIndex = void;
-    TapeState[maxLength] tapeState = void;
-}
-
 void stage3(
     size_t index,
     size_t n,
@@ -51,7 +35,6 @@ void stage3(
     scope ulong[2]* pairedMask1,
     scope ulong[2]* pairedMask2,
     scope ubyte* tape,
-    ref TapeStack stack,
     )
 {
     foreach (i; 0 .. n)
@@ -70,94 +53,6 @@ enum AsdfErrorCode
     success,
     unexpectedEnd,
     unexpectedValue,
-}
-
-/+
-Fast picewise stack
-+/
-private struct Stack
-{
-    import core.stdc.stdlib: cmalloc = malloc, cfree = free;
-    @disable this(this);
-
-    struct Node
-    {
-        enum length = 32; // 2 power
-        Node* prev;
-        size_t* buff;
-    }
-
-    size_t[Node.length] buffer = void;
-    size_t length = 0;
-    Node node;
-
-pure:
-
-    void push()(size_t value)
-    {
-        version(LDC)
-            pragma(inline, true);
-        immutable local = length++ & (Node.length - 1);
-        if (local)
-        {
-            node.buff[local] = value;
-        }
-        else
-        if (length == 1)
-        {
-            node = Node(null, buffer.ptr);
-            buffer[0] = value;
-        }
-        else
-        {
-            auto prevNode = cast(Node*) callPure!cmalloc(Node.sizeof);
-            *prevNode = node;
-            node.prev = prevNode;
-            node.buff = cast(size_t*) callPure!cmalloc(Node.length * size_t.sizeof);
-            node.buff[0] = value;
-        }
-    }
-
-    size_t top()
-    {
-        version(LDC)
-            pragma(inline, true);
-        assert(length);
-        immutable local = (length - 1) & (Node.length - 1);
-        return node.buff[local];
-    }
-
-    size_t pop()
-    {
-        version(LDC)
-            pragma(inline, true);
-        assert(length);
-        immutable local = --length & (Node.length - 1);
-        immutable ret = node.buff[local];
-        if (local == 0)
-        {
-            if (node.buff != buffer.ptr)
-            {
-                callPure!cfree(node.buff);
-                node = *node.prev;
-            }
-        }
-        return ret;
-    }
-
-    pragma(inline, false)
-    void free()
-    {
-        version(LDC)
-            pragma(inline, true);
-        if (node.buff is null)
-            return;
-        while(node.buff !is buffer.ptr)
-        {
-            callPure!cfree(node.buff);
-            node = *node.prev;
-        }
-    }
 }
 
 ///
@@ -189,7 +84,7 @@ struct JsonParser
     ulong[2]* pairedMask1;
     ulong[2]* pairedMask2;
     ubyte[] tape;
-    ubyte* currentTapePtr;
+    size_t currentTapePosition;
 
     bool delegate(scope const(ubyte[64])* vector, scope ulong[2]* pairedMask1, scope ulong[2]* pairedMask2) fetchNext;
 
@@ -212,22 +107,8 @@ struct JsonParser
     pragma(inline, false)
     AsdfErrorCode parse()
     {
-        version(SSE42)
-        {
-            enum byte16 str2E = [
-                '\u0001', '\u001F',
-                '\"', '\"',
-                '\\', '\\',
-                '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0', '\0'];
-            enum byte16 num2E = ['+', '-', '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'E', '\0'];
-            byte16 str2 = str2E;
-            byte16 num2 = num2E;
-        }
-
         const(ubyte)* strPtr;
         size_t maxLength;
-        ubyte* dataPtr;
-        ubyte* stringAndNumberShift = void;
         static if (chunked)
         {
             bool prepareInput()
@@ -246,17 +127,17 @@ struct JsonParser
                     return false;
                 strPtr = front.ptr;
                 const dataAddLength = front.length * 6;
-                const dataLength = dataPtr - data.ptr;
-                const dataRequiredLength = dataLength + dataAddLength;
-                if (data.length < dataRequiredLength)
-                {
-                    const valueLength = stringAndNumberShift - dataPtr;
-                    import std.algorithm.comparison: max;
-                    const len = max(data.length * 2, dataRequiredLength);
-                    allocator.reallocate(*cast(void[]*)&data, len);
-                    dataPtr = data.ptr + dataLength;
-                    stringAndNumberShift = dataPtr + valueLength;
-                }
+                // const dataLength = dataPtr - data.ptr;
+                // const dataRequiredLength = dataLength + dataAddLength;
+                // if (data.length < dataRequiredLength)
+                // {
+                //     const valueLength = stringAndNumberShift - dataPtr;
+                //     import std.algorithm.comparison: max;
+                //     const len = max(data.length * 2, dataRequiredLength);
+                //     allocator.reallocate(*cast(void[]*)&data, len);
+                //     dataPtr = data.ptr + dataLength;
+                //     stringAndNumberShift = dataPtr + valueLength;
+                // }
                 return true;
             }
             strPtr = front.ptr;
@@ -283,7 +164,6 @@ struct JsonParser
         {
             data = cast(ubyte[])allocator.allocate(rl);
         }
-        dataPtr = data.ptr;
 
         bool skipSpaces()
         {
@@ -292,7 +172,7 @@ struct JsonParser
             L:
                 auto indexG = index >> 6;
                 auto indexL = index & 0x3F;
-                auto spacesMask = pairedMask2[indexG][0] << indexL;
+                auto spacesMask = pairedMask2[indexG][0] >> indexL;
                 if (_expect(spacesMask != 0, true))
                 {
                     index += ctlz(spacesMask);
@@ -332,7 +212,8 @@ struct JsonParser
             return 0;
         }
 
-        Stack stack;
+        size_t[1024] stack = void;
+        sizediff_t stackPos = stack.length;
 
         typeof(return) retCode;
         bool currIsKey = void;
@@ -341,7 +222,6 @@ struct JsonParser
 
 /////////// RETURN
     ret:
-        dataLength = dataPtr - data.ptr;
         assert(stack.length == 0);
     ret_final:
         return retCode;
@@ -354,161 +234,14 @@ struct JsonParser
         if (strPtr[index] != '"')
             goto object_key_start_unexpectedValue;
         currIsKey = true;
-        stringAndNumberShift = dataPtr;
         // reserve 1 byte for the length
-        dataPtr += 1;
-        goto string;
-    next:
-        if (stack.length == 0)
-            goto ret;
-        {
-            if (!skipSpaces)
-                goto next_unexpectedEnd;
-            stackValue = stack.top;
-            const isObject = stackValue & 1;
-            auto v = strPtr[index++];
-            if (isObject)
-            {
-                if (v == ',')
-                    goto key;
-                if (v != '}')
-                    goto next_unexpectedValue;
-            }
-            else
-            {
-                if (v == ',')
-                    goto value;
-                if (v != ']')
-                    goto next_unexpectedValue;
-            }
-        }
-    structure_end: {
-        stackValue = stack.pop();
-        const structureShift = stackValue >> 1;
-        const structureLengthPtr = data.ptr + structureShift;
-        const size_t structureLength = dataPtr - structureLengthPtr - 4;
-        if (structureLength > uint.max)
-            goto object_or_array_is_to_large;
-        version(X86_Any)
-            *cast(uint*) structureLengthPtr = cast(uint) structureLength;
-        else
-            *cast(ubyte[4]*) structureLengthPtr = cast(ubyte[4]) cast(uint[1]) [cast(uint) structureLength];
-        goto next;
-    }
-    value:
-        if (!skipSpaces)
-            goto value_unexpectedEnd;
-    value_start:
-        switch(strPtr[index])
-        {
-            stringValue:
-            case '"':
-                currIsKey = false;
-                *dataPtr++ = AsdfKind.string;
-                stringAndNumberShift = dataPtr;
-                // reserve 4 byte for the length
-                dataPtr += 4;
-                goto string;
-            case '-':
-            case '0':
-            ..
-            case '9': {
-                *dataPtr++ = AsdfKind.number;
-                stringAndNumberShift = dataPtr;
-                // reserve 1 byte for the length
-                dataPtr++; // write the first character
-                *dataPtr++ = strPtr[index++];
-                for(;;)
-                {
-                    if (index == maxLength && !prepareInput)
-                        goto number_found;
-                    while(index < maxLength)
-                    {
-                        char c0 = strPtr[index]; if (!isJsonNumber(c0)) goto number_found; dataPtr[0] = c0;
-                        index++;
-                        dataPtr += 1;
-                    }
-                }
-            number_found:
-
-                auto numberLength = dataPtr - stringAndNumberShift - 1;
-                if (numberLength > ubyte.max)
-                    goto number_length_unexpectedValue;
-                *stringAndNumberShift = cast(ubyte) numberLength;
-                goto next;
-            }
-            case '{':
-                index++;
-                *dataPtr++ = AsdfKind.object;
-                stack.push(((dataPtr - data.ptr) << 1) ^ 1);
-                dataPtr += 4;
-                if (!skipSpaces)
-                    goto object_first_value_start_unexpectedEnd;
-                if (strPtr[index] != '}')
-                    goto key_start;
-                index++;
-                goto structure_end;
-            case '[':
-                index++;
-                *dataPtr++ = AsdfKind.array;
-                stack.push(((dataPtr - data.ptr) << 1) ^ 0);
-                dataPtr += 4;
-                if (!skipSpaces)
-                    goto array_first_value_start_unexpectedEnd;
-                if (strPtr[index] != ']')
-                    goto value_start;
-                index++;
-                goto structure_end;
-            foreach (name; AliasSeq!("false", "null", "true"))
-            {
-            case name[0]:
-                    if (prepareSmallInput < name.length)
-                    {
-                        static if (name == "true")
-                            goto true_unexpectedEnd;
-                        else
-                        static if (name == "false")
-                            goto false_unexpectedEnd;
-                        else
-                            goto null_unexpectedEnd;
-                    }
-                    enum ubyte[4] referenceValue = [
-                        name[$ - 4],
-                        name[$ - 3],
-                        name[$ - 2],
-                        name[$ - 1],
-                    ];
-                    enum startShift = name.length == 5;
-                    if (*cast(ubyte[4]*)(strPtr + startShift) != referenceValue)
-                    {
-                        static if (name == "true")
-                            goto true_unexpectedValue;
-                        else
-                        static if (name == "false")
-                            goto false_unexpectedValue;
-                        else
-                            goto null_unexpectedValue;
-                    }
-                    static if (name == "null")
-                        currentTapePtr += ionPut(currentTapePtr, null);
-                    else
-                    static if (name == "false")
-                        currentTapePtr += ionPut(currentTapePtr, false);
-                    else
-                        currentTapePtr += ionPut(currentTapePtr, true);
-                    strPtr += name.length;
-                    goto next;
-            }
-            default: goto value_unexpectedStart;
-        }
-
     string:
         assert(strPtr[index] == '"', "Internal ASDF logic error. Please report an issue.");
         index++;
     StringLoop: {
         
-        auto stringLengthStart = currentTapePtr;
-        currentTapePtr += ionPutStartLength;
+        auto stringLengthStart = currentTapePosition;
+        currentTapePosition += ionPutStartLength;
         for(;;)
         {
             int smallInputLength = prepareSmallInput;
@@ -519,31 +252,35 @@ struct JsonParser
             mask[1] >>= indexL;
             auto strMask = mask[0] | mask[1];
             // TODO: memcpy optimisation for DMD
-            memcpy(currentTapePtr, strPtr + index, 64);
+            memcpy(tape.ptr + currentTapePosition, strPtr + index, 64);
             auto value = strMask == 0 ? ctlz(strMask) : 64 - indexL;
             smallInputLength -= cast(int) value;
             if (smallInputLength <= 0)
                 goto string_unexpectedEnd;
-            currentTapePtr += value;
+            currentTapePosition += value;
             index += value;
             if (strMask == 0)
                 continue;
             if (_expect(((mask[1] >> value) & 1) == 0, true)) // no escape value
             {
                 assert(strPtr[index] == '"');
-                auto stringLength = currentTapePtr - (stringLengthStart + ionPutStartLength);
-                if (currIsKey)
+                auto stringLength = currentTapePosition - (stringLengthStart + ionPutStartLength);
+                if (!currIsKey)
                 {
                     ionPutEnd(data.ptr, IonTypeCode.string, stringLength);
-                    goto value;
+                    goto next;
                 }
-                currentTapePtr -= stringLength;
-                auto key = currentTapePtr[0 .. stringLength];
-                currentTapePtr -= ionPutStartLength;
+                currentTapePosition -= stringLength;
+                auto key = tape[currentTapePosition .. currentTapePosition + stringLength];
+                currentTapePosition -= ionPutStartLength;
                 size_t id;
                 // TODO find id using the key
-                ionPutSymbolId(currentTapePtr, id);
-                goto next;
+                ionPutSymbolId(tape.ptr + currentTapePosition, id);
+                if (!skipSpaces)
+                    goto unexpectedEnd;
+                if (strPtr[index++] != ':')
+                    goto object_after_key_is_missing;
+                goto value;
             }
             else
             {
@@ -594,43 +331,143 @@ struct JsonParser
                         if (d < 0x80)
                         {
                         PutASCII:
-                            currentTapePtr[0] = cast(ubyte) (d);
-                            currentTapePtr += 1;
+                            tape[currentTapePosition] = cast(ubyte) (d);
+                            currentTapePosition += 1;
                             continue;
                         }
                         if (d < 0x800)
                         {
-                            currentTapePtr[0] = cast(ubyte) (0xC0 | (d >> 6));
-                            currentTapePtr[1] = cast(ubyte) (0x80 | (d & 0x3F));
-                            currentTapePtr += 2;
+                            tape[currentTapePosition + 0] = cast(ubyte) (0xC0 | (d >> 6));
+                            tape[currentTapePosition + 1] = cast(ubyte) (0x80 | (d & 0x3F));
+                            currentTapePosition += 2;
                             continue;
                         }
                         if (!(d < 0xD800 || (d > 0xDFFF && d <= 0x10FFFF)))
                             goto invalid_trail_surrogate;
                         if (d < 0x10000)
                         {
-                            currentTapePtr[0] = cast(ubyte) (0xE0 | (d >> 12));
-                            currentTapePtr[1] = cast(ubyte) (0x80 | ((d >> 6) & 0x3F));
-                            currentTapePtr[2] = cast(ubyte) (0x80 | (d & 0x3F));
-                            currentTapePtr += 3;
+                            tape[currentTapePosition + 0] = cast(ubyte) (0xE0 | (d >> 12));
+                            tape[currentTapePosition + 1] = cast(ubyte) (0x80 | ((d >> 6) & 0x3F));
+                            tape[currentTapePosition + 2] = cast(ubyte) (0x80 | (d & 0x3F));
+                            currentTapePosition += 3;
                             continue;
                         }
                         //    assert(d < 0x200000);
-                        currentTapePtr[0] = cast(ubyte) (0xF0 | (d >> 18));
-                        currentTapePtr[1] = cast(ubyte) (0x80 | ((d >> 12) & 0x3F));
-                        currentTapePtr[2] = cast(ubyte) (0x80 | ((d >> 6) & 0x3F));
-                        currentTapePtr[3] = cast(ubyte) (0x80 | (d & 0x3F));
-                        currentTapePtr += 4;
+                        tape[currentTapePosition + 0] = cast(ubyte) (0xF0 | (d >> 18));
+                        tape[currentTapePosition + 1] = cast(ubyte) (0x80 | ((d >> 12) & 0x3F));
+                        tape[currentTapePosition + 2] = cast(ubyte) (0x80 | ((d >> 6) & 0x3F));
+                        tape[currentTapePosition + 3] = cast(ubyte) (0x80 | (d & 0x3F));
+                        currentTapePosition += 4;
                         continue;
                     default: goto unexpectedValue; // unexpected escape
                 }
             }
         }
     }
+    next:
+        if (stack.length == 0)
+            goto ret;
+    next_start: {
+        if (!skipSpaces)
+            goto next_unexpectedEnd;
+        assert(stackPos >= 0);
+        assert(stackPos < stack.length);
+        const isObject = (tape[stack[stackPos]] & 0x40) != 0;
+        const v = strPtr[index++];
+        if (isObject)
+        {
+            if (v == ',')
+                goto key;
+            if (v != '}')
+                goto next_unexpectedValue;
+        }
+        else
+        {
+            if (v == ',')
+                goto value;
+            if (v != ']')
+                goto next_unexpectedValue;
+        }
+    }
+    structure_end: {
+        assert(stackPos >= 0);
+        assert(stackPos < stack.length);
+        stackValue = stack[stackPos++];
+        const structureLength = currentTapePosition - (stackValue + ionPutStartLength);
+        ionPutEnd(tape.ptr + stackValue, structureLength);
+        goto next;
+    }
+    value: {
+        if (!skipSpaces)
+            goto value_unexpectedEnd;
+        auto startC = strPtr[index];
+        if (startC <= '9')
+        {
+            currIsKey = false;
+            if (startC == '"')
+                goto string;
+
+            if (startC == '+')
+                goto unexpectedValue;
+
+            size_t numberLength;            
+            for(;;)
+            {
+                int smallInputLength = prepareSmallInput;
+                auto indexG = index >> 6;
+                auto indexL = index & 0x3F;
+                auto spacesMask = pairedMask2[indexG][0] >> indexL;
+                // TODO: memcpy optimisation for DMD
+                memcpy(tape.ptr + currentTapePosition + numberLength, strPtr + index, 64);
+                numberLength += spacesMask == 0 ? ctlz(spacesMask) : 64 - indexL;
+                if (spacesMask == 0)
+                    continue;
+                break;
+            }
+            auto numberStringView = cast(const(char)[]) (tape.ptr + currentTapePosition)[0 .. numberLength];
+
+            import mir.bignum.decimal;
+            Decimal!256 decimal;
+            DecimalExponentKey key;
+            if (!parseDecimal(numberStringView, decimal, key))
+                goto unexpectedValue;
+            if (!key) // integer
+            {
+                currentTapePosition += ionPut(tape.ptr + currentTapePosition, decimal.coefficient.view);
+                goto next;
+            }
+            if ((key | 0x20) != DecimalExponentKey.e) // decimal
+            {
+                currentTapePosition += ionPut(tape.ptr + currentTapePosition, decimal.view);
+                goto next;
+            }
+            // sciencific
+            currentTapePosition += ionPut(tape.ptr + currentTapePosition, cast(double)decimal);
+            goto next;
+        }
+        if ((startC | 0x20) == '{')
+        {
+            index++;
+            assert(stackPos <= stack.length);
+            if (--stackPos < 0)
+                goto stack_overflow;
+            stack[stackPos] = currentTapePosition;
+            tape[currentTapePosition] = startC == '{' ? IonTypeCode.struct_ << 4 : IonTypeCode.list << 4;
+            currentTapePosition += ionPutStartLength;
+            goto next_start;
+        }
+        prepareSmallInput;
+        static foreach(name; AliasSeq!("true", "false", "null"))
+        if (*cast(ubyte[name.length]*)strPtr == cast(ubyte[name.length]) name)
+        {
+            currentTapePosition += ionPut(tape.ptr + currentTapePosition, true);
+            strPtr += name.length;
+            goto next;
+        }
+        goto value_unexpectedStart;
+    }
 
     ret_error:
-        dataLength = dataPtr - data.ptr;
-        stack.free();
         goto ret_final;
     unexpectedEnd:
         retCode = AsdfErrorCode.unexpectedEnd;
@@ -641,21 +478,25 @@ struct JsonParser
     object_key_unexpectedEnd:
         _lastError = "unexpected end of object key";
         goto unexpectedEnd;
+    object_after_key_is_missing:
+        _lastError = "expected ':' after key";
+        goto unexpectedValue;
     object_key_start_unexpectedValue:
         _lastError = "expected '\"' when start parsing object key";
         goto unexpectedValue;
     key_is_to_large:
         _lastError = "key length is limited to 255 characters";
         goto unexpectedValue;
-    object_or_array_is_to_large:
-        _lastError = "object or array serialized size is limited to 2^32-1";
-        goto unexpectedValue;
     next_unexpectedEnd:
-        stackValue = stack.top;
+        assert(stackPos >= 0);
+        assert(stackPos < stack.length);
+        stackValue = stack[stackPos];
         _lastError = (stackValue & 1) ? "unexpected end when parsing object" : "unexpected end when parsing array";
         goto unexpectedEnd;
     next_unexpectedValue:
-        stackValue = stack.top;
+        assert(stackPos >= 0);
+        assert(stackPos < stack.length);
+        stackValue = stack[stackPos];
         _lastError = (stackValue & 1) ? "expected ',' or `}` when parsing object" : "expected ',' or `]` when parsing array";
         goto unexpectedValue;
     value_unexpectedStart:
@@ -711,6 +552,9 @@ struct JsonParser
         goto unexpectedValue;
     invalid_utf_value:
         _lastError = "invalid UTF value";
+        goto unexpectedValue;
+    stack_overflow:
+        _lastError = "overflow of internal stack";
         goto unexpectedValue;
     }
 }
