@@ -7,7 +7,7 @@ Please use https://github.com/libmir/asdf for now.
 
  - [x] Binary Ion Value parsing and skip-scan iteration.
  - [x] Binary Ion conversions to D types.
- - [ ] Binary Ion conversions from D types.
+ - [x] Binary Ion conversions from D types.
  - [ ] Fast hash table for Ion Symbol Tables
  - [ ] Ion Symbol Tables
  - [x] JSON stage1 SIMD parsing
@@ -21,5 +21,5 @@ Please use https://github.com/libmir/asdf for now.
  - [ ] Ion to Text Ion
  - [ ] Serialization API
  - [ ] Deserialization API
- - [ ] Precise decimal to floating conversion.
+ - [x] Precise decimal to floating conversion.
  - [ ] Precise floating to decimal conversion.
