@@ -22,7 +22,7 @@ struct JsonSerializer(string sep, Appender)
     +/
     Appender* appender;
 
-    private uint state;
+    private size_t state;
 
     static if(sep.length)
     {
@@ -44,12 +44,12 @@ struct JsonSerializer(string sep, Appender)
         }
     }
 
-    private void pushState(uint state)
+    private void pushState(size_t state)
     {
         this.state = state;
     }
 
-    private uint popState()
+    private size_t popState()
     {
         auto ret = state;
         state = 0;
@@ -141,7 +141,7 @@ struct JsonSerializer(string sep, Appender)
     }
 
     /// Serialization primitives
-    uint objectBegin()
+    size_t objectBegin()
     {
         static if(sep.length)
         {
@@ -156,7 +156,7 @@ struct JsonSerializer(string sep, Appender)
     }
 
     ///ditto
-    void objectEnd(uint state)
+    void objectEnd(size_t state)
     {
         static if(sep.length)
         {
@@ -169,7 +169,7 @@ struct JsonSerializer(string sep, Appender)
     }
 
     ///ditto
-    uint arrayBegin()
+    size_t arrayBegin()
     {
         static if(sep.length)
         {
@@ -184,7 +184,7 @@ struct JsonSerializer(string sep, Appender)
     }
 
     ///ditto
-    void arrayEnd(uint state)
+    void arrayEnd(size_t state)
     {
         static if(sep.length)
         {
@@ -237,12 +237,11 @@ struct JsonSerializer(string sep, Appender)
     }
 
     ///ditto
-    void putValue(Num)(Num num)
+    void putValue(Num)(const Num num)
         if (isNumeric!Num && !is(Num == enum))
     {
         import mir.format: print;
         print(appender, num);
-        return;
     }
 
     ///ditto
@@ -295,7 +294,6 @@ struct JsonSerializer(string sep, Appender)
         }
     }
 }
-
 
 /++
 JSON serialization function.
@@ -554,8 +552,8 @@ template serializeJsonPretty(string sep = "\t")
         if (isOutputRange!(Appender, const(char)[]))
     {
         import mir.ion.ser: serializeValue;
-        auto ser = jsonSerializer!sep((()@trusted => &appender)());
-        ser.serializeValue(value);
+        auto serializer = jsonSerializer!sep((()@trusted => &appender)());
+        serializeValue(serializer, value);
     }
 }
 

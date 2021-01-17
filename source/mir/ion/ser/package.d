@@ -6,18 +6,17 @@ IONREF = $(REF_ALTTEXT $(TT $2), $2, mir, ion, $1)$(NBSP)
 +/
 module mir.ion.ser;
 
-import mir.bignum.integer: BigInt;
 import mir.bignum.decimal: Decimal;
+import mir.bignum.integer: BigInt;
+import mir.conv;
 import mir.ion.deser;
 import mir.ion.deser.low_level: isNullable;
 import mir.reflection;
-import std.bigint;
-import std.format: FormatSpec;
 import std.meta;
 import std.range.primitives;
 import std.traits;
+
 public import mir.serde;
-import mir.conv;
 
 
 private auto assumePure(T)(T t) @trusted
@@ -112,7 +111,7 @@ void serializeValue(S)(ref S serializer, typeof(null))
 unittest
 {
     import mir.ion.ser.json: serializeJson;
-    assert(serializeJson(null) == `null`);
+    assert(serializeJson(null) == `null`, serializeJson(null));
 }
 
 /// Number serialization
@@ -121,11 +120,12 @@ void serializeValue(S, V)(ref S serializer, auto ref const V value)
 {
     static if (isFloatingPoint!V)
     {
-        import std.math : isNaN, isFinite, signbit;
+        import mir.math.common: fabs;
+        import mir.math.ieee: signbit;
 
-        if (isFinite(value))
+        if (value.fabs < value.infinity)
             serializer.putValue(value);
-        else if (value.isNaN)
+        else if (value != value)
             serializer.putValue(signbit(value) ? "-nan" : "nan");
         else if (value == V.infinity)
             serializer.putValue("inf");
