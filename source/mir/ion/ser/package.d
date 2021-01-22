@@ -27,80 +27,6 @@ private auto assumePure(T)(T t) @trusted
     return cast(SetFunctionAttributes!(T, functionLinkage!T, attrs)) t;
 }
 
-
-/++
-Object serialization wrapper.
-+/
-struct ObjectSerializer(Serializer)
-{
-    /// Serializer pointer
-    Serializer* serializer;
-    /// Object start serializer state
-    Serializer.State state;
-
-    /// Starts object serialization
-    this(ref Serializer serializer)
-    {
-        this.serializer = &serializer;
-        this.state = this.serializer.objectBegin;
-    }
-
-    /// Ends object serialization
-    ~this()
-    {
-        this.serializer.objectEnd(state);
-    }
-
-    @disable this(this);
-
-    /// Serialize key-value pair
-    void serializeKeyValue(T)(string key, auto ref const T value)
-    {
-        serializer.putKey(key);
-        serializeValue(*serializer, value);
-    }
-
-    /// Serialize key-value pair for escaped keys
-    void putEscapedKeyValue(T)(string key, auto ref const T value)
-    {
-        serializer.putEscapedKey(key);
-        serializeValue(*serializer, value);
-    }
-}
-
-/++
-Array serialization wrapper.
-+/
-struct ArraySerializer(Serializer)
-{
-    /// Serializer pointer
-    Serializer* serializer;
-    /// Array start serializer state
-    Serializer.State state;
-
-    /// Starts object serialization
-    this(ref Serializer serializer)
-    {
-        this.serializer = &serializer;
-        this.state = this.serializer.arrayBegin;
-    }
-
-    /// Ends object serialization
-    ~this()
-    {
-        this.serializer.arrayEnd(state);
-    }
-
-    @disable this(this);
-
-    /// Serialize key-value pair
-    void serializeValue(T)(auto ref const value)
-    {
-        this.serializer.elemBegin;
-        serializeValue(*serializer, value);
-    }
-}
-
 /// `null` value serialization
 void serializeValue(S)(ref S serializer, typeof(null))
 {
@@ -316,7 +242,7 @@ void serializeValue(S, V : const T[K], T, K)(ref S serializer, V value)
     auto state = serializer.objectBegin();
     foreach (key, ref val; value)
     {
-        serializer.putEscapedKey(key.to!string);
+        serializer.putKey(serdeGetKeyOut(key));
         serializer.putValue(val);
     }
     serializer.objectEnd(state);
@@ -343,13 +269,14 @@ void serializeValue(S,  V : const T[K], T, K)(ref S serializer, V value)
         serializer.putValue(null);
         return;
     }
-    char[40] buffer = void;
     auto state = serializer.objectBegin();
     foreach (key, ref val; value)
     {
-        import std.format : sformat;
-        auto str = sformat(buffer[], "%d", key);
-        serializer.putEscapedKey(str);
+        import mir.format: print;
+        import mir.small_string : SmallString;
+        SmallString!32 buffer;
+        print(buffer, key);
+        serializer.putKey(buffer[]);
         .serializeValue(serializer, val);
     }
     serializer.objectEnd(state);
@@ -457,7 +384,14 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
                     auto val = __traits(getMember, value, member);
                 }
 
-                serializer.putEscapedKey(key);
+                static if (__traits(hasMember, S, "putCompileTimeKey"))
+                {
+                    serializer.putCompileTimeKey!key;
+                }
+                else
+                {
+                    serializer.putKey(key);
+                }
 
                 static if(hasUDA!(__traits(getMember, value, member), serdeLikeList))
                 {
@@ -490,7 +424,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
                         }
                     }
                     auto valState = serializer.objectBegin();
-                    foreach (key, elem; val)
+                    foreach (key, ref elem; val)
                     {
                         serializer.putKey(key);
                         serializer.serializeValue(elem);
@@ -538,20 +472,17 @@ unittest
 /// Custom `serialize`
 unittest
 {
-    import std.conv: to;
-
     struct S
     {
-        void serialize(S)(ref S serializer)
+        void serialize(S)(ref S serializer) const
         {
             auto state = serializer.objectBegin;
-            serializer.putEscapedKey("foo");
+            serializer.putKey("foo");
             serializer.putValue("bar");
             serializer.objectEnd(state);
         }
     }
-    enum json = `{"foo":"bar"}`;
 
     import mir.ion.ser.json: serializeJson;
-    assert(serializeJson(S()) == json);
+    assert(serializeJson(S()) == `{"foo":"bar"}`);
 }

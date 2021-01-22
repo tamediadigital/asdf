@@ -11,14 +11,24 @@ public import mir.serde;
 /++
 Ion serialization back-end
 +/
-struct IonSerializer(SymbolTable, TapeHolder)
+struct IonSerializer(SymbolTable, TapeHolder, string[] compileTimeSymbolTable)
 {
     import mir.bignum.decimal: Decimal;
     import mir.bignum.integer: BigInt;
     import std.traits: isNumeric;
 
-    SymbolTable* table;
+    SymbolTable* runtimeTable;
     TapeHolder* tapeHolder;
+
+    import mir.string_table: createTable;
+    private alias createTableChar = createTable!char;
+    private static immutable compiletimeTable = createTableChar!(compileTimeSymbolTable, false);
+    static immutable U[key.length] compileTimeIndex = () {
+        U[compiletimeTable.sortedKeys.length] index;
+        foreach (i, key; compileTimeSymbolTable)
+            index[compiletimeTable[key]] = cast(U) (i + 1);
+        return index;
+    } ();
 
 @trusted:
     /// Serialization primitives
@@ -50,46 +60,27 @@ struct IonSerializer(SymbolTable, TapeHolder)
     }
 
     ///ditto
-    alias putEscapedKey = putKey;
+    void putCompileTimeKey(string key)()
+    {
+        enum id = compiletimeTable[key];
+        putKeyId(compileTimeIndex[id]);
+    }
 
     ///ditto
-    void putKey(scope const char[] key)
+    void putKey()(scope const char[] key)
     {
-        static if (__traits(hasMember, Table, "insert"))
+        uint id;
+        if (_expect(compiletimeTable.get(key, id), true))
         {
-            auto id = symbolTable.insert(cast(const(char)[])key);
+            id = compileTimeIndex[id];
         }
-        else
+        else // use GC CTFE symbol table because likely `putKey` is used either for Associative array of for similar types.
         {
-            uint id;
-            if (!symbolTable.get(cast(const(char)[])key, id))
-            {
-                debug(ion) if (!__ctfe)
-                {
-                    import core.stdc.stdio: stderr, fprintf;
-                    fprintf(stderr, "Error: (debug) can't insert key %*.*s\n", cast(int)key.length, cast(int)key.length, key.ptr);
-                }
-                version(D_Exceptions)
-                {
-                    static if (__traits(compiles, () @nogc { throw new Exception("text"); }))
-                    {
-                        import mir.serde: SerdeMirException;
-                        throw new SerdeMirException("IonSerializer: can't insert ", key);
-                    }
-                    else
-                    {
-                        import mir.serde: SerdeException;
-                        throw new SerdeException("IonSerializer: can't insert.");
-                    }
-                }
-                else
-                {
-                    assert(0, "Error: can't insert key");
-                }
-            }
-            id++;
+            if (_expect(runtimeTable is null, false))
+                runtimeTable = new SymbolTable();
+            id = runtimeTable.insert(cast(const(char)[])key);
         }
-        putKeyId(id);
+        putKeyId(compileTimeIndex[id]);
     }
 
     void putKeyId(uint id)
@@ -186,9 +177,6 @@ unittest
 {
 
 }
-
-
-
 
 // ///
 // unittest

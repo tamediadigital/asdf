@@ -78,7 +78,7 @@ version(mir_ion_test) unittest
 
         enum nMax = 128u;
 
-        IonSymbolTable table;
+        IonSymbolTable!false table;
         table.initialize;
         auto tapeHolder = IonTapeHolder!(nMax * 4)(nMax * 4);
 

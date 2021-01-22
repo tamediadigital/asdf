@@ -140,6 +140,25 @@ struct JsonSerializer(string sep, Appender)
         }
     }
 
+    private void putEscapedKey(scope const char[] key)
+    {
+        incState;
+        static if(sep.length)
+        {
+            putSpace;
+        }
+        appender.put('\"');
+        appender.put(key);
+        static if(sep.length)
+        {
+            appender.put(`": `);
+        }
+        else
+        {
+            appender.put(`":`);
+        }
+    }
+
     /// Serialization primitives
     size_t objectBegin()
     {
@@ -197,23 +216,13 @@ struct JsonSerializer(string sep, Appender)
     }
 
     ///ditto
-    void putEscapedKey(scope const char[] key)
+    void putCompileTimeKey(string key)()
     {
-        incState;
-        static if(sep.length)
-        {
-            putSpace;
-        }
-        appender.put('\"');
-        appender.put(key);
-        static if(sep.length)
-        {
-            appender.put(`": `);
-        }
+        import mir.algorithm.iteration: any;
+        static if (key.any!(c => c == '"' || c == '\\' || c < ' '))
+            putKey(key);
         else
-        {
-            appender.put(`":`);
-        }
+            putEscapedKey(key);
     }
 
     ///ditto
@@ -453,11 +462,11 @@ unittest
         private int sum;
 
         // opApply is used for serialization
-        int opApply(int delegate(scope const char[] key, int val) pure dg) pure
+        int opApply(int delegate(scope const char[] key, ref const int val) pure dg) pure
         {
-            if(auto r = dg("a", 1)) return r;
-            if(auto r = dg("b", 2)) return r;
-            if(auto r = dg("c", 3)) return r;
+            { int var = 1; if (auto r = dg("a", var)) return r; }
+            { int var = 2; if (auto r = dg("b", var)) return r; }
+            { int var = 3; if (auto r = dg("c", var)) return r; }
             return 0;
         }
 
@@ -594,10 +603,10 @@ template jsonSerializer(string sep = "")
     auto ser = jsonSerializer((()@trusted=>&buffer)());
     auto state0 = ser.objectBegin;
 
-        ser.putEscapedKey("null");
+        ser.putKey("null");
         ser.putValue(null);
 
-        ser.putEscapedKey("array");
+        ser.putKey("array");
         auto state1 = ser.arrayBegin();
             ser.elemBegin; ser.putValue(null);
             ser.elemBegin; ser.putValue(123);
@@ -623,10 +632,10 @@ unittest
     auto ser = jsonSerializer!"    "(&app);
     auto state0 = ser.objectBegin;
 
-        ser.putEscapedKey("null");
+        ser.putKey("null");
         ser.putValue(null);
 
-        ser.putEscapedKey("array");
+        ser.putKey("array");
         auto state1 = ser.arrayBegin();
             ser.elemBegin; ser.putValue(null);
             ser.elemBegin; ser.putValue(123);

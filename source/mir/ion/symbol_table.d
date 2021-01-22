@@ -60,7 +60,7 @@ enum IonSystemSymbol : ubyte
 
 /++
 +/
-struct IonSymbolTable
+struct IonSymbolTable(bool gc)
 {
     private static align(16) struct Entry
     {
@@ -88,17 +88,21 @@ struct IonSymbolTable
     uint elementCount;
     uint startId = IonSystemSymbol.max + 1;
 
-    Entry[initialLength + initialMaxProbe] initialStackSpace = void;
-    ubyte[8192] initialKeysSpace = void;
     ubyte[] keySpace;
+    static if (!gc)
+    {
+        Entry[initialLength + initialMaxProbe] initialStackSpace = void;
+        ubyte[8192] initialKeysSpace = void;
+    }
 
     import mir.ion.type_code: IonTypeCode;
     import mir.ion.tape: ionPut, ionPutEnd, ionPutVarUInt, ionPutAnnotationsListEnd, ionPutStartLength, ionPutAnnotationsListStartLength;
 
     @disable this(this);
 
-pure nothrow @nogc:
+pure nothrow:
 
+    static if (!gc)
     ~this()
     {
         if (entries != initialStackSpace.ptr)
@@ -112,9 +116,18 @@ pure nothrow @nogc:
     ///
     void initialize()
     {
-        initialStackSpace[] = Entry.init;
-        entries = initialStackSpace.ptr;
-        keySpace = initialKeysSpace[];
+        static if (gc)
+        {
+            entries = new Entry[initialLength + initialMaxProbe].ptr;
+            keySpace = new ubyte[1024];
+        }
+        else
+        {
+            initialStackSpace[] = Entry.init;
+            entries = initialStackSpace.ptr;
+            keySpace = initialKeysSpace[];
+        }
+
         auto annotationStart = nextKeyPosition;
         nextKeyPosition += ionPutStartLength; // annotation object
         auto annotationListStart = nextKeyPosition;
@@ -178,9 +191,16 @@ pure nothrow @nogc:
         lengthMinusOne = lengthMinusOne * 2 + 1;
         maxProbe++;
 
-        entries = cast(Entry*)malloc((lengthMinusOne + 1 + maxProbe) * Entry.sizeof);
-        if (entries is null)
-            assert(0);
+        static if (gc)
+        {
+            entries = new Entry[lengthMinusOne + 1 + maxProbe].ptr;
+        }
+        else
+        {
+            entries = cast(Entry*)malloc((lengthMinusOne + 1 + maxProbe) * Entry.sizeof);
+            if (entries is null)
+                assert(0);
+        }
 
         data[] = Entry.init;
         data[$ - 1].probeCount = 0;
@@ -222,8 +242,11 @@ pure nothrow @nogc:
             }
         }
 
-        if (currentEntries.ptr != initialStackSpace.ptr)
-            free(currentEntries.ptr);
+        static if (!gc)
+        {
+            if (currentEntries.ptr != initialStackSpace.ptr)
+                free(currentEntries.ptr);
+        }
     }
 
     ///
@@ -293,20 +316,29 @@ pure nothrow @nogc:
         if (_expect(nextKeyPosition + key.length + 16 > keySpace.length, false))
         {
             auto newLength = keySpace.length * 2;
-            if (keySpace.ptr == initialKeysSpace.ptr)
+            static if (gc)
             {
-                import core.stdc.string: memcpy;
-                keySpace = (cast(ubyte*)malloc(newLength))[0 .. newLength];
-                memcpy(keySpace.ptr, initialKeysSpace.ptr, initialKeysSpace.length);
+                keySpace.length = newLength;
             }
             else
             {
-                if (keySpace.length == 0)
-                    assert(0);
-                keySpace = (cast(ubyte*)realloc(keySpace.ptr, newLength))[0 .. newLength];
+                if (keySpace.ptr == initialKeysSpace.ptr)
+                {
+                    import core.stdc.string: memcpy;
+                    keySpace = (cast(ubyte*)malloc(newLength))[0 .. newLength];
+                    if (keySpace.ptr is null)
+                        assert(0);
+                    memcpy(keySpace.ptr, initialKeysSpace.ptr, initialKeysSpace.length);
+                }
+                else
+                {
+                    if (keySpace.length == 0)
+                        assert(0);
+                    keySpace = (cast(ubyte*)realloc(keySpace.ptr, newLength))[0 .. newLength];
+                    if (keySpace.ptr is null)
+                        assert(0);
+                }
             }
-            if (keySpace.ptr is null)
-                assert(0);
         }
         nextKeyPosition += cast(uint) ionPut(keySpace.ptr + nextKeyPosition, key);
 
@@ -350,7 +382,7 @@ pure nothrow @nogc:
 
 version(mir_ion_test) unittest
 {
-    IonSymbolTable table;
+    IonSymbolTable!false table;
     table.initialize;
 
     import mir.format;
@@ -373,4 +405,40 @@ version(mir_ion_test) unittest
     }
 
     table.finalize;
+}
+
+
+version(mir_ion_test) unittest
+{
+    IonSymbolTable!true table;
+    table.initialize;
+
+    import mir.format;
+
+    foreach(i; IonSystemSymbol.max + 1 ..10_000_000)
+    {
+        auto key = stringBuf() << i;
+        auto j = table.insert(key.data);
+        assert(i == j);
+        auto k = table.find(key.data);
+        assert (i == k);
+        if (i == 9 || i == 99 || i == 999 || i == 9_999 || i == 99_999 || i == 999_999 || i == 9_999_999)
+        {
+            foreach (l; IonSystemSymbol.max + 1 .. i + 1)
+            {
+                auto vkey = stringBuf() << l;
+                assert(table.find(vkey.data));
+            }
+        }
+    }
+
+    table.finalize;
+}
+
+package(mir.ion) auto findKey()(string[] symbolTable, string key)
+{
+    import mir.algorithm.iteration: findIndex;
+    auto ret = symbolTable.findIndex!(a => a == key);
+    assert(ret != size_t.max, "Missing key: " ~ key);
+    return ret + 1;
 }
