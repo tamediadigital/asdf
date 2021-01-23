@@ -177,7 +177,7 @@ struct IonValue
     Returns: GC-allocated copy.
     +/
     @safe pure nothrow const
-    IonValue gcCopy()
+    IonValue gcCopy()()
     {
         return IonValue(data.dup);
     }
@@ -191,20 +191,20 @@ struct IonDescriptor
     /++
     The type descriptor octet has two subfields: a four-bit type code T, and a four-bit length L.
     +/
-    const(ubyte)* reference;
+    this(scope const(ubyte)* reference)
+        @safe pure nothrow @nogc
+    {
+        assert(reference);
+        this.type = cast(IonTypeCode)((*reference) >> 4);
+        assert(type <= IonTypeCode.max);
+        this.L = cast(uint)((*reference) & 0xF);
+    }
 
     /// T
-    IonTypeCode type() @safe pure nothrow @nogc const @property
-    {
-        assert(reference);
-        return cast(typeof(return))((*reference) >> 4);
-    }
+    IonTypeCode type;
+
     /// L
-    uint L() @safe pure nothrow @nogc const @property
-    {
-        assert(reference);
-        return cast(typeof(return))((*reference) & 0xF);
-    }
+    uint L;
 }
 
 /++
@@ -418,7 +418,7 @@ struct IonBool
         @safe pure nothrow @nogc const
     {
         assert (descriptor.type == IonTypeCode.bool_);
-        return *descriptor.reference == 0x1F;
+        return descriptor.L == 0xF;
     }
 
     /++
@@ -440,10 +440,8 @@ struct IonBool
     bool get()
         @safe pure nothrow @nogc const
     {
-        assert(descriptor.reference);
-        auto d = *descriptor.reference;
-        assert((d | 1) == 0x11);
-        return d & 1;
+        assert(descriptor.L <= 1);
+        return descriptor.L & 1;
     }
 }
 
@@ -2395,8 +2393,8 @@ private IonErrorCode parseValue(ref const(ubyte)[] data, scope ref IonDescribedV
 
     describedValue = IonDescribedValue(IonDescriptor(descriptorPtr));
 
-    const L = uint(descriptorData & 0xF);
-    const type = cast(IonTypeCode)(descriptorData >> 4);
+    const L = describedValue.descriptor.L;
+    const type = describedValue.descriptor.type;
     // if null
     if (L == 0xF)
         return IonErrorCode.none;

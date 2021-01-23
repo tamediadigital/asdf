@@ -99,6 +99,7 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
         putKeyId(compileTimeIndex[id]);
     }
 
+    ///
     void putKeyId(uint id)
     {
         tapeHolder.reserve(5);
