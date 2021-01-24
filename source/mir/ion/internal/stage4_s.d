@@ -89,22 +89,23 @@ version(mir_ion_test) unittest
     }
 
     import mir.ion.value;
+    import mir.ion.type_code;
 
     assert(IonValue(jsonToIonTest("12345")).describe.get!IonUInt.get!ulong == 12345);
     assert(IonValue(jsonToIonTest("-12345")).describe.get!IonNInt.get!long == -12345);
     assert(IonValue(jsonToIonTest("-12.345")).describe.get!IonDecimal.get!double == -12.345);
     assert(IonValue(jsonToIonTest("\t \r\n-12345e-3 text_after_whitespaces \t\r\n")).describe.get!IonFloat.get!double == -12.345);
     assert(IonValue(jsonToIonTest(" -12345e-3 ")).describe.get!IonFloat.get!double == -12.345);
-    assert(IonValue(jsonToIonTest("   null{text_after_operators:{},[]")).describe.get!(typeof(null)) is null);
-    assert(IonValue(jsonToIonTest("true ")).describe.get!IonBool == true);
-    assert(IonValue(jsonToIonTest("  false")).describe.get!IonBool == false);
-    assert(IonValue(jsonToIonTest(` "string"{text_after_operators:{},[]`)).describe.get!IonString.data == "string");
+    assert(IonValue(jsonToIonTest("   null{text_after_operators:{},[]")).describe.get!IonNull == IonNull(IonTypeCode.null_));
+    assert(IonValue(jsonToIonTest("true ")).describe.get!bool == true);
+    assert(IonValue(jsonToIonTest("  false")).describe.get!bool == false);
+    assert(IonValue(jsonToIonTest(` "string"{text_after_operators:{},[]`)).describe.get!(const(char)[]) == "string");
 
     enum str = "iwfpwqocbpwoewouivhqpeobvnqeon wlekdnfw;lefqoeifhq[woifhdq[owifhq[owiehfq[woiehf[  oiehwfoqwewefiqweopurefhqweoifhqweofihqeporifhq3eufh38hfoidf";
     auto data = jsonToIonTest(`"` ~ str ~ `"`);
-    assert(IonValue(jsonToIonTest(`"` ~ str ~ `"`)).describe.get!IonString.data == str);
+    assert(IonValue(jsonToIonTest(`"` ~ str ~ `"`)).describe.get!(const(char)[]) == str);
 
-    assert(IonValue(jsonToIonTest(`"hey \uD801\uDC37tee"`)).describe.get!IonString.data == "hey 𐐷tee");
+    assert(IonValue(jsonToIonTest(`"hey \uD801\uDC37tee"`)).describe.get!(const(char)[]) == "hey 𐐷tee");
     assert(IonValue(jsonToIonTest(`[]`)).describe.get!IonList.data.length == 0);
     assert(IonValue(jsonToIonTest(`{}`)).describe.get!IonStruct.data.length == 0);
 
