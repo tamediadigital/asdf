@@ -17,6 +17,9 @@ IonErrorCode singleThreadJsonImpl(size_t nMax, SymbolTable, TapeHolder)(
     enum k = nMax / 64;
 
     align(64) ubyte[64][k + 2] vector = void;
+    if (__ctfe)
+        foreach (ref v; vector)
+            v[] = 0;
     ulong[2][k + 2] pairedMask1 = void;
     ulong[2][k + 2] pairedMask2 = void;
 
@@ -41,7 +44,7 @@ IonErrorCode singleThreadJsonImpl(size_t nMax, SymbolTable, TapeHolder)(
             }
             else
             {
-                stage.strPtr = cast(const(ubyte)*)(vector.ptr + 1);
+                stage.strPtr = cast(const(ubyte)*)(vector.ptr.ptr + 64);
                 stage.pairedMask1 = pairedMask1.ptr + 1;
                 stage.pairedMask2 = pairedMask2.ptr + 1;
             }
@@ -52,7 +55,12 @@ IonErrorCode singleThreadJsonImpl(size_t nMax, SymbolTable, TapeHolder)(
 
             vector[1 + stage.n / 64] = ' ';
 
-            memcpy(vector.ptr + 1, text.ptr, stage.n);
+            if (__ctfe)
+                for (size_t i; i < stage.n; i += 64)
+                    vector[i / 64 + 1][0 .. i + 64 <= stage.n ? $ : stage.n % 64] = cast(const(ubyte)[]) text[i .. i + 64 <= stage.n ? i + 64 : $];
+            else
+                memcpy(vector.ptr.ptr + 64, text.ptr, stage.n);
+
             text = text[stage.n .. $];
 
             auto vlen = stage.n / 64 + (stage.n % 64 != 0);

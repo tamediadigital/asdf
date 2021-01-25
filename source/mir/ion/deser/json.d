@@ -59,7 +59,7 @@ unittest
         }
     }
 
-    auto book = q{{
+    static immutable text = q{{
         "title": "A Hero of Our Time",
         "wouldRecommend": true,
         "description": null,
@@ -81,10 +81,13 @@ unittest
             "5",
             "6"
         ]
-        }}
-        .deserializeJson!Book;
+    }};
 
     import mir.conv: to;
+
+    // enum sbook = text.deserializeJson!Book;
+
+    auto book = text.deserializeJson!Book;
 
     assert(book.description.length == 0);
     assert(book.numberOfNovellas == 5);
@@ -115,7 +118,8 @@ SerdeException deserializeValueFromJson(T)(scope const(char)[] text, ref T value
     import mir.serde: serdeGetDeserializationKeysRecurse;
     import mir.string_table: createTable;
 
-    enum nMax = 4096u;
+    // enum nMax = 4096u;
+    enum nMax = 128u;
     enum keys = serdeGetDeserializationKeysRecurse!T;
     alias createTableChar = createTable!char;
     static immutable table = createTableChar!(keys, false);

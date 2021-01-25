@@ -492,7 +492,7 @@ version(mir_ion_test) unittest
         0x00, 0x00, 0x48, 0x43, 0x0c, 0x6b,
         0xf5, 0x26, 0x34, 0x00, 0x00, 0x00,
         0x00]).describe;
-    
+
     double[] value;
     assert(deserializeValueImpl(data, value) == IonErrorCode.none);
     assert(value == [12, 100e13]);

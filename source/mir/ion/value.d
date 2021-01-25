@@ -797,12 +797,12 @@ struct IonFloat
     {
         if (data.length == 8)
         {
-            value = parseDouble(data);
+            value = parseFloating!double(data);
             return IonErrorCode.none;
         }
         if (data.length == 4)
         {
-            value = parseSingle(data);
+            value = parseFloating!float(data);
             return IonErrorCode.none;
         }
         if (_expect(data.length, false))
@@ -2271,26 +2271,114 @@ private IonErrorCode parseValue(ref const(ubyte)[] data, scope ref IonDescribedV
     return type == IonTypeCode.null_ ? IonErrorCode.nop : IonErrorCode.none;
 }
 
-private double parseDouble(scope const(ubyte)[] data)
+private F parseFloating(F)(scope const(ubyte)[] data)
     @trusted pure nothrow @nogc
+    if (isFloatingPoint!F)
 {
     version(LDC) pragma(inline, true);
-    version (LittleEndian) import core.bitop : bswap;
-    assert(data.length == 8);
-    double value;
-    *cast(ubyte[8]*) &value = cast(ubyte[8]) data[0 .. 8];
-    version (LittleEndian) *cast(ulong*)&value = bswap(*cast(ulong*)&value);
-    return value;
+
+    enum n = F.sizeof;
+    static if (n == 4)
+        alias U = uint;
+    else
+    static if (n == 8)
+        alias U = ulong;
+    else
+    static if (n == 16)
+        alias U = ucent;
+    else static assert(0);
+
+    assert(data.length == n);
+
+    U num;
+    if (__ctfe)
+    {
+        static foreach_reverse (i; 0 .. n)
+        {
+            num <<= 8;
+            num |= data.ptr[i];
+        }
+    }
+    else
+    {
+        num = (cast(U[1])cast(ubyte[n])data.ptr[0 .. n])[0];
+    }
+    version (LittleEndian)
+    {
+        import core.bitop : bswap;
+        num = bswap(num);
+    }
+    return num.unsignedDataToFloating;
 }
 
-private float parseSingle(scope const(ubyte)[] data)
+private auto unsignedDataToFloating(T)(const T data)
     @trusted pure nothrow @nogc
+    if (__traits(isUnsigned, T) && T.sizeof >= 4)
 {
-    version(LDC) pragma(inline, true);
-    version (LittleEndian) import core.bitop : bswap;
-    assert(data.length == 4);
-    float value;
-    *cast(ubyte[4]*) &value = cast(ubyte[4]) data[0 .. 4];
-    version (LittleEndian) *cast(uint*)&value = bswap(*cast(uint*)&value);
-    return value;
+    static if (T.sizeof == 4)
+        alias F = float;
+    else
+    static if (T.sizeof == 8)
+        alias F = double;
+    else
+        alias F = quadruple;
+
+    version(all)
+    {
+        return *cast(F*)&data;
+    }
+    else
+    {        
+        T num = data;
+        bool sign = cast(bool)(num >> (T.sizeof * 8 - 1));
+        num &= num.max >> 1;
+        if (num == 0)
+            return F(sign ? -0.0f : 0.0f);
+        int exp = cast(int) (num >> (F.mant_dig - 1));
+        num &= (T(1) << (F.mant_dig - 1)) - 1;
+        if (exp)
+        {
+            if (exp == (T(1) << (T.sizeof * 8 - F.mant_dig)) - 1)
+            {
+                F ret = num == 0 ? F.infinity : F.nan;
+                if (sign)
+                    ret = -ret;
+                return ret;
+            }
+            exp -= 1;
+            num |= T(1) << (F.mant_dig - 1);
+        }
+
+        exp -= F.mant_dig - F.min_exp;
+        F ret = num;
+        import mir.math.ieee: ldexp;
+        // ret = ldexp(ret, exp);
+        ret *= 2.0 ^^ exp;
+        if (sign)
+            ret = -ret;
+        assert(data == cast(ulong)*cast(T*) &ret);
+        return ret;
+    }
+}
+
+///
+@safe pure nothrow @nogc
+unittest
+{
+    assert(unsignedDataToFloating(1UL) == double.min_normal * double.epsilon);
+    assert(unsignedDataToFloating(1U) == float.min_normal * float.epsilon);
+
+    assert(unsignedDataToFloating(0xFFF0000000000000U) == -double.infinity);
+    assert(unsignedDataToFloating(0x4008000000000000U) == 3.0);
+    assert(unsignedDataToFloating(0x4028000000000000U) == 12.0);
+    assert(unsignedDataToFloating(0x430c6bf526340000U) == 1e15);
+    assert(unsignedDataToFloating(1UL) == double.min_normal * double.epsilon);
+    assert(unsignedDataToFloating(1U) == float.min_normal * float.epsilon);
+
+    static assert(unsignedDataToFloating(0xFFF0000000000000U) == -double.infinity);
+    static assert(unsignedDataToFloating(0x4008000000000000U) == 3.0, unsignedDataToFloating(0x4008000000000000U));
+    static assert(unsignedDataToFloating(0x4028000000000000U) == 12.0, unsignedDataToFloating(0x4028000000000000U));
+    static assert(unsignedDataToFloating(0x430c6bf526340000U) == 1e15, unsignedDataToFloating(0x430c6bf526340000U));
+    static assert(unsignedDataToFloating(1UL) == double.min_normal * double.epsilon);
+    static assert(unsignedDataToFloating(1U) == float.min_normal * float.epsilon);
 }
