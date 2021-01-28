@@ -45,7 +45,7 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
 
 @trusted:
     /// Serialization primitives
-    size_t objectBegin()
+    size_t structBegin()
     {
         auto ret = tapeHolder.currentTapePosition;
         tapeHolder.currentTapePosition += ionPutStartLength;
@@ -53,13 +53,13 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     }
 
     ///ditto
-    void objectEnd(size_t state)
+    void structEnd(size_t state)
     {
         tapeHolder.currentTapePosition = state + ionPutEnd(tapeHolder.data.ptr + state, IonTypeCode.struct_, tapeHolder.currentTapePosition - (state + ionPutStartLength));
     }
 
     ///ditto
-    size_t arrayBegin()
+    size_t listBegin()
     {
         auto ret = tapeHolder.currentTapePosition;
         tapeHolder.currentTapePosition += ionPutStartLength;
@@ -67,13 +67,13 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     }
 
     ///ditto
-    void arrayEnd(size_t state)
+    void listEnd(size_t state)
     {
         tapeHolder.currentTapePosition = state + ionPutEnd(tapeHolder.data.ptr + state, IonTypeCode.list, tapeHolder.currentTapePosition - (state + ionPutStartLength));
     }
 
     ///ditto
-    void putCompileTimeKey(string key)()
+    void putCompiletimeKey(string key)()
     {
         enum id = compiletimeTable[key];
         putKeyId(compileTimeIndex[id]);
@@ -100,10 +100,18 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     }
 
     ///
-    void putKeyId(uint id)
+    void putKeyId(T)(const T id)
+        if (__traits(isUnsigned, T))
+    {
+        tapeHolder.reserve(10);
+        tapeHolder.currentTapePosition += ionPutVarUInt(tapeHolder.data.ptr + tapeHolder.currentTapePosition, id);
+    }
+
+    ///ditto
+    void putValueId(uint id)
     {
         tapeHolder.reserve(5);
-        tapeHolder.currentTapePosition += ionPutVarUInt(tapeHolder.data.ptr + tapeHolder.currentTapePosition, id);
+        tapeHolder.currentTapePosition += ionPutSymbolId(tapeHolder.data.ptr + tapeHolder.currentTapePosition, id);
     }
 
     ///ditto
@@ -475,13 +483,13 @@ template ionSerializer(string sep = "")
 
     // ScopedBuffer!char buffer;
     // auto ser = ionSerializer((()@trusted=>&buffer)());
-    // auto state0 = ser.objectBegin;
+    // auto state0 = ser.structBegin;
 
     //     ser.putEscapedKey("null");
     //     ser.putValue(null);
 
     //     ser.putEscapedKey("array");
-    //     auto state1 = ser.arrayBegin();
+    //     auto state1 = ser.listBegin();
     //         ser.elemBegin; ser.putValue(null);
     //         ser.elemBegin; ser.putValue(123);
     //         ser.elemBegin; ser.putValue(12300000.123);
@@ -489,9 +497,9 @@ template ionSerializer(string sep = "")
     //         ser.elemBegin; ser.putValue("\r");
     //         ser.elemBegin; ser.putValue("\n");
     //         ser.elemBegin; ser.putValue(BigInt!2(1234567890));
-    //     ser.arrayEnd(state1);
+    //     ser.listEnd(state1);
 
-    // ser.objectEnd(state0);
+    // ser.structEnd(state0);
 
     // assert(buffer.data == `{"null":null,"array":[null,123,1.2300000123e7,"\t","\r","\n",1234567890]}`);
 }
@@ -504,13 +512,13 @@ unittest
 
 //     auto app = appender!string;
 //     auto ser = ionSerializer!"    "(&app);
-//     auto state0 = ser.objectBegin;
+//     auto state0 = ser.structBegin;
 
 //         ser.putEscapedKey("null");
 //         ser.putValue(null);
 
 //         ser.putEscapedKey("array");
-//         auto state1 = ser.arrayBegin();
+//         auto state1 = ser.listBegin();
 //             ser.elemBegin; ser.putValue(null);
 //             ser.elemBegin; ser.putValue(123);
 //             ser.elemBegin; ser.putValue(12300000.123);
@@ -518,9 +526,9 @@ unittest
 //             ser.elemBegin; ser.putValue("\r");
 //             ser.elemBegin; ser.putValue("\n");
 //             ser.elemBegin; ser.putValue(BigInt!2("1234567890"));
-//         ser.arrayEnd(state1);
+//         ser.listEnd(state1);
 
-//     ser.objectEnd(state0);
+//     ser.structEnd(state0);
 
 //     assert(app.data ==
 // `{

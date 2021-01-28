@@ -41,7 +41,7 @@ enum IonTypeCode
 
     /++
     Spec: $(HTTP http://amzn.github.io/ion-docs/docs/binary.html#6-timestamp, 6: timestamp)
-    D_type: $(SUBREF value, IonTimestampValue)
+    D_type: $(SUBREF value, IonTimestamp)
     +/
     timestamp,
 

@@ -35,7 +35,7 @@ alias IonType(IonTypeCode code : IonTypeCode.float_) = IonFloat;
 /// ditto
 alias IonType(IonTypeCode code : IonTypeCode.decimal) = IonDecimal;
 /// ditto
-alias IonType(IonTypeCode code : IonTypeCode.timestamp) = IonTimestampValue;
+alias IonType(IonTypeCode code : IonTypeCode.timestamp) = IonTimestamp;
 /// ditto
 alias IonType(IonTypeCode code : IonTypeCode.symbol) = IonSymbolID;
 /// ditto
@@ -66,7 +66,7 @@ alias IonTypeCodeOf(T : IonFloat) = IonTypeCode.float_;
 /// ditto
 alias IonTypeCodeOf(T : IonDecimal) = IonTypeCode.decimal;
 /// ditto
-alias IonTypeCodeOf(T : IonTimestampValue) = IonTypeCode.timestamp;
+alias IonTypeCodeOf(T : IonTimestamp) = IonTypeCode.timestamp;
 /// ditto
 alias IonTypeCodeOf(T : IonSymbolID) = IonTypeCode.symbol;
 /// ditto
@@ -102,7 +102,7 @@ enum isIonType(T : IonFloat) = true;
 /// ditto
 enum isIonType(T : IonDecimal) = true;
 /// ditto
-enum isIonType(T : IonTimestampValue) = true;
+enum isIonType(T : IonTimestamp) = true;
 /// ditto
 enum isIonType(T : IonSymbolID) = true;
 /// ditto
@@ -125,6 +125,15 @@ struct IonNull
 {
     ///
     IonTypeCode code;
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        serializer.putNull(code);
+    }
 }
 
 /++
@@ -187,6 +196,22 @@ struct IonValue
     IonValue gcCopy()()
     {
         return IonValue(data.dup);
+    }
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        describe.serialize(serializer);
+    }
+
+    ///
+    unittest
+    {
+        import mir.ion.ser.json;
+        assert(IonValue([0x11]).serializeJson == "true");
     }
 }
 
@@ -352,6 +377,66 @@ struct IonDescribedValue
         else
         {
             return T(data);
+        }
+    }
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        if (this == null)
+        {
+            trustedGet!IonNull.serialize(serializer);
+        }
+        else
+        {
+            final switch (descriptor.type) with (IonTypeCode)
+            {
+                case IonTypeCode.null_:
+                    assert(0);
+                case IonTypeCode.bool_:
+                    serializer.putValue(trustedGet!bool);
+                    break;
+                case IonTypeCode.uInt:
+                case IonTypeCode.nInt:
+                    // trustedGet!IonInt.serialize(serializer);
+                    break;
+                case IonTypeCode.float_:
+                    trustedGet!IonFloat.serialize(serializer);
+                    break;
+                case IonTypeCode.decimal:
+                    trustedGet!IonDecimal.serialize(serializer);
+                    break;
+                case IonTypeCode.timestamp:
+                    trustedGet!IonTimestamp.serialize(serializer);
+                    break;
+                case IonTypeCode.symbol:
+                    // trustedGet!IonSymbolID.serialize(serializer);
+                    break;
+                case IonTypeCode.string:
+                    // trustedGet!(const(char)[]).serialize(serializer);
+                    break;
+                case IonTypeCode.clob:
+                    // trustedGet!IonClob.serialize(serializer);
+                    break;
+                case IonTypeCode.blob:
+                    // trustedGet!IonBlob.serialize(serializer);
+                    break;
+                case IonTypeCode.list:
+                    // trustedGet!IonList.serialize(serializer);
+                    break;
+                case IonTypeCode.sexp:
+                    // trustedGet!IonSexp.serialize(serializer);
+                    break;
+                case IonTypeCode.struct_:
+                    // trustedGet!IonStruct.serialize(serializer);
+                    break;
+                case IonTypeCode.annotations:
+                    // trustedGet!IonAnnotationWrapper.serialize(serializer);
+                    break;
+            }
         }
     }
 }
@@ -744,6 +829,16 @@ struct IonInt
         T value;
         return get!T(value);
     }
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        pragma(msg, S);
+        serializer.putValue(field);
+    }
 }
 
 /// test with $(LREF IonUInt)s
@@ -838,6 +933,31 @@ struct IonFloat
     {
         T value;
         return get!T(value);
+    }
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        if (data.length == 8)
+        {
+            auto value = parseFloating!double(data);
+            serializer.putValue(value);
+            return;
+        }
+        if (data.length == 4)
+        {
+            auto value = parseFloating!float(data);
+            serializer.putValue(value);
+            return;
+        }
+        if (_expect(data.length, false))
+        {
+            throw IonErrorCode.wrongFloatDescriptor.ionException;
+        }
+        serializer.putValue(0f);
     }
 }
 
@@ -943,6 +1063,18 @@ struct IonDescribedDecimal
         Decimal!256 decimal;
         return get!T(decimal);
     }
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        Decimal!256  decimal;
+        if (auto error = this.getDecimal!256(decimal))
+            throw error.ionException;
+        serializer.putValue(decimal);
+    }
 }
 
 /++
@@ -1016,6 +1148,15 @@ struct IonDecimal
         T value;
         return get!T(value);
     }
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        this.get!IonDescribedDecimal.serialize(serializer);
+    }
 }
 
 ///
@@ -1045,9 +1186,9 @@ The 2 non-optional components are offset and year.
 The 5 optional components are (from least precise to most precise): `month`, `day`, `hour` and `minute`, `second`, `fraction_exponent` and `fraction_coefficient`.
 All of these 7 components are in Universal Coordinated Time (UTC).
 +/
-struct IonTimestampValue
+struct IonTimestamp
 {
-    import mir.ion.timestamp;
+    import mir.timestamp;
 
     ///
     const(ubyte)[] data;
@@ -1055,15 +1196,15 @@ struct IonTimestampValue
     /++
     Describes decimal (nothrow version).
     Params:
-        value = (out) $(LREF IonTimestamp)
+        value = (out) $(LREF Timestamp)
     Returns: $(SUBREF exception, IonErrorCode)
     +/
-    IonErrorCode get(T : IonTimestamp)(scope ref T value)
+    IonErrorCode get(T : Timestamp)(scope ref T value)
         @safe pure nothrow @nogc const
     {
         pragma(inline, false);
         auto d = data[];
-        IonTimestamp v;
+        Timestamp v;
         if (auto error = parseVarInt(d, v.offset))
             return error;
         if (auto error = parseVarUInt(d, v.year))
@@ -1158,9 +1299,9 @@ struct IonTimestampValue
     {
         /++
         Describes decimal.
-        Returns: $(LREF IonTimestamp)
+        Returns: $(LREF Timestamp)
         +/
-        IonTimestamp get(T = IonTimestamp)()
+        Timestamp get(T = Timestamp)()
             @safe pure @nogc const
         {
             T ret;
@@ -1173,11 +1314,20 @@ struct IonTimestampValue
     /++
     Returns: $(SUBREF exception, IonErrorCode)
     +/
-    IonErrorCode getErrorCode(T = IonTimestamp)()
+    IonErrorCode getErrorCode(T = Timestamp)()
         @trusted pure nothrow @nogc const
     {
         T value;
         return get!T(value);
+    }
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        serializer.putValue(this.get!Timestamp);
     }
 }
 
@@ -1185,7 +1335,7 @@ struct IonTimestampValue
 @safe pure
 version(mir_ion_test) unittest
 {
-    import mir.ion.timestamp;
+    import mir.timestamp;
 
     // null.timestamp
     assert(IonValue([0x6F]).describe.get!IonNull == IonNull(IonTypeCode.timestamp));
@@ -1198,24 +1348,24 @@ version(mir_ion_test) unittest
         [0x69, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84, 0x81,   ], // The same instant with 0d1 fractional seconds
     ];
 
-    auto r = IonTimestamp(2000, 7, 8, 2, 3, 4);
+    auto r = Timestamp(2000, 7, 8, 2, 3, 4);
 
     foreach(data; set)
     {
-        assert(IonValue(data).describe.get!IonTimestampValue.get == r);
+        assert(IonValue(data).describe.get!IonTimestamp.get == r);
     }
 
     assert(IonValue([0x69, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84, 0xC2])
         .describe
-        .get!IonTimestampValue
+        .get!IonTimestamp
         .get ==
-            IonTimestamp(2000, 7, 8, 2, 3, 4, -2, 0));
+            Timestamp(2000, 7, 8, 2, 3, 4, -2, 0));
 
     assert(IonValue([0x6A, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84, 0xC3, 0x10])
         .describe
-        .get!IonTimestampValue
+        .get!IonTimestamp
         .get ==
-            IonTimestamp(2000, 7, 8, 2, 3, 4, -3, 16));
+            Timestamp(2000, 7, 8, 2, 3, 4, -3, 16));
 }
 
 /++
@@ -1263,6 +1413,20 @@ struct IonSymbolID
     {
         T value;
         return get!T(value);
+    }
+
+    /++
+    Serializes SymbolId as Ion value.
+    Note: This serialization shouldn't be used for `struct` keys or `annotation` list.
+    Params:
+        serializer = serializer with `ionPutValueId` primitive.
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        uint id;
+        if (auto overflow = representation.get(id))
+            throw IonErrorCode.overflowInSymbolId.ionException;
+        serializer.ionPutValueId(cast(uint) representation);
     }
 }
 
@@ -1479,6 +1643,21 @@ const:
     @system
     int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
     @system dg) { return opApply(cast(DG) dg); }
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        serializer.listBegin;
+        foreach (IonDescribedValue value; this)
+        {
+            serializer.elemBegin;
+            value.serialize(serializer);
+        }
+        serializer.listEnd;
+    }
 }
 
 ///
@@ -1651,6 +1830,21 @@ const:
     @system
     int opApply(scope int delegate(IonErrorCode error, IonDescribedValue value)
     @system dg) { return opApply(cast(DG) dg); }
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        serializer.sexpBegin;
+        foreach (IonDescribedValue value; this)
+        {
+            serializer.elemBegin;
+            value.serialize(serializer);
+        }
+        serializer.sexpEnd;
+    }
 }
 
 ///
@@ -1853,6 +2047,21 @@ const:
     @system
     int opApply(scope int delegate(IonErrorCode error, size_t symbolID, IonDescribedValue value)
     @system dg) { return opApply(cast(DG) dg); }
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        serializer.structBegin;
+        foreach (size_t symbolID, IonDescribedValue value; this)
+        {
+            serializer.putKeyId(symbolID);
+            value.serialize(serializer);
+        }
+        serializer.structEnd;
+    }
 }
 
 ///
@@ -1959,6 +2168,22 @@ struct IonAnnotationWrapper
         }
     }
 
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        IonAnnotations annotations;
+        auto value = unwrap(annotations);
+
+        serializer.annotationWrapperBegin;
+
+        annotations.serialize(serializer);
+        value.serialize(serializer);
+
+        serializer.annotationWrapperEnd;
+    }
 }
 
 ///
@@ -2152,6 +2377,25 @@ const:
     @system
     int opApply(scope int delegate(IonErrorCode error, size_t symbolID)
     @system dg) { return opApply(cast(DG) dg); }
+
+    /++
+    Params:
+        serializer = serializer
+    +/
+    void serialize(S)(ref S serializer) const
+    {
+        IonAnnotations annotations;
+        auto value = unwrap(annotations);
+
+        serializer.annotationsBegin;
+
+        foreach (size_t id; this)
+        {
+            serializer.putAnnotationId(id);
+        }
+
+        serializer.annotationsEnd;
+    }
 }
 
 package IonErrorCode parseVarUInt(bool checkInput = true, U)(scope ref const(ubyte)[] data, scope out U result)

@@ -8,7 +8,7 @@ import mir.bignum.low_level_view;
 import mir.bitop;
 import mir.date;
 import mir.ion.lob;
-import mir.ion.timestamp: IonTimestamp;
+import mir.timestamp: Timestamp;
 import mir.ion.type_code;
 import mir.utility: _expect;
 import std.traits;
@@ -726,6 +726,11 @@ version(mir_ion_test) unittest
 private auto byteData(T)(const T value)
     if (__traits(isUnsigned, T))
 {
+    static if (T.sizeof == 1)
+    {
+        T num = value;
+    }
+    else
     version (LittleEndian)
     {
         import core.bitop: bswap;
@@ -1040,25 +1045,25 @@ version(mir_ion_test) unittest
 /++
 +/
 size_t ionPut(T)(scope ubyte* ptr, const T value)
-    if (is(T == IonTimestamp))
+    if (is(T == Timestamp))
 {
     size_t ret = 1;
     ret += ionPutVarInt(ptr + ret, value.offset);
     ret += ionPutVarUInt(ptr + ret, value.year);
-    if (value.precision >= IonTimestamp.precision.month)
+    if (value.precision >= Timestamp.precision.month)
     {
         ptr[ret++] = cast(ubyte) (0x80 | value.month);
-        if (value.precision >= IonTimestamp.precision.day)
+        if (value.precision >= Timestamp.precision.day)
         {
             ptr[ret++] = cast(ubyte) (0x80 | value.day);
-            if (value.precision >= IonTimestamp.precision.minute)
+            if (value.precision >= Timestamp.precision.minute)
             {
                 ptr[ret++] = cast(ubyte) (0x80 | value.hour);
                 ptr[ret++] = cast(ubyte) (0x80 | value.minute);
-                if (value.precision >= IonTimestamp.precision.second)
+                if (value.precision >= Timestamp.precision.second)
                 {
                     ptr[ret++] = cast(ubyte) (0x80 | value.second);
-                    if (value.precision > IonTimestamp.precision.second) //fraction
+                    if (value.precision > Timestamp.precision.second) //fraction
                     {
                         ret += ionPutVarInt(ptr + ret, value.fractionExponent);
                         ret += ionPutIntField(ptr + ret, value.fractionCoefficient);
@@ -1089,20 +1094,20 @@ size_t ionPut(T)(scope ubyte* ptr, const T value)
 ///
 version(mir_ion_test) unittest
 {
-    import mir.ion.timestamp;
+    import mir.timestamp;
 
     ubyte[20] data;
 
     ubyte[] result = [0x68, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84];
-    auto ts = IonTimestamp(2000, 7, 8, 2, 3, 4);
+    auto ts = Timestamp(2000, 7, 8, 2, 3, 4);
     assert(data[0 .. ionPut(data.ptr, ts)] == result);
 
     result = [0x69, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84, 0xC2];
-    ts = IonTimestamp(2000, 7, 8, 2, 3, 4, -2, 0);
+    ts = Timestamp(2000, 7, 8, 2, 3, 4, -2, 0);
     assert(data[0 .. ionPut(data.ptr, ts)] == result);
 
     result = [0x6A, 0x80, 0x0F, 0xD0, 0x87, 0x88, 0x82, 0x83, 0x84, 0xC3, 0x10];
-    ts = IonTimestamp(2000, 7, 8, 2, 3, 4, -3, 16);
+    ts = Timestamp(2000, 7, 8, 2, 3, 4, -3, 16);
     assert(data[0 .. ionPut(data.ptr, ts)] == result);
 }
 
@@ -1139,7 +1144,7 @@ version(mir_ion_test) unittest
 size_t ionPutSymbolId(T)(scope ubyte* ptr, const T value)
     if (isUnsigned!T)
 {
-    auto length = ionPutVarUInt(ptr + 1, value);
+    auto length = ionPutUIntField(ptr + 1, value);
     *ptr = cast(ubyte)(0x70 | length);
     return length + 1;
 }
@@ -1150,7 +1155,27 @@ version(mir_ion_test) unittest
     ubyte[8] data;
 
     ubyte[] result = [0x72, 0x01, 0xFF];
-    auto id = 0xFFu;
+    auto id = 0x1FFu;
+    assert(data[0 .. ionPutSymbolId(data.ptr, id)] == result);
+}
+
+/++
++/
+size_t ionPutSymbolId(T, WordEndian endian)(scope ubyte* ptr, BigUIntView!(T, endian) value)
+{
+    auto length = ionPutUIntField(ptr + 1, value);
+    assert(length < 10);
+    *ptr = cast(ubyte)(0x70 | length);
+    return length + 1;
+}
+
+///
+version(mir_ion_test) unittest
+{
+    ubyte[8] data;
+
+    ubyte[] result = [0x72, 0x01, 0xFF];
+    auto id = BigUIntView!(ubyte, WordEndian.big).fromHexString("1FF");
     assert(data[0 .. ionPutSymbolId(data.ptr, id)] == result);
 }
 

@@ -118,8 +118,8 @@ SerdeException deserializeValueFromJson(T)(scope const(char)[] text, ref T value
     import mir.serde: serdeGetDeserializationKeysRecurse;
     import mir.string_table: createTable;
 
-    // enum nMax = 4096u;
-    enum nMax = 128u;
+    enum nMax = 4096u;
+    // enum nMax = 128u;
     enum keys = serdeGetDeserializationKeysRecurse!T;
     alias createTableChar = createTable!char;
     static immutable table = createTableChar!(keys, false);
