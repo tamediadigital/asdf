@@ -1207,8 +1207,10 @@ struct IonTimestamp
         Timestamp v;
         if (auto error = parseVarInt(d, v.offset))
             return error;
-        if (auto error = parseVarUInt(d, v.year))
+        ushort year;
+        if (auto error = parseVarUInt(d, year))
             return error;
+        v.year = year;
 
         if (d.length == 0)
             goto R;

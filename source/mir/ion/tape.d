@@ -1049,7 +1049,7 @@ size_t ionPut(T)(scope ubyte* ptr, const T value)
 {
     size_t ret = 1;
     ret += ionPutVarInt(ptr + ret, value.offset);
-    ret += ionPutVarUInt(ptr + ret, value.year);
+    ret += ionPutVarUInt(ptr + ret, cast(ushort)value.year);
     if (value.precision >= Timestamp.precision.month)
     {
         ptr[ret++] = cast(ubyte) (0x80 | value.month);
