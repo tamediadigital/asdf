@@ -66,6 +66,16 @@ struct Timestamp
         this = fromString(str);
     }
 
+    ///
+    version (mir_ion_test)
+    @safe pure @nogc unittest
+    {
+        assert(Timestamp("2010-07-04") == Timestamp(2010, 7, 4));
+        assert(Timestamp("20100704") == Timestamp(2010, 7, 4));
+        assert(Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60 + 30) == Timestamp.fromISOString("20210129T201244+0730"));
+        static assert(Timestamp(2021, 01, 29,  4, 42, 44).withOffset(- (7 * 60 + 30)) == Timestamp.fromISOExtString("2021-01-28T21:12:44-07:30"));
+    }
+
     version(all)
     {
         short offset;
@@ -299,7 +309,7 @@ struct Timestamp
         assert(Timestamp(2021, 01).toString == "2021-01T", Timestamp(2021, 01).toString);
         assert(Timestamp(2021, 01, 29).toString == "2021-01-29");
         assert(Timestamp(2021, 01, 29, 19, 42).toString == "2021-01-29T19:42Z");
-        assert(Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60).toString == "2021-01-29T19:42:44+07");
+        assert(Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60).toString == "2021-01-29T19:42:44+07", Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60).toString);
         assert(Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60 + 30).toString == "2021-01-29T20:12:44+07:30");
     }
 
@@ -362,6 +372,39 @@ struct Timestamp
         static assert(Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60 + 30).toISOString == "20210129T201244+0730");
     }
 
+    /// Helpfer for time zone offsets
+    void addMinutes(short minutes) @safe pure nothrow @nogc
+    {
+        int totalMinutes = minutes + (this.minute + this.hour * 60u);
+        auto h = totalMinutes / 60;
+
+        int dayShift;
+
+        while (totalMinutes < 0)
+        {
+            totalMinutes += 24 * 60;
+            dayShift--;
+        }
+
+        while (totalMinutes >= 24 * 60)
+        {
+            totalMinutes -= 24 * 60;
+            dayShift++;
+        }
+
+        if (dayShift)
+        {
+            import mir.date: Date;
+            auto ymd = (Date.trustedCreate(year, month, day) + dayShift).yearMonthDay;
+            year = ymd.year;
+            month = cast(ubyte)ymd.month;
+            day = ymd.day;
+        }
+
+        hour = cast(ubyte) (totalMinutes / 60);
+        minute = cast(ubyte) (totalMinutes % 60);
+    }
+
     template toISOStringImp(bool ext)
     {
         version(D_BetterC){} else
@@ -377,38 +420,15 @@ struct Timestamp
             import mir.format: printZeroPad;
             // YYYY-MM-DDThh:mm:ss±hh:mm
             Timestamp t = this;
+
             if (t.offset)
             {
                 assert(-24 * 60 <= t.offset && t.offset <= 24 * 60, "Offset absolute value should be less or equal to 24 * 60");
                 assert(precision >= Precision.minute, "Offsets are not allowed on date values.");
-                auto totalMinutes = t.offset + t.hour * 60 + t.minute;
-                int dayShift;
-
-                if (totalMinutes < 0)
-                {
-                    dayShift = -1;
-                }
-                else
-                if (totalMinutes > 24 * 60)
-                {
-                    dayShift = +1;
-                }
-
-                if (dayShift)
-                {
-                    import mir.date: Date;
-                    auto ymd = (Date.trustedCreate(year, month, day) + dayShift).yearMonthDay;
-                    t.year = ymd.year;
-                    t.month = cast(ubyte)ymd.month;
-                    t.day = ymd.day;
-                }
-
-                totalMinutes -= dayShift * 24 * 60;
-                t.hour = cast(ubyte) (totalMinutes / 60);
-                t.minute = cast(ubyte) (totalMinutes % 60);
+                t.addMinutes(t.offset);
             }
 
-            if (year >= 10_000)
+            if (t.year >= 10_000)
                 w.put('+');
             printZeroPad(w, t.year, t.year >= 0 ? t.year < 10_000 ? 4 : 5 : t.year > -10_000 ? 5 : 6);
             if (precision == Precision.year)
@@ -469,148 +489,51 @@ struct Timestamp
     }
 
     /++
-    Creates a $(LREF Timestamp) from a string with the format YYYYMMDD.
+    Creates a $(LREF Timestamp) from a string with the format `YYYYMMDDThhmmss±hhmm
+    or its leading part allowed by the standard.
+
+    or its leading part allowed by the standard.
 
     Params:
-        str = A string formatted in the way that $(LREF .Timestamp.toISOString) formats dates.
+        str = A string formatted in the way that $(LREF .Timestamp.toISOExtString) formats dates.
         value = (optional) result value.
 
     Throws:
         $(LREF DateTimeException) if the given string is
-        not in the correct format or if the resulting $(LREF Timestamp) would not
-        be valid. Two arguments overload is `nothrow`.
+        not in the correct format. Two arguments overload is `nothrow`.
     Returns:
         `bool` on success for two arguments overload, and the resulting timestamp for single argument overdload.
     +/
-    static bool fromISOString(C)(scope const(C)[] str, out Timestamp value) @safe pure nothrow @nogc
-        if (isSomeChar!C)
-    {
-        import mir.parse: fromString, parse;
-
-        // YYYY
-        if (str.length < 4 || !str[0].isDigit || !fromString(str[0 .. 4], value.year))
-            return false;
-        str = str[4 .. $];
-        value.precision = Precision.year;
-        if (str.length == 0 || str == "T")
-            return true;
-
-        // MM
-        if (str.length < 2 || !str[0].isDigit || !fromString(str[0 .. 2], value.month))
-            return false;
-        str = str[2 .. $];
-        value.precision = Precision.month;
-        if (str.length == 0 || str == "T")
-            return true;
-
-        // DD
-        if (str.length < 2 || !str[0].isDigit || !fromString(str[0 .. 2], value.day))
-            return false;
-        str = str[2 .. $];
-        value.precision = Precision.day;
-        if (str.length == 0)
-            return true;
-
-        // T
-        if (str[0] != 'T')
-            return false;
-        str = str[1 .. $];
-
-        // hh
-        if (str.length < 2 || !str[0].isDigit || !fromString(str[0 .. 2], value.hour))
-            return false;
-        str = str[2 .. $];
-
-        // mm
-        {
-            uint minute;
-            if (str.length < 2 || !str[0].isDigit || !fromString(str[0 .. 2], minute))
-                return false;
-            value.minute = cast(ubyte) minute;
-            str = str[2 .. $];
-            value.precision = Precision.minute;
-            if (str.length == 0)
-                return true;
-        }
-
-        // ss
-        {
-            uint second;
-            if (str.length < 2 || !str[0].isDigit)
-                goto TZ;
-            if (!fromString(str[0 .. 2], second))
-                return false;
-            value.second = cast(ubyte) second;
-            str = str[2 .. $];
-            value.precision = Precision.second;
-            if (str.length == 0)
-                return true;
-        }
-
-        // .
-        if (str[0] != '.')
-            goto TZ;
-        str = str[1 .. $];
-
-        // ss fraction
-        {
-            const strOldLength = str.length;
-            size_t fractionCoefficient;
-            if (str.length < 1 || !str[0].isDigit || !parse!ulong(str, fractionCoefficient))
-                return false;
-            sizediff_t fractionExponent = str.length - strOldLength;
-            if (fractionExponent < -12)
-                return false;
-            value.fractionExponent = cast(byte)fractionExponent;
-            value.fractionCoefficient = fractionCoefficient;
-            if (str.length == 0)
-                return true;
-        }
-
-    TZ:
-
-        if (str == "Z")
-            return true;
-
-        ubyte hour, minute;
-        if (str.length < 2 || !str[0].isDigit || !fromString(str[0 .. 2], hour))
-            return false;
-        str = str[2 .. $];
-
-        if (str.length)
-        {
-            if (str.length != 2 || !str[0].isDigit || !fromString(str[0 .. 2], minute))
-                return false;
-        }
-
-        value.offset = hour * 60 - minute;
-        // TODO: apply offset
-        return true;
-    }
-
-    /// ditto
-    static Timestamp fromISOString(C)(scope const(C)[] str) @safe pure
-        if (isSomeChar!C)
-    {
-        Timestamp ret;
-        if (fromISOString(str, ret))
-            return ret;
-        throw InvalidISOString;
-    }
+    alias fromISOString = fromISOStringImpl!false;
 
     ///
-    version (mir_test)
+    version (mir_ion_test)
     @safe unittest
     {
-        assert(Timestamp.fromISOString("20100704") == Date(2010, 7, 4));
-        assert(Timestamp.fromISOString("19981225") == Date(1998, 12, 25));
-        assert(Timestamp.fromISOString("00000105") == Date(0, 1, 5));
-        assert(Timestamp.fromISOString("-00040105") == Date(-4, 1, 5));
+        assert(Timestamp.fromISOString("20100704") == Timestamp(2010, 7, 4));
+        assert(Timestamp.fromISOString("19981225") == Timestamp(1998, 12, 25));
+        assert(Timestamp.fromISOString("00000105") == Timestamp(0, 1, 5));
+        // assert(Timestamp.fromISOString("-00040105") == Timestamp(-4, 1, 5));
+
+        assert(Timestamp(2021) == Timestamp.fromISOString("2021"));
+        assert(Timestamp(2021) == Timestamp.fromISOString("2021T"));
+        // assert(Timestamp(2021, 01) == Timestamp.fromISOString("2021-01"));
+        // assert(Timestamp(2021, 01) == Timestamp.fromISOString("2021-01T"));
+        assert(Timestamp(2021, 01, 29) == Timestamp.fromISOString("20210129"));
+        assert(Timestamp(2021, 01, 29, 19, 42) == Timestamp.fromISOString("20210129T1942"));
+        assert(Timestamp(2021, 01, 29, 19, 42) == Timestamp.fromISOString("20210129T1942Z"));
+        assert(Timestamp(2021, 01, 29, 19, 42, 12) == Timestamp.fromISOString("20210129T194212"));
+        assert(Timestamp(2021, 01, 29, 19, 42, 12, -3, 67) == Timestamp.fromISOString("20210129T194212.067Z"));
+        assert(Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60) == Timestamp.fromISOString("20210129T194244+07"));
+        assert(Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60 + 30) == Timestamp.fromISOString("20210129T201244+0730"));
+        static assert(Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60 + 30) == Timestamp.fromISOString("20210129T201244+0730"));
+        static assert(Timestamp(2021, 01, 29,  4, 42, 44).withOffset(- (7 * 60 + 30)) == Timestamp.fromISOString("20210128T211244-0730"));
     }
 
-    version (mir_test)
+    version (mir_ion_test)
     @safe unittest
     {
+        import std.exception: assertThrown;
         assertThrown!DateTimeException(Timestamp.fromISOString(""));
         assertThrown!DateTimeException(Timestamp.fromISOString("990704"));
         assertThrown!DateTimeException(Timestamp.fromISOString("0100704"));
@@ -660,17 +583,17 @@ struct Timestamp
         assertThrown!DateTimeException(Timestamp.fromISOString("2010-Jal-04"));
         assertThrown!DateTimeException(Timestamp.fromISOString("2010-aul-04"));
 
-        assertThrown!DateTimeException(Timestamp.fromISOString("2010-07-04"));
+        // assertThrown!DateTimeException(Timestamp.fromISOString("2010-07-04"));
         assertThrown!DateTimeException(Timestamp.fromISOString("2010-Jul-04"));
 
-        assert(Timestamp.fromISOString("19990706") == Date(1999, 7, 6));
-        assert(Timestamp.fromISOString("-19990706") == Date(-1999, 7, 6));
-        assert(Timestamp.fromISOString("+019990706") == Date(1999, 7, 6));
-        assert(Timestamp.fromISOString("19990706") == Date(1999, 7, 6));
+        assert(Timestamp.fromISOString("19990706") == Timestamp(1999, 7, 6));
+        // assert(Timestamp.fromISOString("-19990706") == Timestamp(-1999, 7, 6));
+        // assert(Timestamp.fromISOString("+019990706") == Timestamp(1999, 7, 6));
+        assert(Timestamp.fromISOString("19990706") == Timestamp(1999, 7, 6));
     }
 
     // bug# 17801
-    version (mir_test)
+    version (mir_ion_test)
     @safe unittest
     {
         import std.conv : to;
@@ -678,12 +601,14 @@ struct Timestamp
         static foreach (C; AliasSeq!(char, wchar, dchar))
         {
             static foreach (S; AliasSeq!(C[], const(C)[], immutable(C)[]))
-                assert(Timestamp.fromISOString(to!S("20121221")) == Date(2012, 12, 21));
+                assert(Timestamp.fromISOString(to!S("20121221")) == Timestamp(2012, 12, 21));
         }
     }
 
     /++
-    Creates a $(LREF Timestamp) from a string with the format YYYY-MM-DD.
+    Creates a $(LREF Timestamp) from a string with the format `YYYY-MM-DDThh:mm:ss±hh:mm`
+    or its leading part allowed by the standard.
+
 
     Params:
         str = A string formatted in the way that $(LREF .Timestamp.toISOExtString) formats dates.
@@ -691,52 +616,42 @@ struct Timestamp
 
     Throws:
         $(LREF DateTimeException) if the given string is
-        not in the correct format or if the resulting $(LREF Timestamp) would not
-        be valid. Two arguments overload is `nothrow`.
+        not in the correct format. Two arguments overload is `nothrow`.
     Returns:
         `bool` on success for two arguments overload, and the resulting timestamp for single argument overdload.
     +/
-    static bool fromISOExtString(C)(scope const(C)[] str, out Timestamp value) @safe pure nothrow @nogc
-        if (isSomeChar!C)
-    {
-        import mir.parse: fromString;
+    alias fromISOExtString = fromISOStringImpl!true;
 
-        if (str.length < 10 || str[$-3] != '-' || str[$-6] != '-')
-            return false;
-
-        auto yearStr = str[0 .. $ - 6];
-
-        if ((yearStr[0] == '+' || yearStr[0] == '-') != (yearStr.length > 4))
-            return false;
-
-        return fromString(str[$ - 2 .. $], value.day)
-            && fromString(str[$ - 5 .. $ - 3], value.month)
-            && fromString(yearStr, value.year);
-    }
-
-    /// ditto
-    static Timestamp fromISOExtString(C)(scope const(C)[] str) @safe pure
-        if (isSomeChar!C)
-    {
-        Timestamp ret;
-        if (fromISOExtString(str, ret))
-            return ret;
-        throw InvalidISOExtendedString;
-    }
 
     ///
-    version (mir_test)
+    version (mir_ion_test)
     @safe unittest
     {
-        assert(Timestamp.fromISOExtString("2010-07-04") == Date(2010, 7, 4));
-        assert(Timestamp.fromISOExtString("1998-12-25") == Date(1998, 12, 25));
-        assert(Timestamp.fromISOExtString("0000-01-05") == Date(0, 1, 5));
-        assert(Timestamp.fromISOExtString("-0004-01-05") == Date(-4, 1, 5));
+        assert(Timestamp.fromISOExtString("2010-07-04") == Timestamp(2010, 7, 4));
+        assert(Timestamp.fromISOExtString("1998-12-25") == Timestamp(1998, 12, 25));
+        assert(Timestamp.fromISOExtString("0000-01-05") == Timestamp(0, 1, 5));
+        assert(Timestamp.fromISOExtString("-0004-01-05") == Timestamp(-4, 1, 5));
+
+        assert(Timestamp(2021) == Timestamp.fromISOExtString("2021"));
+        assert(Timestamp(2021) == Timestamp.fromISOExtString("2021T"));
+        assert(Timestamp(2021, 01) == Timestamp.fromISOExtString("2021-01"));
+        assert(Timestamp(2021, 01) == Timestamp.fromISOExtString("2021-01T"));
+        assert(Timestamp(2021, 01, 29) == Timestamp.fromISOExtString("2021-01-29"));
+        assert(Timestamp(2021, 01, 29, 19, 42) == Timestamp.fromISOExtString("2021-01-29T19:42"));
+        assert(Timestamp(2021, 01, 29, 19, 42) == Timestamp.fromISOExtString("2021-01-29T19:42Z"));
+        assert(Timestamp(2021, 01, 29, 19, 42, 12) == Timestamp.fromISOExtString("2021-01-29T19:42:12"));
+        assert(Timestamp(2021, 01, 29, 19, 42, 12, -3, 67) == Timestamp.fromISOExtString("2021-01-29T19:42:12.067Z"));
+        assert(Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60) == Timestamp.fromISOExtString("2021-01-29T19:42:44+07"));
+        assert(Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60 + 30) == Timestamp.fromISOExtString("2021-01-29T20:12:44+07:30"));
+        static assert(Timestamp(2021, 01, 29, 12, 42, 44).withOffset(7 * 60 + 30) == Timestamp.fromISOExtString("2021-01-29T20:12:44+07:30"));
+        static assert(Timestamp(2021, 01, 29,  4, 42, 44).withOffset(- (7 * 60 + 30)) == Timestamp.fromISOExtString("2021-01-28T21:12:44-07:30"));
     }
 
-    version (mir_test)
+    version (mir_ion_test)
     @safe unittest
     {
+        import std.exception: assertThrown;
+
         assertThrown!DateTimeException(Timestamp.fromISOExtString(""));
         assertThrown!DateTimeException(Timestamp.fromISOExtString("990704"));
         assertThrown!DateTimeException(Timestamp.fromISOExtString("0100704"));
@@ -788,13 +703,13 @@ struct Timestamp
         assertThrown!DateTimeException(Timestamp.fromISOExtString("20100704"));
         assertThrown!DateTimeException(Timestamp.fromISOExtString("2010-Jul-04"));
 
-        assert(Timestamp.fromISOExtString("1999-07-06") == Date(1999, 7, 6));
-        assert(Timestamp.fromISOExtString("-1999-07-06") == Date(-1999, 7, 6));
-        assert(Timestamp.fromISOExtString("+01999-07-06") == Date(1999, 7, 6));
+        assert(Timestamp.fromISOExtString("1999-07-06") == Timestamp(1999, 7, 6));
+        assert(Timestamp.fromISOExtString("-1999-07-06") == Timestamp(-1999, 7, 6));
+        assert(Timestamp.fromISOExtString("+01999-07-06") == Timestamp(1999, 7, 6));
     }
 
     // bug# 17801
-    version (mir_test)
+    version (mir_ion_test)
     @safe unittest
     {
         import std.conv : to;
@@ -802,7 +717,7 @@ struct Timestamp
         static foreach (C; AliasSeq!(char, wchar, dchar))
         {
             static foreach (S; AliasSeq!(C[], const(C)[], immutable(C)[]))
-                assert(Timestamp.fromISOExtString(to!S("2012-12-21")) == Date(2012, 12, 21));
+                assert(Timestamp.fromISOExtString(to!S("2012-12-21")) == Timestamp(2012, 12, 21));
         }
     }
 
@@ -815,8 +730,7 @@ struct Timestamp
 
     Throws:
         $(LREF DateTimeException) if the given string is
-        not in the correct format or if the resulting $(LREF Timestamp) would not
-        be valid. Two arguments overload is `nothrow`.
+        not in the correct format. Two arguments overload is `nothrow`.
     Returns:
         `bool` on success for two arguments overload, and the resulting timestamp for single argument overdload.
     +/
@@ -827,12 +741,11 @@ struct Timestamp
     }
 
     ///
-    version (mir_test)
+    version (mir_ion_test)
     @safe pure @nogc unittest
     {
-        assert(Timestamp.fromString("2010-07-04") == Date(2010, 7, 4));
-        assert(Timestamp.fromString("20100704") == Date(2010, 7, 4));
-        assert(Timestamp.fromString("2010-Jul-04") == Date(2010, 7, 4));
+        assert(Timestamp.fromString("2010-07-04") == Timestamp(2010, 7, 4));
+        assert(Timestamp.fromString("20100704") == Timestamp(2010, 7, 4));
     }
 
     /// ditto
@@ -843,5 +756,175 @@ struct Timestamp
         if (fromString(str, ret))
             return ret;
         throw InvalidString;
+    }
+
+    template fromISOStringImpl(bool ext)
+    {
+        static Timestamp fromISOStringImpl(C)(scope const(C)[] str) @safe pure
+            if (isSomeChar!C)
+        {
+            Timestamp ret;
+            if (fromISOStringImpl(str, ret))
+                return ret;
+            throw InvalidISOExtendedString;
+        }
+
+        static bool fromISOStringImpl(C)(scope const(C)[] str, out Timestamp value) @safe pure nothrow @nogc
+            if (isSomeChar!C)
+        {
+            import mir.parse: fromString, parse;
+
+            // YYYY
+            static if (ext)
+            {{
+                auto startIsDigit = str.length && str[0].isDigit;
+                auto strOldLength = str.length;
+                if (!parse(str, value.year))
+                    return false;
+                auto l = strOldLength - str.length;
+                if ((l == 4) != startIsDigit)
+                    return false;
+            }}
+            else
+            {
+                if (str.length < 4 || !str[0].isDigit || !fromString(str[0 .. 4], value.year))
+                    return false;
+                str = str[4 .. $];
+            }
+
+            value.precision = Precision.year;
+            if (str.length == 0 || str == "T")
+                return true;
+            
+            static if (ext)
+            {
+                if (str[0] != '-')
+                    return false;
+                str = str[1 .. $];
+            }
+
+            // MM
+            if (str.length < 2 || !str[0].isDigit || !fromString(str[0 .. 2], value.month))
+                return false;
+            str = str[2 .. $];
+            value.precision = Precision.month;
+            if (str.length == 0 || str == "T")
+                return ext;
+
+            static if (ext)
+            {
+                if (str[0] != '-')
+                    return false;
+                str = str[1 .. $];
+            }
+
+            // DD
+            if (str.length < 2 || !str[0].isDigit || !fromString(str[0 .. 2], value.day))
+                return false;
+            str = str[2 .. $];
+            value.precision = Precision.day;
+            if (str.length == 0)
+                return true;
+
+            // T
+            if (str[0] != 'T')
+                return false;
+            str = str[1 .. $];
+            if (str.length == 0)
+                return true;
+
+            // hh
+            if (str.length < 4 + ext || !str[0].isDigit || !fromString(str[0 .. 2], value.hour))
+                return false;
+            str = str[2 .. $];
+
+            static if (ext)
+            {
+                if (str[0] != ':')
+                    return false;
+                str = str[1 .. $];
+            }
+
+            // mm
+            {
+                uint minute;
+                if (!str[0].isDigit || !fromString(str[0 .. 2], minute))
+                    return false;
+                value.minute = cast(ubyte) minute;
+                str = str[2 .. $];
+                value.precision = Precision.minute;
+                if (str.length == 0)
+                    return true;
+            }
+
+            static if (ext)
+            {
+                if (str[0] != ':')
+                    goto TZ;
+                str = str[1 .. $];
+            }
+
+            // ss
+            {
+                uint second;
+                if (str.length < 2 || !str[0].isDigit)
+                    goto TZ;
+                if (!fromString(str[0 .. 2], second))
+                    return false;
+                value.second = cast(ubyte) second;
+                str = str[2 .. $];
+                value.precision = Precision.second;
+                if (str.length == 0)
+                    return true;
+            }
+
+            // .
+            if (str[0] != '.')
+                goto TZ;
+            str = str[1 .. $];
+            value.precision = Precision.fraction;
+
+            // fraction
+            {
+                const strOldLength = str.length;
+                size_t fractionCoefficient;
+                if (str.length < 1 || !str[0].isDigit || !parse!ulong(str, fractionCoefficient))
+                    return false;
+                sizediff_t fractionExponent = str.length - strOldLength;
+                if (fractionExponent < -12)
+                    return false;
+                value.fractionExponent = cast(byte)fractionExponent;
+                value.fractionCoefficient = fractionCoefficient;
+                if (str.length == 0)
+                    return true;
+            }
+
+        TZ:
+
+            if (str == "Z")
+                return true;
+
+            int hour;
+            int minute;
+            if (str.length < 3 || str[0].isDigit || !fromString(str[0 .. 3], hour))
+                return false;
+            str = str[3 .. $];
+
+            if (str.length)
+            {
+                static if (ext)
+                {
+                    if (str[0] != ':')
+                        return false;
+                    str = str[1 .. $];
+                }
+                if (str.length != 2 || !str[0].isDigit || !fromString(str[0 .. 2], minute))
+                    return false;
+            }
+
+            value.offset = cast(short)(hour * 60 + (hour < 0 ? -minute : minute));
+            value.addMinutes(cast(short)-int(value.offset));
+            return true;
+        }
     }
 }
