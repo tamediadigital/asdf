@@ -5,10 +5,18 @@ copyright "Tamedia Digital, 2016-, Symmetry Investments and Kaleidic Associates,
 license "BSL-1.0"
 dependency "mir-algorithm" version=">=3.10.17"
 
-buildType "unittest" {
+configuration "parser-unittest" {
+    dependency "unit-threaded" version="~>1.0.11"
     buildOptions "unittests" "debugMode" "debugInfo"
-    versions "mir_ion_test"
     dflags "-lowmem"
+    versions "mir_ion_parser_test"
+}
+
+configuration "unittest" {
+    dependency "unit-threaded" version="~>1.0.11"
+    buildOptions "unittests" "debugMode" "debugInfo"
+    dflags "-lowmem"
+    versions "mir_ion_test"
 }
 
 configuration "x86_any" {
