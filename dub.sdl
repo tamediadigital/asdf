@@ -23,6 +23,3 @@ configuration "x86_any" {
     dependency "mir-cpuid" version="~>1.2.6"
     platforms "x86" "x86_64" 
 }
-
-configuration "common" {
-}

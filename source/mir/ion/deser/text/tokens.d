@@ -1,3 +1,6 @@
+/++
+    Token definitions for parsing Ion Text.
++/
 module mir.ion.deser.text.tokens;
 
 /++
@@ -5,82 +8,87 @@ module mir.ion.deser.text.tokens;
 +/
 enum IonTokenType : ubyte 
 {
+    /++ Invalid token +/
     TokenInvalid,
 
-    // EOF
+    /++ EOF +/
     TokenEOF,
 
-    // numbers
+    /++ numbers +/
     TokenNumber,
 
-    // 0b[01]+
+    /++ 0b[01]+ +/
     TokenBinary,
 
-    // 0x[0-9a-fA-F]+
+    /++ 0x[0-9a-fA-F]+ +/
     TokenHex,
 
-    // +inf
+    /++ +inf +/
     TokenFloatInf,
 
-    // -inf
+    /++ -inf +/
     TokenFloatMinusInf,
 
-    // 2020-01-01T00:00:00.000Z
-    // All timestamps compliant to ISO-8601
+    /++
+       2020-01-01T00:00:00.000Z
+
+       All timestamps *must* be compliant to ISO-8601
+    +/
     TokenTimestamp,
 
-    // [a-zA-Z_]+
+    /++ [a-zA-Z_]+ +/
     TokenSymbol,
 
-    // '[^']+'
+    /++ '[^']+' +/
     TokenSymbolQuoted,
 
-    // [+-/*]
+    /++ [+-/*] +/
     TokenSymbolOperator,
 
-    // "[^"]+"
+    /++ "[^"]+" +/
     TokenString,
 
-    // '''[^']+'''
+    /++ '''[^']+''' +/
     TokenLongString,
 
-    // [.]
+    /++ [.] +/
     TokenDot,
 
-    // [,]
+    /++ [,] +/
     TokenComma,
 
-    // :
+    /++ : +/
     TokenColon,
 
-    // ::
+    /++ :: +/
     TokenDoubleColon,
 
-    // (
+    /++ ( +/
     TokenOpenParen,
 
-    // )
+    /++ ) +/
     TokenCloseParen,
 
-    // {
+    /++ { +/
     TokenOpenBrace,
 
-    // }
+    /++ } +/
     TokenCloseBrace,
 
-    // [
+    /++ [ +/
     TokenOpenBracket,
 
-    // ]
+    /++ ] +/
     TokenCloseBracket,
 
-    // {{ 
+    /++ {{ +/ 
     TokenOpenDoubleBrace,
 
-    // }} 
+    /++ }} +/ 
     TokenCloseDoubleBrace
 }
 
+///
 version(mir_ion_test) unittest 
 {
     static assert(!IonTokenType.TokenInvalid);
@@ -89,6 +97,7 @@ version(mir_ion_test) unittest
 }
 
 /++
+Get a stringified version of a token.
 Params:
     code = $(LREF IonTokenType)
 Returns:
@@ -128,7 +137,7 @@ string ionTokenMsg(IonTokenType token) @property
     ];
     return tokens[token - IonTokenType.min];
 }
-
+///
 @safe pure nothrow @nogc
 version(mir_ion_test) unittest
 {
@@ -136,21 +145,57 @@ version(mir_ion_test) unittest
     static assert(IonTokenType.TokenCloseDoubleBrace.ionTokenMsg == "}}");
 }
 
-enum ION_OPERATOR_CHARS = ['!', '#', '%', '&', '*', '+', '-', '.', '/', ';', '<', '=',
+
+/++
+    All valid Ion operator characters.
++/
+static immutable ION_OPERATOR_CHARS = ['!', '#', '%', '&', '*', '+', '-', '.', '/', ';', '<', '=',
 		'>', '?', '@', '^', '`', '|', '~'];
 
-enum ION_WHITESPACE = [' ', '\t', '\n', '\r'];
+/++
+    All characters that Ion considers to be whitespace
++/
+static immutable ION_WHITESPACE = [' ', '\t', '\n', '\r'];
 
-enum ION_STOP_CHARS = [0, '{', '}', '[', ']', '(', ')', ',', '"', '\'',
+/++
+    All characterst that Ion considers to be the end of a token (stop chars)
++/
+static immutable ION_STOP_CHARS = [0, '{', '}', '[', ']', '(', ')', ',', '"', '\'',
 		' ', '\t', '\n', '\r'];
 
 import std.ascii : uppercase, lowercase, fullHexDigits, digits;
-enum ION_DIGITS = digits;
-enum ION_HEX_DIGITS = fullHexDigits;
-enum ION_IDENTIFIER_START_CHARS = lowercase ~ uppercase ~ ['_', '$'];
-enum ION_IDENTIFIER_CHARS = ION_IDENTIFIER_START_CHARS ~ digits;
-enum ION_QUOTED_SYMBOLS = ["", "null", "true", "false", "nan"];
+/++
+    All valid digits within Ion (0-9)
++/
+static immutable ION_DIGITS = digits;
 
+/++
+    All valid hex digits within Ion ([a-fA-F0-9])
++/
+static immutable  ION_HEX_DIGITS = fullHexDigits;
+
+/++
+    All valid characters which can be the beginning of an identifier (a-zA-Z_$)
++/
+static immutable  ION_IDENTIFIER_START_CHARS = lowercase ~ uppercase ~ ['_', '$'];
+
+/++
+    All valid characters which can be within an identifier (a-zA-Z$_0-9)
++/
+static immutable  ION_IDENTIFIER_CHARS = ION_IDENTIFIER_START_CHARS ~ digits;
+
+/++
+    All symbols which must be surrounded by quotes
++/
+static immutable ION_QUOTED_SYMBOLS = ["", "null", "true", "false", "nan"];
+
+/++
+    Check if a character is considered by Ion to be a digit.
+    Params:
+        c = The character to check
+    Returns:
+        true if the character is considered by Ion to be a digit.
++/
 bool isDigit(ubyte c) {
     static foreach(member; ION_DIGITS) {
         if (c == member) return true;
@@ -158,6 +203,27 @@ bool isDigit(ubyte c) {
     return false;
 }
 
+/++
+    Check if a character is considered by Ion to be a hex digit.
+    Params:
+        c = The character to check
+    Returns:
+        true if the character is considered by Ion to be a hex digit.
++/
+bool isHexDigit(ubyte c) {
+    static foreach(member; ION_HEX_DIGITS) {
+        if (c == member) return true;
+    }
+    return false;
+}
+
+/++
+    Check if a character is considered by Ion to be a valid start to an identifier.
+    Params:
+        c = The character to check
+    Returns:
+        true if the character is considered by Ion to be a valid start to an identifier.
++/
 bool isIdentifierStart(ubyte c) {
     static foreach(member; ION_IDENTIFIER_CHARS) {
         if (c == member) return true;
@@ -165,10 +231,24 @@ bool isIdentifierStart(ubyte c) {
     return false;
 }
 
+/++
+    Check if a character is considered by Ion to be a valid part of an identifier.
+    Params:
+        c = The character to check
+    Returns:
+        true if the character is considered by Ion to be a valid part of an identifier.
++/
 bool isIdentifierPart(ubyte c) {
     return isIdentifierStart(c) || isDigit(c);
 }   
 
+/++
+    Check if a character is considered by Ion to be a symbol operator character.
+    Params:
+        c = The character to check
+    Returns:
+        true if the character is considered by Ion to be a symbol operator character.
++/
 bool isOperatorChar(ubyte c) {
     static foreach(member; ION_OPERATOR_CHARS) {
         if (c == member) return true;
@@ -176,13 +256,28 @@ bool isOperatorChar(ubyte c) {
     return false;
 }
 
+/++
+    Check if a character is considered by Ion to be a "stop" character.
+    Params:
+        c = The character to check
+    Returns:
+        true if the character is considered by Ion to be a "stop" character.
++/
 bool isStopChar(ubyte c) {
     static foreach(member; ION_STOP_CHARS) {
         if (c == member) return true;
     }
+
     return false;
 }
 
+/++
+    Check if a character is considered by Ion to be whitespace.
+    Params:
+        c = The character to check
+    Returns:
+        true if the character is considered by Ion to be whitespace.
++/
 bool isWhitespace(ubyte c) {
     static foreach(member; ION_WHITESPACE) {
         if (c == member) return true;
@@ -190,7 +285,13 @@ bool isWhitespace(ubyte c) {
     return false;
 }
 
-
+/++
+    Check if a character is considered by Ion to be a hex digit.
+    Params:
+        c = The character to check
+    Returns:
+        true if the character is considered by Ion to be a hex digit.
++/
 bool symbolNeedsQuotes(string symbol) {
     static foreach(member; ION_QUOTED_SYMBOLS) {
         if (symbol == member) return true;
