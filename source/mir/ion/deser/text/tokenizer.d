@@ -591,7 +591,7 @@ if (isValidTokenizerInput!(Input)) {
 
     }
     ///
-    @("Test scanning for numbers") unittest
+    version(mir_ion_parser_test) @("Test scanning for numbers") unittest
     {
         void test(string txt, IonTokenType expectedToken) {
             auto t = tokenizeString(txt);
