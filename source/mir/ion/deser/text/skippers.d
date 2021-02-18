@@ -10,7 +10,12 @@ import std.range;
 version(mir_ion_parser_test) import unit_threaded;
 
 /++
-    Skip over the contents of a S-Exp/Struct/List/Blob, and return the character after the ending character.
+    Skip over the contents of a S-Exp/Struct/List/Blob.
+    Params:
+        t = The tokenizer
+        term = The last character read from the tokenizer's input range
+    Returns:
+        A character located after the [s-exp, struct, list, blob].
 +/
 T.inputType skipContainer(T)(ref T t, T.inputType term) 
 if (isInstanceOf!(IonTokenizer, T)) {
