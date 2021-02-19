@@ -12,32 +12,44 @@ import std.traits : Unqual;
 /++
     Check to verify that a range meets the specifications (no UTF support, ATM)
 +/
-template isValidTokenizerInput(T) {
+@safe @nogc nothrow template isValidTokenizerInput(T) {
     const isValidElementType = is(Unqual!(ElementType!(T)) == ubyte);
     const isValidTokenizerInput = isValidElementType && isInputRange!(T);
 }
 
 /++
     Create a tokenizer for a given string.
+
+    This function will take in a given string, and will verify that it is a UTF-8/ASCII string.
+    It will then proceed to create a duplicate of the string, and tokenize it.
+
+    $(NOTE Currently, UTF-16/UTF-32 support is not included.)
     Params:
         input = String to tokenize
     Returns:
         [IonTokenizer]
 +/
+@safe
 IonTokenizer!(ubyte[]) tokenizeString(string input) {
-    return tokenize!(ubyte[])(cast(ubyte[])input);
+    import std.string : representation;
+    auto _input = representation(input);
+    assert(is(typeof(_input) == immutable(ubyte)[]), "Expected a single byte-sized representation"); 
+    return tokenize!(ubyte[])(_input.dup);
 }
 
 /++
     Create a tokenizer for a given range.
+    
+    This function will take in a given range, duplicate it, and then tokenize it.
     Params:
         input = Range to tokenize
     Returns:
         [IonTokenizer]
 +/
-IonTokenizer!(Input) tokenize(Input)(Input input) 
+@safe
+IonTokenizer!(Input) tokenize(Input)(immutable(Input) input) 
 if (isValidTokenizerInput!(Input)) {
-    IonTokenizer!(Input) tokenizer = IonTokenizer!(Input)(input);
+    IonTokenizer!(Input) tokenizer = IonTokenizer!(Input)(input.dup);
     return tokenizer;
 }
 
@@ -46,11 +58,9 @@ if (isValidTokenizerInput!(Input)) {
 +/
 struct IonTokenizer(Input) 
 if (isValidTokenizerInput!(Input)) {
+@safe:
     /++ Our input range that we read from +/
     Input input;
-//    enum TAPE_HOLDER_MAX = 4096;
-//    enum TAPE_HOLDER_VAL = TAPE_HOLDER_MAX * 8;
-//    IonTapeHolder!(TAPE_HOLDER_VAL) tapeHolder;
 
     /++ The raw input type that reading an element from our range will return (typically `ubyte`) +/
     alias inputType = Unqual!(ElementType!(Input));
@@ -74,7 +84,6 @@ if (isValidTokenizerInput!(Input)) {
     +/
     this(Input input) {
         this.input = input;
-//        this.tapeHolder = IonTapeHolder!(TAPE_HOLDER_VAL)(TAPE_HOLDER_VAL);
     }
 
     /++ 
@@ -216,9 +225,12 @@ if (isValidTokenizerInput!(Input)) {
     inputType[] peekExactly(int n) {
         inputType[] ret;
         bool hitEOF;
+        size_t EOFlocation;
         for (auto i = 0; i < n; i++) {
             inputType c = readInput();
             if (c == 0) {
+                // jump out, 
+                EOFlocation = this.position;
                 hitEOF = true;
                 break;
             }
@@ -230,7 +242,7 @@ if (isValidTokenizerInput!(Input)) {
         }
 
         if (hitEOF) {
-            throw new MirIonTokenizerException("EOF");
+            unexpectedEOF(EOFlocation);
         }
 
         return ret;
@@ -283,7 +295,7 @@ if (isValidTokenizerInput!(Input)) {
         }
 
         if (this.input.empty) {
-            throw new MirIonTokenizerException("EOF");
+            this.unexpectedEOF();
         }
 
         inputType c;
@@ -762,7 +774,7 @@ if (isValidTokenizerInput!(Input)) {
             }
 
             default:
-                throw new MirIonTokenizerException("Unexpected token " ~ cast(char)c);
+                unexpectedChar(c);
         }
 
         return false;
@@ -794,18 +806,53 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
+        Helper to generate a thrown exception (if an unexpected character is hit)
+    +/
+    void unexpectedChar(string file = __FILE__, int line = __LINE__)(inputType c, size_t pos = -1) {
+        import std.format;
+        string msg;
+        if (pos == -1) pos = this.position;
+        if (c == 0) {
+            msg = format!"Unexpected EOF at position %u"(pos);
+        } else {
+            msg = format!"Unexpected character 0x%02x at position %u"(c, pos);
+        }
+        throw new MirIonTokenizerException(msg, file, line);
+    }
+
+    /++
+        Helper to throw if an unexpected end-of-file is hit.
+    +/
+    void unexpectedEOF(string file = __FILE__, int line = __LINE__)(size_t pos = -1) {
+        if (pos == -1) pos = this.position;
+        unexpectedChar!(file, line)(0, pos);
+    }
+
+    /++
         Ensure that the next item in the range fulfills the predicate given.
         Params:
             pred = A predicate that the next character in the range must fulfill
         Throws:
             [MirIonTokenizerException] if the predicate is not fulfilled
     +/
-    template expect(alias pred = "a") {
+    template expect(alias pred = "a", bool noRead = false, string file = __FILE__, int line = __LINE__) {
         import std.functional : unaryFun;
-        void expect() {
-            inputType c = readInput();
-            if (!unaryFun!pred(c)) {
-                throw new MirIonTokenizerException("Unexpected token " ~ cast(char)c);
+        static if (noRead) {
+            inputType expect(inputType c) {
+                if (!unaryFun!pred(c)) {
+                    unexpectedChar!(file, line)(c);
+                }
+
+                return c;
+            }
+        } else {
+            inputType expect() {
+                inputType c = readInput();
+                if (!unaryFun!pred(c)) {
+                    unexpectedChar!(file, line)(c);
+                }
+
+                return c;
             }
         }
     }
@@ -847,7 +894,7 @@ version(mir_ion_parser_test):
 import unit_threaded;
 
 /++
-    Generic helper to verify the functionality of the parsing code
+    Generic helper to verify the functionality of the parsing code in unit-tests
 +/
 template testRead(T) {
     void testRead(ref T t, ubyte expected) {
@@ -856,7 +903,7 @@ template testRead(T) {
 } 
 
 /++
-    Generic helper to verify the functionality of the parsing code
+    Generic helper to verify the functionality of the parsing code in unit-tests
 +/
 template testPeek(T) {
     void testPeek(ref T t, ubyte expected) {

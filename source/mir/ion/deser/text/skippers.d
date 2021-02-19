@@ -9,6 +9,7 @@ import std.traits : isInstanceOf;
 import std.range;
 version(mir_ion_parser_test) import unit_threaded;
 
+@safe:
 /++
     Skip over the contents of a S-Exp/Struct/List/Blob.
     Params:
@@ -39,9 +40,8 @@ in {
     while (true) {
         c = t.skipWhitespace();
         if (c == term) return;
+        t.expect!("a != 0", true)(c);
         switch (c) {
-            case 0:
-                throw new MirIonTokenizerException("EOF");
             case '"':
                 t.skipStringInternal();
                 break;
@@ -61,10 +61,10 @@ in {
             case '{':
                 c = t.peekOne();
                 if (c == '{') {
-                    if (t.readInput() == 0) throw new MirIonTokenizerException("EOF");
+                    t.expect!"a != 0";
                     t.skipBlobInternal();
                 } else if (c == '}') {
-                    if (t.readInput() == 0) throw new MirIonTokenizerException("EOF");
+                    t.expect!"a != 0";
                 } else {
                     skipContainerInternal!(T)(t, '}');
                 }
@@ -93,25 +93,24 @@ if (isInstanceOf!(IonTokenizer, T)) {
         }
     }
 }
-version(mir_ion_parser_test) {
-    ///
-    @("Test skipping of a single-line comment") unittest 
-    {
-        auto t = tokenizeString("single-line comment\r\nok");
-        t.skipSingleLineComment().shouldEqual(true);
+///
+version(mir_ion_parser_test) @("Test skipping of a single-line comment") unittest 
+{
+    auto t = tokenizeString("single-line comment\r\nok");
+    t.skipSingleLineComment().shouldEqual(true);
 
-        t.testRead('o');
-        t.testRead('k');
-        t.testRead(0);
-    }
-    ///
-    @("Test skipping of a single-line comment on the last line") unittest
-    {
-        auto t = tokenizeString("single-line comment");
-        t.skipSingleLineComment().shouldEqual(true);
-        t.testRead(0);
-    }
+    t.testRead('o');
+    t.testRead('k');
+    t.testRead(0);
 }
+///
+version(mir_ion_parser_test) @("Test skipping of a single-line comment on the last line") unittest
+{
+    auto t = tokenizeString("single-line comment");
+    t.skipSingleLineComment().shouldEqual(true);
+    t.testRead(0);
+}
+
 /++
     Skip over a block comment. This will read up until `*/` is hit.
     Params:
@@ -136,23 +135,21 @@ if (isInstanceOf!(IonTokenizer, T)) {
         }
     }
 }
-version(mir_ion_parser_test) {
-    ///
-    @("Test skipping of an invalid comment") unittest
-    {
-        auto t = tokenizeString("this is a string that never ends");
-        t.skipBlockComment().shouldEqual(false);
-    }
-    ///
-    @("Test skipping of a block comment") unittest
-    {
-        auto t = tokenizeString("this is/ a\nmulti-line /** comment.**/ok");
-        t.skipBlockComment().shouldEqual(true);
+///
+version(mir_ion_parser_test) @("Test skipping of an invalid comment") unittest
+{
+    auto t = tokenizeString("this is a string that never ends");
+    t.skipBlockComment().shouldEqual(false);
+}
+///
+version(mir_ion_parser_test) @("Test skipping of a block comment") unittest
+{
+    auto t = tokenizeString("this is/ a\nmulti-line /** comment.**/ok");
+    t.skipBlockComment().shouldEqual(true);
 
-        t.testRead('o');
-        t.testRead('k');
-        t.testRead(0);
-    }
+    t.testRead('o');
+    t.testRead('k');
+    t.testRead(0);
 }
 
 /++
@@ -179,35 +176,33 @@ if (isInstanceOf!(IonTokenizer, T)) {
 
     return false;
 }
-version(mir_ion_parser_test) {
-    ///
-    @("Test different skipping methods (single-line)") unittest
-    {
-        auto t = tokenizeString("/comment\nok");
-        t.skipComment().shouldEqual(true);
-        t.testRead('o');
-        t.testRead('k');
-        t.testRead(0);
-    }
-    ///
-    @("Test different skipping methods (block)") unittest
-    {
-        auto t = tokenizeString("*comm\nent*/ok");
-        t.skipComment().shouldEqual(true);
-        t.testRead('o');
-        t.testRead('k');
-        t.testRead(0);
-    }
-    ///
-    @("Test different skipping methods (false-alarm)") unittest
-    {
-        auto t = tokenizeString(" 0)");
-        t.skipComment().shouldEqual(false);
-        t.testRead(' ');
-        t.testRead('0');
-        t.testRead(')');
-        t.testRead(0);
-    }
+///
+version(mir_ion_parser_test) @("Test different skipping methods (single-line)") unittest
+{
+    auto t = tokenizeString("/comment\nok");
+    t.skipComment().shouldEqual(true);
+    t.testRead('o');
+    t.testRead('k');
+    t.testRead(0);
+}
+///
+version(mir_ion_parser_test) @("Test different skipping methods (block)") unittest
+{
+    auto t = tokenizeString("*comm\nent*/ok");
+    t.skipComment().shouldEqual(true);
+    t.testRead('o');
+    t.testRead('k');
+    t.testRead(0);
+}
+///
+version(mir_ion_parser_test) @("Test different skipping methods (false-alarm)") unittest
+{
+    auto t = tokenizeString(" 0)");
+    t.skipComment().shouldEqual(false);
+    t.testRead(' ');
+    t.testRead('0');
+    t.testRead(')');
+    t.testRead(0);
 }
 
 /++
@@ -255,11 +250,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
         c = skipDigits!T(t, c);
     }
 
-    if (!t.isStopChar(c)) {
-        throw new MirIonTokenizerException("Unexpected token " ~ cast(char)c);
-    }
-
-    return c;   
+    return t.expect!(t.isStopChar, true)(c);
 }
 ///
 version(mir_ion_parser_test) @("Test skipping over numbers") unittest
@@ -366,24 +357,15 @@ if (isInstanceOf!(IonTokenizer, T)) {
             c = t.readInput();
         }
 
-        if (c != '0') {
-            throw new MirIonTokenizerException("Unexpected token " ~ cast(char)c);
-        }
-
-        t.expect!(isMarker);
-
+        t.expect!("a == '0'", true)(c); // 0
+        t.expect!(isMarker); // 0(x || b)
         while (true) {
             c = t.readInput();
             if (!unaryFun!isValid(c)) {
                 break;
             }
         }
-
-        if (!isStopChar(c)) {
-            throw new MirIonTokenizerException("Unexpected token " ~ cast(char)c);
-        }
-        
-        return c;
+        return t.expect!(isStopChar, true)(c);
     }
 }
 
@@ -410,81 +392,77 @@ if (isInstanceOf!(IonTokenizer, T)) {
             return c;
         }
 
-        if (skipTSDigits(2) != ':') {
-            throw new MirIonTokenizerException("Unexpected token " ~ cast(char)c);
-        }
+        t.expect!("a == ':'", true)(skipTSDigits(2));
         return skipTSDigits(2);
     }
 
     T.inputType skipTSOffsetOrZ(T.inputType c) {
-        if (c == '+' || c == '-') return skipTSOffset(c);
-        if (c == 'z' || c == 'Z') return t.readInput();
-        throw new MirIonTokenizerException("Unexpected token " ~ cast(char)c);
+        t.expect!("a == '+' || a == '-' || a == 'z' || a == 'Z'", true)(c);
+        if (c == '+' || c == '-') 
+            return skipTSOffset(c);
+        if (c == 'z' || c == 'Z') 
+            return t.readInput();
+        assert(0); // should never hit this
     }
 
     T.inputType skipTSFinish(T.inputType c) {
-        if (c.isStopChar()) {
-            return c;
-        }
-        throw new MirIonTokenizerException("Unexpected token " ~ cast(char)c);
+        return t.expect!(isStopChar, true)(c);
     }
 
-    // YYYY
-    T.inputType afterYear = skipTSDigits(4);
+    // YYYY(T || '-')
+    T.inputType afterYear = t.expect!("a == 'T' || a == '-'", true)(skipTSDigits(4));
     if (afterYear == 'T') {
         // skipped yyyyT
         return t.readInput();
-    } else if (afterYear != '-') {
-        throw new MirIonTokenizerException("Unexpected token " ~ cast(char)afterYear);
     }
 
-    // MM
-    T.inputType afterMonth = skipTSDigits(2);
+    // YYYY-MM('T' || '-')
+    T.inputType afterMonth = t.expect!("a == 'T' || a == '-'", true)(skipTSDigits(2));
     if (afterMonth == 'T') {
         // skipped yyyy-mmT
         return t.readInput();
-    } else if (afterMonth != '-') {
-        throw new MirIonTokenizerException("Unexpected token " ~ cast(char)afterMonth);
     }
 
-    // DD
+    // YYYY-MM-DD('T')?
     T.inputType afterDay = skipTSDigits(2);
     if (afterDay != 'T') {
         // skipped yyyy-mm-dd
         return skipTSFinish(afterDay);
     }
 
+    // YYYY-MM-DDT('+' || '-' || 'z' || 'Z' || isDigit)
     T.inputType offsetH = t.readInput();
-
     if (!offsetH.isDigit()) {
+        // YYYY-MM-DDT('+' || '-' || 'z' || 'Z')
         // skipped yyyy-mm-ddT(+hh:mm)
         T.inputType afterOffset = skipTSOffset(offsetH);
         return skipTSFinish(afterOffset);
     }
 
-    T.inputType afterOffsetHH = skipTSDigits(1);
-    if (afterOffsetHH != ':') {
-       throw new MirIonTokenizerException("Unexpected token " ~ cast(char)afterOffsetHH);
-    }
+    // YYYY-MM-DDT[0-9][0-9]:
+    t.expect!("a == ':'", true)(skipTSDigits(1));
 
-    T.inputType afterOffsetMM = skipTSDigits(2);
+    // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9](':' || '+' || '-' || 'z' || 'Z')
+    T.inputType afterOffsetMM = t.expect!("a == ':' || a == '+' || a == '-' || a == 'z' || a == 'Z'", true)(skipTSDigits(2));
     if (afterOffsetMM != ':') {
         // skipped yyyy-mm-ddThh:mmZ
         T.inputType afterOffset = skipTSOffsetOrZ(afterOffsetMM);
         return skipTSFinish(afterOffset);
     }
-
+    // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9]:[0-9][0-9]('.')?
     T.inputType afterOffsetSS = skipTSDigits(2);
     if (afterOffsetSS != '.') {
         T.inputType afterOffset = skipTSOffsetOrZ(afterOffsetSS);
         return skipTSFinish(afterOffset); 
     }
 
+    // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9]*
     T.inputType offsetNS = t.readInput();
     if (isDigit(offsetNS)) {
         offsetNS = skipDigits!T(t, offsetNS);
     }
 
+    // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9]*('+' || '-' || 'z' || 'Z')([0-9][0-9]:[0-9][0-9])?
     T.inputType afterOffsetNS = skipTSOffsetOrZ(offsetNS);
     return skipTSFinish(afterOffsetNS);  
 }
@@ -573,19 +551,13 @@ void skipSymbolQuotedInternal(T)(ref T t)
 if (isInstanceOf!(IonTokenizer, T)) {
     T.inputType c;
     while (true) {
-        c = t.readInput();
+        c = t.expect!"a != 0 && a != '\\n'";
         switch (c) {
-            case 0:
-            case '\n':
-                throw new MirIonTokenizerException("Unexpected token " ~ cast(char)c);
-            
             case '\'':
                 return;
-            
             case '\\':
-                if(t.readInput() == 0) throw new MirIonTokenizerException("EOF");
+                t.expect!"a != 0";
                 break;
-
             default:
                 break;
         }
@@ -664,15 +636,12 @@ void skipStringInternal(T)(ref T t)
 if (isInstanceOf!(IonTokenizer, T)) {
     T.inputType c;
     while (true) {
-        c = t.readInput();
+        c = t.expect!("a != 0 && a != '\\n'");
         switch (c) {
-            case 0:
-            case '\n':
-                throw new MirIonTokenizerException("Unexpected token " ~ cast(char)c);
             case '"':
                 return;
             case '\\':
-                if(t.readInput() == 0) throw new MirIonTokenizerException("EOF");
+                t.expect!"a != 0";
                 break;
             default:
                 break;
@@ -723,17 +692,15 @@ void skipLongStringInternal(T, bool skipComments = true, bool failOnComment = fa
 if (isInstanceOf!(IonTokenizer, T) && __traits(compiles, { t.skipWhitespace!(skipComments, failOnComment); })) {
     T.inputType c;
     while (true) {
-        c = t.readInput();
+        c = t.expect!("a != 0");
         switch (c) {
-            case 0:
-                throw new MirIonTokenizerException("EOF");
             case '\'':
                 if(skipLongStringEnd!(T, skipComments, failOnComment)(t)) {
                     return;
                 }
                 break;
             case '\\':
-                if (t.readInput() == 0) throw new MirIonTokenizerException("EOF");
+                t.expect!("a != 0");
                 break;
             default:
                 break;
@@ -824,9 +791,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
     T.inputType c = t.skipLobWhitespace();
     while (c != '}') {
         c = t.skipLobWhitespace();
-        if (c == 0) {
-            throw new MirIonTokenizerException("EOF");
-        }
+        t.expect!("a != 0", true)(c);
     }
 
     t.expect!("a == '}'");

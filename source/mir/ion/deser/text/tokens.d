@@ -189,6 +189,7 @@ static immutable  ION_IDENTIFIER_CHARS = ION_IDENTIFIER_START_CHARS ~ digits;
 +/
 static immutable ION_QUOTED_SYMBOLS = ["", "null", "true", "false", "nan"];
 
+@safe:
 /++
     Check if a character is considered by Ion to be a digit.
     Params:
