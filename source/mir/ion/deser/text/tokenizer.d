@@ -669,7 +669,7 @@ if (isValidTokenizerInput!(Input)) {
         with(IonTokenType) switch(c) {
             case 0:
                 ok(TokenEOF, true);
-                break;
+                return true;
             case ':':
                 cs = peekOne();
                 if (cs == ':') {
@@ -757,6 +757,7 @@ if (isValidTokenizerInput!(Input)) {
                 unread(c);
                 ok(TokenSymbolOperator, true);
                 return true;
+
            static foreach(member; ION_OPERATOR_CHARS) {
                 static if (member != '+' && member != '-' && member != '"' && member != '.') {
                     case member:
@@ -765,15 +766,18 @@ if (isValidTokenizerInput!(Input)) {
                         return true;
                 }
             }
+
             case '"':
                 ok(TokenString, true);
                 break;
+
             static foreach(member; ION_IDENTIFIER_START_CHARS) {
                 case member:
                     unread(c);
                     ok(TokenSymbol, true);
                     return true;
             } 
+
             static foreach(member; ION_DIGITS) {
                 case member:
                     IonTokenType t = scanForNumber(c);
@@ -784,10 +788,9 @@ if (isValidTokenizerInput!(Input)) {
 
             default:
                 unexpectedChar(c);
+                return false;
         }
-
         return false;
-
     }
 
     /++
