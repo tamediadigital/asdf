@@ -355,8 +355,7 @@ if (isValidTokenizerInput!(Input)) {
             if (this.input.empty) { // TODO: verify if this functionality is correct
                 throw new MirIonTokenizerException("Could not normalize EOF");
             }
-            auto cs = this.input.front;
-            if (cs == '\n') {
+            if (this.input.front == '\n') {
                 this.input.popFront();
             }
             return '\n';
@@ -452,6 +451,16 @@ if (isValidTokenizerInput!(Input)) {
         test(" \r\n /* comment *//* \r\n comment */x", 'x');
     }
 
+    /++
+        Skip whitespace within a clob/blob. 
+
+        This function is just a wrapper around skipWhitespace, but toggles on it's "fail on comment" mode, as
+        comments are not allowed within clobs/blobs.
+        Returns:
+            a character located after the whitespace within a clob/blob
+        Throws:
+            MirIonTokenizerException if a comment is found
+    +/
     inputType skipLobWhitespace() {
         return skipWhitespace!(false, false);
     }
@@ -664,7 +673,7 @@ if (isValidTokenizerInput!(Input)) {
             case ':':
                 cs = peekOne();
                 if (cs == ':') {
-                    auto val = readInput();
+                    skipOne();
                     ok(TokenDoubleColon, false);
                 } else {
                     ok(TokenColon, false);
@@ -673,7 +682,7 @@ if (isValidTokenizerInput!(Input)) {
             case '{': 
                 cs = peekOne();
                 if (cs == '{') {
-                    auto val = readInput();
+                    skipOne();
                     ok(TokenOpenDoubleBrace, true);
                 } else {
                     ok(TokenOpenBrace, true);
@@ -729,7 +738,7 @@ if (isValidTokenizerInput!(Input)) {
             case '-':
                 cs = peekOne();
                 if (isDigit(cs)) {
-                    auto num = readInput();
+                    skipOne();
                     IonTokenType tokenType = scanForNumber(cs);
                     if (tokenType == TokenTimestamp) {
                         throw new MirIonTokenizerException("Cannot have negative timestamps");
@@ -809,7 +818,7 @@ if (isValidTokenizerInput!(Input)) {
         Helper to generate a thrown exception (if an unexpected character is hit)
     +/
     void unexpectedChar(string file = __FILE__, int line = __LINE__)(inputType c, size_t pos = -1) {
-        import std.format;
+        import std.format : format;
         string msg;
         if (pos == -1) pos = this.position;
         if (c == 0) {
