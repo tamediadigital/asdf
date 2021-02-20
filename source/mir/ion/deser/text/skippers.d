@@ -87,7 +87,7 @@ in {
 bool skipSingleLineComment(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     while (true) {
-        auto c = t.readInput();
+        const(T.inputType) c = t.readInput();
         if (c == '\n' || c == 0) {
             return true;
         }
@@ -122,7 +122,7 @@ bool skipBlockComment(T)(ref T t)
 if (isInstanceOf!(IonTokenizer, T)) {
     bool foundStar = false;
     while (true) {
-        auto c = t.readInput();
+        const(T.inputType) c = t.readInput();
         if (foundStar && c == '/') {
             return true;
         }
@@ -164,7 +164,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
     if (t.input.empty) {
         return false;
     }
-    auto c = t.peekOne();
+    const(T.inputType) c = t.peekOne();
     switch(c) {
         case '/':
             return t.skipSingleLineComment();
@@ -410,14 +410,14 @@ if (isInstanceOf!(IonTokenizer, T)) {
     }
 
     // YYYY(T || '-')
-    T.inputType afterYear = t.expect!("a == 'T' || a == '-'", true)(skipTSDigits(4));
+    const(T.inputType) afterYear = t.expect!("a == 'T' || a == '-'", true)(skipTSDigits(4));
     if (afterYear == 'T') {
         // skipped yyyyT
         return t.readInput();
     }
 
     // YYYY-MM('T' || '-')
-    T.inputType afterMonth = t.expect!("a == 'T' || a == '-'", true)(skipTSDigits(2));
+    const(T.inputType) afterMonth = t.expect!("a == 'T' || a == '-'", true)(skipTSDigits(2));
     if (afterMonth == 'T') {
         // skipped yyyy-mmT
         return t.readInput();
@@ -443,7 +443,8 @@ if (isInstanceOf!(IonTokenizer, T)) {
     t.expect!("a == ':'", true)(skipTSDigits(1));
 
     // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9](':' || '+' || '-' || 'z' || 'Z')
-    T.inputType afterOffsetMM = t.expect!("a == ':' || a == '+' || a == '-' || a == 'z' || a == 'Z'", true)(skipTSDigits(2));
+    T.inputType afterOffsetMM = t.expect!("a == ':' || a == '+' || a == '-' || a == 'z' || a == 'Z'", true)
+                                                                                            (skipTSDigits(2));
     if (afterOffsetMM != ':') {
         // skipped yyyy-mm-ddThh:mmZ
         T.inputType afterOffset = skipTSOffsetOrZ(afterOffsetMM);

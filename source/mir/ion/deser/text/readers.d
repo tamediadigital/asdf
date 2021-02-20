@@ -105,8 +105,8 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
         typeof(return) val;
         dchar codePoint = 0;
         for (int i = 0; i < length; i++) {
-            ubyte c = t.expect!isHexDigit;
-            ubyte hexVal = hexLiteral(c);
+            const(ubyte) c = t.expect!isHexDigit;
+            const(ubyte) hexVal = hexLiteral(c);
             codePoint = (codePoint << 4) | hexVal; // TODO: is this correct?
         }
         val = codePoint;
@@ -180,7 +180,7 @@ version(mir_ion_parser_test) @("Test reading a unicode escape") unittest
 string readEscapeSeq(T, bool isClob = false)(ref T t)
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
     import std.utf : toUTF8;
-    ubyte esc = t.peekOne();
+    const(ubyte) esc = t.peekOne();
     if (esc == '\n') {
         t.skipOne();
         return "";
@@ -337,7 +337,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
                     return buf.data.idup;
             } else {
                 case '\'':
-                    auto v = t.peekMax(2);
+                    const(T.inputType[]) v = t.peekMax(2);
                     if (v.length != 2) {
                         goto default;
                     } else {
@@ -540,7 +540,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
     }
 
     T.inputType leader = c;
-    size_t len = buf.length;
+    const(size_t) len = buf.length;
     c = readDigits!T(t, leader, buf);
     if (leader == '0') {
         if (buf.length - len > 1) {
@@ -595,7 +595,8 @@ version(mir_ion_parser_test) @("Test reading numbers") unittest
     test("12341", "12341", IonTypeCode.uInt, 0);
     test("-12312", "12312", IonTypeCode.nInt, 0);
     test("0.420d2", "0.420d2", IonTypeCode.decimal, 0);
-    test("1.1999999999999999555910790149937383830547332763671875e0", "1.1999999999999999555910790149937383830547332763671875e0", IonTypeCode.float_, 0);
+    test("1.1999999999999999555910790149937383830547332763671875e0", 
+         "1.1999999999999999555910790149937383830547332763671875e0", IonTypeCode.float_, 0);
     test("1.1999999999999999e0, ", "1.1999999999999999e0", IonTypeCode.float_, ',');
 }
 
@@ -770,7 +771,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
             return c;
         }
         buf.put(c);
-        T.inputType cs = t.expect!("a == ':'", true)(readTSDigits(2));
+        const(T.inputType) cs = t.expect!("a == ':'", true)(readTSDigits(2));
         buf.put(':');
         return readTSDigits(2);
     }

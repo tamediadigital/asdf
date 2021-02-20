@@ -850,7 +850,7 @@ if (isValidTokenizerInput!(Input)) {
         }
 
         if (c == '/') {
-            inputType c2 = peekOne();
+            const(inputType) c2 = peekOne();
             if (c2 == '/' || c2 == '*') {
                 return true;
             }
