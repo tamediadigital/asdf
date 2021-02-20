@@ -2,6 +2,7 @@
     Token definitions for parsing Ion Text.
 +/
 module mir.ion.deser.text.tokens;
+import std.ascii : uppercase, lowercase, fullHexDigits, digits, isControl, isASCII;
 
 /++
     Ion Token Types
@@ -163,7 +164,6 @@ static immutable ION_WHITESPACE = [' ', '\t', '\n', '\r'];
 static immutable ION_STOP_CHARS = [0, '{', '}', '[', ']', '(', ')', ',', '"', '\'',
 		' ', '\t', '\n', '\r'];
 
-import std.ascii : uppercase, lowercase, fullHexDigits, digits;
 /++
     All valid digits within Ion (0-9)
 +/
@@ -303,6 +303,71 @@ bool symbolNeedsQuotes(string symbol) {
         if (!isIdentifierPart(symbol[i])) return true;
     }
     return false;
+}
+
+// TODO: do we really need these two functions? shouldn't std.ascii provide them?
+
+/++
+    Check if a character is a new-line character.
+
+    Params:
+        c = The character to check
+    Returns:
+        true if a character is considered to be a new-line.
++/
+bool isNewLine(ubyte c) {
+    return c == 0x0A || 0x0D;
+}
+
+/++
+    Check if a character is printable whitespace within a string.
+
+    Params:
+        c = The character to check
+    Returns:
+        true if a character is considered to be printable whitespace.
++/
+bool isStringWhitespace(ubyte c) {
+    return c == 0x09 || c == 0x0B || c == 0x0C;
+}
+
+/++
+    Check if a character is a control character.
+
+    Params:
+        c = The character to check
+    Returns:
+        true if a character is considered a control character.
++/
+bool isControlChar(ubyte c) {
+    return isControl(c);
+}
+
+/++
+    Check if a character is within the valid ASCII range (0x00 - 0x7F)
+    
+    Params:
+        c = The character to check
+    Returns:
+        true if a character is considered to be valid ASCII.
++/
+bool isASCIIChar(ubyte c) {
+    return isASCII(c);
+}
+
+/++
+    Convert a character that represents a hex-digit into it's actual form.
+
+    This is to convert a hex-literal as fast as possible.
+    Params:
+        c = a charact
++/
+ubyte hexLiteral(ubyte c) {
+    import std.conv : to;
+    if (isDigit(c)) return to!(ubyte)(c - digits[0]);
+    else if (c >= 'a' && c <= 'f') return to!(ubyte)(10 + (c - lowercase[0]));
+    else if (c >= 'A' && c <= 'F') return to!(ubyte)(10 + (c - uppercase[0]));
+    throw new MirIonTokenizerException("invalid hex literal");
 }
 
 version(D_Exceptions):

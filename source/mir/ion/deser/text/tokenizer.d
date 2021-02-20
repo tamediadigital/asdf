@@ -33,8 +33,9 @@ import std.traits : Unqual;
 IonTokenizer!(ubyte[]) tokenizeString(string input) {
     import std.string : representation;
     auto _input = representation(input);
+    // cannot handle utf-16/utf-32 as of current, so just rely on utf-8/ascii sized characters
     assert(is(typeof(_input) == immutable(ubyte)[]), "Expected a single byte-sized representation"); 
-    return tokenize!(ubyte[])(_input.dup);
+    return tokenize!(ubyte[])(_input);
 }
 
 /++
@@ -85,6 +86,16 @@ if (isValidTokenizerInput!(Input)) {
     this(Input input) {
         this.input = input;
     }
+
+    /++
+        Variable to indicate if we at the end of our range
+        Returns:
+            true if end of file, false otherwise
+    +/
+    bool isEOF() {
+        return this.input.empty == true || this.currentToken == IonTokenType.TokenEOF;
+    }
+
 
     /++ 
         Unread a given character and append it to the peek buffer 
@@ -558,7 +569,8 @@ if (isValidTokenizerInput!(Input)) {
             return false;
         }
 
-        if (cs[0] == '\'' && cs[1] == '\'') {
+        // If the next two characters are '', then it is a triple-quote.
+        if (cs[0] == '\'' && cs[1] == '\'') { 
             skipExactly(2);
             return true;
         }
@@ -584,6 +596,7 @@ if (isValidTokenizerInput!(Input)) {
             return IonTokenType.TokenInvalid;
         }
 
+        // Check if the first character is a 0, then check if the next character is a radix identifier (binary / hex)
         if (c == '0' && cs.length > 0) {
             switch(cs[0]) {
                 case 'b':
@@ -599,6 +612,7 @@ if (isValidTokenizerInput!(Input)) {
             }
         }
 
+        // Otherwise, it's not, and we check if it's a timestamp or just a plain number.
         if (cs.length == 4) {
             foreach(i; 0 .. 3) {
                 if (!isDigit(cs[i])) return IonTokenType.TokenNumber;
@@ -645,9 +659,9 @@ if (isValidTokenizerInput!(Input)) {
             token = The updated token type
             finished = Whether or not we want to go into the token (and parse it)
     +/
-    void ok(IonTokenType token, bool finished) {
+    void ok(IonTokenType token, bool unfinished) {
         this.currentToken = token;
-        this.finished = finished;
+        this.finished = !unfinished;
     }
 
     /++
@@ -657,13 +671,21 @@ if (isValidTokenizerInput!(Input)) {
     +/
     bool nextToken() {
         inputType c;
+        // if we're finished with the current value, then skip over the rest of it and go to the next token
+        // this typically happens when we hit commas (or the like) and don't have anything to extract
         if (this.finished) {
             c = this.skipValue();
         } else {
             c = skipWhitespace();
         }
 
+        // NOTE: these variable declarations are up here
+        // since we would miss them within the switch decl.
+
+        // have we hit an inf?
         bool inf;
+
+        // second character
         inputType cs;
         
         with(IonTokenType) switch(c) {
@@ -769,7 +791,7 @@ if (isValidTokenizerInput!(Input)) {
 
             case '"':
                 ok(TokenString, true);
-                break;
+                return true;
 
             static foreach(member; ION_IDENTIFIER_START_CHARS) {
                 case member:
@@ -790,7 +812,27 @@ if (isValidTokenizerInput!(Input)) {
                 unexpectedChar(c);
                 return false;
         }
-        return false;
+    }
+
+    /++
+        Finish reading the current token, and skip to the end of it.
+        
+        This function will only work if we are in the middle of reading a token.
+        Returns:
+            false if we already finished with a token,
+            true if we were able to skip to the end of it.
+        Throws:
+            MirIonTokenizerException if we were not able to skip to the end.
+    +/
+    bool finish() {
+        if (finished) {
+            return false;
+        }
+
+        inputType c = this.skipValue();
+        unread(c);
+        finished = true;
+        return true;
     }
 
     /++
@@ -850,7 +892,7 @@ if (isValidTokenizerInput!(Input)) {
     template expect(alias pred = "a", bool noRead = false, string file = __FILE__, int line = __LINE__) {
         import std.functional : unaryFun;
         static if (noRead) {
-            inputType expect(inputType c) {
+            @trusted inputType expect(inputType c) {
                 if (!unaryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
@@ -858,7 +900,7 @@ if (isValidTokenizerInput!(Input)) {
                 return c;
             }
         } else {
-            inputType expect() {
+            @trusted inputType expect() {
                 inputType c = readInput();
                 if (!unaryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
@@ -898,6 +940,39 @@ if (isValidTokenizerInput!(Input)) {
         testFailHex("HIWORLT");
         testFailHex("Tst");
     }
+
+    /++
+        Ensure that the next item in the range does NOT fulfill the predicate given.
+
+        This is the opposite of `expect` - which expects that the predicate is fulfilled.
+        However, for all intents and purposes, the functionality of `expectFalse` is identical to `expect`.
+        Params:
+            pred = A predicate that the next character in the range must NOT fulfill.
+        Throws:
+            [MirIonTokenizerException] if the predicate is fulfilled.
+    +/
+    template expectFalse(alias pred = "a", bool noRead = false, string file = __FILE__, int line = __LINE__) {
+        import std.functional : unaryFun;
+        static if (noRead) {
+            @trusted inputType expectFalse(inputType c) {
+                if (unaryFun!pred(c)) {
+                    unexpectedChar!(file, line)(c);
+                }
+
+                return c;
+            }
+        } else {
+            @trusted inputType expectFalse() {
+                inputType c = readInput();
+                if (unaryFun!pred(c)) {
+                    unexpectedChar!(file, line)(c);
+                }
+
+                return c;
+            }
+        }
+    }
+
 
 }
 

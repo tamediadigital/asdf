@@ -958,6 +958,6 @@ if (isInstanceOf!(IonTokenizer, T)) {
         ret = t.skipWhitespace();
     }
 
-    t.finished = false;
+    t.finished = true;
     return ret;
 }
