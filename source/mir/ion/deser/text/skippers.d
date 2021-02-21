@@ -350,7 +350,7 @@ Returns:
 +/
 template skipRadix(T, alias isMarker, alias isValid)
 if (isInstanceOf!(IonTokenizer, T)) {
-    import std.functional : unaryFun;
+    import mir.functional : naryFun;
     T.inputType skipRadix(ref T t) {
         auto c = t.readInput();
 
@@ -363,7 +363,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
         t.expect!(isMarker); // 0(x || b)
         while (true) {
             c = t.readInput();
-            if (!unaryFun!isValid(c)) {
+            if (!naryFun!isValid(c)) {
                 break;
             }
         }
