@@ -316,8 +316,6 @@ bool symbolNeedsQuotes(string symbol) {
     return false;
 }
 
-// TODO: do we really need these two functions? shouldn't std.ascii provide them?
-
 /++
 Check if a character is a new-line character.
 
