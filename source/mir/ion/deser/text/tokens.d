@@ -1,5 +1,6 @@
 /++
 Token definitions for parsing Ion Text.
+
 Authors: Harrison Ford
 +/
 module mir.ion.deser.text.tokens;
