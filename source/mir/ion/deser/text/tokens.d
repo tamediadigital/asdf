@@ -3,8 +3,6 @@ Token definitions for parsing Ion Text.
 Authors: Harrison Ford
 +/
 module mir.ion.deser.text.tokens;
-import std.ascii : uppercase, lowercase, fullHexDigits, digits, isControl, isASCII;
-
 /++
 Ion Token Types
 +/
@@ -168,22 +166,34 @@ static immutable ION_STOP_CHARS = [0, '{', '}', '[', ']', '(', ')', ',', '"', '\
 /++
 All valid digits within Ion (0-9)
 +/
-static immutable ION_DIGITS = digits;
+static immutable ION_DIGITS = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 /++
 All valid hex digits within Ion ([a-fA-F0-9])
 +/
-static immutable  ION_HEX_DIGITS = fullHexDigits;
+static immutable ION_HEX_DIGITS = ION_DIGITS ~ ['a', 'b', 'c', 'd', 'e', 'f', 'A', 'B', 'C', 'D', 'E', 'F'];
+
+/++
+All valid lowercase letters within Ion
++/
+static immutable ION_LOWERCASE = 
+    ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z'];
+
+/++
+All valid uppercase letters within Ion
++/
+static immutable ION_UPPERCASE =
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'];
 
 /++
 All valid characters which can be the beginning of an identifier (a-zA-Z_$)
 +/
-static immutable  ION_IDENTIFIER_START_CHARS = lowercase ~ uppercase ~ ['_', '$'];
+static immutable ION_IDENTIFIER_START_CHARS = ION_LOWERCASE ~ ION_UPPERCASE ~ ['_', '$'];
 
 /++
 All valid characters which can be within an identifier (a-zA-Z$_0-9)
 +/
-static immutable  ION_IDENTIFIER_CHARS = ION_IDENTIFIER_START_CHARS ~ digits;
+static immutable ION_IDENTIFIER_CHARS = ION_IDENTIFIER_START_CHARS ~ ION_DIGITS;
 
 /++
 All symbols which must be surrounded by quotes
@@ -341,7 +351,7 @@ Returns:
     true if a character is considered a control character.
 +/
 bool isControlChar(ubyte c) {
-    return isControl(c);
+    return c < 0x20 || c == 0x7F;
 }
 
 /++
@@ -353,7 +363,7 @@ Returns:
     true if a character is considered to be valid ASCII.
 +/
 bool isASCIIChar(ubyte c) {
-    return isASCII(c);
+    return c <= 0x7F;
 }
 
 /++
@@ -377,9 +387,9 @@ Params:
     c = a hex character
 +/
 ubyte hexLiteral(ubyte c) {
-    if (isDigit(c)) return cast(ubyte)(c - digits[0]);
-    else if (c >= 'a' && c <= 'f') return cast(ubyte)(10 + (c - lowercase[0]));
-    else if (c >= 'A' && c <= 'F') return cast(ubyte)(10 + (c - uppercase[0]));
+    if (isDigit(c)) return cast(ubyte)(c - ION_DIGITS[0]);
+    else if (c >= 'a' && c <= 'f') return cast(ubyte)(10 + (c - ION_LOWERCASE[0]));
+    else if (c >= 'A' && c <= 'F') return cast(ubyte)(10 + (c - ION_UPPERCASE[0]));
     throw new MirIonTokenizerException("invalid hex literal");
 }
 

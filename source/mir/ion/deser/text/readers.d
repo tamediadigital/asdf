@@ -129,8 +129,8 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
         case 'x':
             return readHexEscapeLiteral!2;
         default:
-            import std.format : format;
-            throw new MirIonTokenizerException(format!"bad escape 0x%02x (location: %ul)"(c, t.position));
+            import mir.format : text;
+            throw new MirIonTokenizerException(text("bad escape 0x", c, " (location: ", t.position, ")"));
     }
 }
 ///
@@ -626,15 +626,15 @@ Returns:
 +/
 T.inputType readRadixDigits(T, alias isValid = isDigit)(ref T t, ref ScopedBuffer!(char) buf) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
-    import std.functional : unaryFun;
+    import mir.functional : naryFun;
     T.inputType c;
     while (true) {
         c = t.readInput();
         if (c == '_') {
-            t.expect!(unaryFun!isValid, true)(t.peekOne());
+            t.expect!(isValid, true)(t.peekOne());
         }
 
-        if (!unaryFun!isValid(c)) {
+        if (!naryFun!isValid(c)) {
             return c;
         }
         buf.put(c);
@@ -653,7 +653,6 @@ Returns:
 +/
 string readRadix(T, alias isMarker, alias isValid)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
-    import std.functional : unaryFun;
     ScopedBuffer!char buf;
     T.inputType c = t.readInput();
     if (c == '-') {
@@ -665,7 +664,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
     t.expect!("a == '0'", true)(c);
     buf.put('0');
     // 0(b || x)
-    c = t.expect!(unaryFun!isMarker);
+    c = t.expect!isMarker;
     buf.put(c);
     t.expect!("a != '_'", true)(t.peekOne()); // cannot be 0x_ or 0b_
     c = readRadixDigits!(T, isValid)(t, buf);

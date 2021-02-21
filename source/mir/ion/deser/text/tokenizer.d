@@ -8,8 +8,8 @@ import mir.ion.deser.text.readers;
 import mir.ion.deser.text.skippers;
 import mir.ion.deser.text.tokens;
 import mir.ion.internal.data_holder : IonTapeHolder;
-import std.range;
 import std.traits : Unqual;
+import std.range;
 
 /++
 Check to verify that a range meets the specifications (no UTF support, ATM)
@@ -864,15 +864,16 @@ if (isValidTokenizerInput!(Input)) {
     Helper to generate a thrown exception (if an unexpected character is hit)
     +/
     void unexpectedChar(string file = __FILE__, int line = __LINE__)(inputType c, size_t pos = -1) {
-        import std.format : format;
-        string msg;
+        import mir.format : print;
+        import mir.appender : ScopedBuffer;
+        ScopedBuffer!char msg;
         if (pos == -1) pos = this.position;
         if (c == 0) {
-            msg = format!"Unexpected EOF at position %u"(pos);
+            msg.print("Unexpected EOF at position ").print(pos);
         } else {
-            msg = format!"Unexpected character 0x%02x at position %u"(c, pos);
+            msg.print("Unexpected character at 0x").print(c).print(" at position ").print(pos);
         }
-        throw new MirIonTokenizerException(msg, file, line);
+        throw new MirIonTokenizerException(msg.data.idup, file, line);
     }
 
     /++
@@ -891,10 +892,10 @@ if (isValidTokenizerInput!(Input)) {
         [MirIonTokenizerException] if the predicate is not fulfilled
     +/
     template expect(alias pred = "a", bool noRead = false, string file = __FILE__, int line = __LINE__) {
-        import std.functional : unaryFun;
+        import mir.functional : naryFun;
         static if (noRead) {
             @trusted inputType expect(inputType c) {
-                if (!unaryFun!pred(c)) {
+                if (!naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
 
@@ -903,7 +904,7 @@ if (isValidTokenizerInput!(Input)) {
         } else {
             @trusted inputType expect() {
                 inputType c = readInput();
-                if (!unaryFun!pred(c)) {
+                if (!naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
 
@@ -953,10 +954,10 @@ if (isValidTokenizerInput!(Input)) {
         [MirIonTokenizerException] if the predicate is fulfilled.
     +/
     template expectFalse(alias pred = "a", bool noRead = false, string file = __FILE__, int line = __LINE__) {
-        import std.functional : unaryFun;
+        import mir.functional : naryFun;
         static if (noRead) {
             @trusted inputType expectFalse(inputType c) {
-                if (unaryFun!pred(c)) {
+                if (naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
 
@@ -965,7 +966,7 @@ if (isValidTokenizerInput!(Input)) {
         } else {
             @trusted inputType expectFalse() {
                 inputType c = readInput();
-                if (unaryFun!pred(c)) {
+                if (naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
 
