@@ -1,5 +1,7 @@
 /++
-    Helpers to skip over a given Ion Text token.
+Helpers to skip over a given Ion Text token.
+
+Authors: Harrison Ford
 +/
 module mir.ion.deser.text.skippers;
 import mir.ion.deser.text.tokenizer;
@@ -11,12 +13,12 @@ version(mir_ion_parser_test) import unit_threaded;
 
 @safe:
 /++
-    Skip over the contents of a S-Exp/Struct/List/Blob.
-    Params:
-        t = The tokenizer
-        term = The last character read from the tokenizer's input range
-    Returns:
-        A character located after the [s-exp, struct, list, blob].
+Skip over the contents of a S-Exp/Struct/List/Blob.
+Params:
+    t = The tokenizer
+    term = The last character read from the tokenizer's input range
+Returns:
+    A character located after the [s-exp, struct, list, blob].
 +/
 T.inputType skipContainer(T)(ref T t, T.inputType term) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -25,11 +27,11 @@ if (isInstanceOf!(IonTokenizer, T)) {
 }
 
 /++
-    Skip over the contents of a S-Exp/Struct/List/Blob, but do not read any character after the terminator.
+Skip over the contents of a S-Exp/Struct/List/Blob, but do not read any character after the terminator.
 
-    Params:
-        t = The tokenizer
-        term = The last character read from the tokenizer's input range
+Params:
+    t = The tokenizer
+    term = The last character read from the tokenizer's input range
 +/
 void skipContainerInternal(T)(ref T t, T.inputType term) 
 if (isInstanceOf!(IonTokenizer, T)) 
@@ -78,11 +80,11 @@ in {
 }
 
 /++
-    Skip over a single line comment. This will read input up until a newline or the EOF is hit.
-    Params:
-        t = The tokenizer
-    Returns:
-        true if it was able to skip over the comment.
+Skip over a single line comment. This will read input up until a newline or the EOF is hit.
+Params:
+    t = The tokenizer
+Returns:
+    true if it was able to skip over the comment.
 +/
 bool skipSingleLineComment(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -153,11 +155,11 @@ version(mir_ion_parser_test) @("Test skipping of a block comment") unittest
 }
 
 /++
-    Skip over a comment (block or single-line) after reading a '/'
-    Params:
-        t = The tokenizer
-    Returns:
-        true if it was able to skip over the comment
+Skip over a comment (block or single-line) after reading a '/'
+Params:
+    t = The tokenizer
+Returns:
+    true if it was able to skip over the comment
 +/
 bool skipComment(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -206,12 +208,12 @@ version(mir_ion_parser_test) @("Test different skipping methods (false-alarm)") 
 }
 
 /++
-    Skip any digits after the last character read.
-    Params:
-        t = The tokenizer
-        _c = The last character read from the tokenizer input range.
-    Returns:
-        A character located after the last digit skipped.
+Skip any digits after the last character read.
+Params:
+    t = The tokenizer
+    _c = The last character read from the tokenizer input range.
+Returns:
+    A character located after the last digit skipped.
 +/
 T.inputType skipDigits(T)(ref T t, T.inputType _c)
 if(isInstanceOf!(IonTokenizer, T)) {
@@ -223,11 +225,11 @@ if(isInstanceOf!(IonTokenizer, T)) {
 }
 
 /++
-    Skip over a non-[hex, binary] number.
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the number skipped.
+Skip over a non-[hex, binary] number.
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the number skipped.
 +/
 T.inputType skipNumber(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -275,11 +277,11 @@ version(mir_ion_parser_test) @("Test skipping over numbers") unittest
 }
 
 /++
-    Skip over a binary number.
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the number skipped.
+Skip over a binary number.
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the number skipped.
 +/
 T.inputType skipBinary(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -306,11 +308,11 @@ version(mir_ion_parser_test) @("Test skipping over binary numbers") unittest
 }
 
 /++
-    Skip over a hex number.
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the number skipped.
+Skip over a hex number.
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the number skipped.
 +/
 T.inputType skipHex(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -338,13 +340,13 @@ version(mir_ion_parser_test) @("Test skipping over hex numbers") unittest
 }
 
 /++
-    Skip over a number given two predicates to determine the number's marker (`0x`, `0b`) and if any input is valid.
-    Params:
-        isMarker = A predicate which determines if the marker in a number is valid.
-        isValid = A predicate which determines the validity of digits within a number.
-        t = The tokenizer
-    Returns:
-        A character located after the number skipped.
+Skip over a number given two predicates to determine the number's marker (`0x`, `0b`) and if any input is valid.
+Params:
+    isMarker = A predicate which determines if the marker in a number is valid.
+    isValid = A predicate which determines the validity of digits within a number.
+    t = The tokenizer
+Returns:
+    A character located after the number skipped.
 +/
 template skipRadix(T, alias isMarker, alias isValid)
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -370,11 +372,11 @@ if (isInstanceOf!(IonTokenizer, T)) {
 }
 
 /++
-    Skip over a timestamp (compliant to ISO 8601)
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the timestamp skipped.
+Skip over a timestamp (compliant to ISO 8601)
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the timestamp skipped.
 +/
 T.inputType skipTimestamp(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -509,11 +511,11 @@ version(mir_ion_parser_test) @("Test skipping over timestamps") unittest
 }
 
 /++
-    Skip over a symbol.
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the symbol skipped.
+Skip over a symbol.
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the symbol skipped.
 +/
 T.inputType skipSymbol(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -544,9 +546,9 @@ version(mir_ion_parser_test) @("Test skipping over symbols") unittest
 }
 
 /++
-    Skip over a quoted symbol, but do not read the character after.
-    Params:
-        t = The tokenizer
+Skip over a quoted symbol, but do not read the character after.
+Params:
+    t = The tokenizer
 +/
 void skipSymbolQuotedInternal(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -566,11 +568,11 @@ if (isInstanceOf!(IonTokenizer, T)) {
 }
 
 /++
-    Skip over a quoted symbol
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the quoted symbol skipped.
+Skip over a quoted symbol
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the quoted symbol skipped.
 +/
 T.inputType skipSymbolQuoted(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -599,11 +601,11 @@ version(mir_ion_parser_test) @("Test skipping over quoted symbols") unittest
 }
 
 /++
-    Skip over a symbol operator.
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the symbol operator skipped.
+Skip over a symbol operator.
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the symbol operator skipped.
 +/
 T.inputType skipSymbolOperator(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -629,9 +631,9 @@ version(mir_ion_parser_test) @("Test skipping over symbol operators") unittest
 }
 
 /++
-    Skip over a string, but do not read the character following it.
-    Params:
-        t = The tokenizer
+Skip over a string, but do not read the character following it.
+Params:
+    t = The tokenizer
 +/
 void skipStringInternal(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -651,11 +653,11 @@ if (isInstanceOf!(IonTokenizer, T)) {
 }
 
 /++
-    Skip over a string.
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the string skipped.
+Skip over a string.
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the string skipped.
 +/
 T.inputType skipString(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -685,9 +687,9 @@ version(mir_ion_parser_test) @("Test skipping over strings") unittest
 }
 
 /++
-    Skip over a long string, but do not read the character following it.
-    Params:
-        t = The tokenizer
+Skip over a long string, but do not read the character following it.
+Params:
+    t = The tokenizer
 +/
 void skipLongStringInternal(T, bool skipComments = true, bool failOnComment = false)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && __traits(compiles, { t.skipWhitespace!(skipComments, failOnComment); })) {
@@ -710,11 +712,11 @@ if (isInstanceOf!(IonTokenizer, T) && __traits(compiles, { t.skipWhitespace!(ski
 }
 
 /++
-    Skip over the end of a long string (`'''``)
-    Params:
-        t = The tokenizer
-    Returns:
-        true if it was able to skip over the end of the long string.
+Skip over the end of a long string (`'''``)
+Params:
+    t = The tokenizer
+Returns:
+    true if it was able to skip over the end of the long string.
 +/
 bool skipLongStringEnd(T, bool skipComments = true, bool failOnComment = false)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && __traits(compiles, { t.skipWhitespace!(skipComments, failOnComment); })) {
@@ -736,11 +738,11 @@ if (isInstanceOf!(IonTokenizer, T) && __traits(compiles, { t.skipWhitespace!(ski
 }
 
 /++
-    Skip over a long string (marked by `'''`)
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the long string skipped.
+Skip over a long string (marked by `'''`)
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the long string skipped.
 +/
 T.inputType skipLongString(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -758,11 +760,11 @@ version(mir_ion_parser_test) @("Test skipping over long strings") unittest
 }
 
 /++
-    Skip over a blob.
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the blob skipped.
+Skip over a blob.
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the blob skipped.
 +/
 T.inputType skipBlob(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -783,9 +785,9 @@ version(mir_ion_parser_test) @("Test skipping over blobs") unittest
 }
 
 /++
-    Skip over a blob, but do not read the character following it.
-    Params:
-        t = The tokenizer
+Skip over a blob, but do not read the character following it.
+Params:
+    t = The tokenizer
 +/
 void skipBlobInternal(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -801,11 +803,11 @@ if (isInstanceOf!(IonTokenizer, T)) {
 }
 
 /++
-    Skip over a struct.
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the struct skipped.
+Skip over a struct.
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the struct skipped.
 +/
 T.inputType skipStruct(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -823,22 +825,24 @@ version(mir_ion_parser_test) @("Test skipping over structs") unittest
     test("[\"foo bar baz\"]},", ',');
     test("{}},{}", ','); // skip over an embedded struct inside of a struct
 }
+
 /++
-    Skip over a struct, but do not read the character following it.
-    Params:
-        t = The tokenizer
+Skip over a struct, but do not read the character following it.
+Params:
+    t = The tokenizer
 +/
 void skipStructInternal(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     skipContainerInternal!T(t, '}');
     return;
 }
+
 /++
-    Skip over a S-expression.
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the S-expression skipped.
+Skip over a S-expression.
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the S-expression skipped.
 +/
 T.inputType skipSexp(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -857,9 +861,9 @@ version(mir_ion_parser_test) @("Test skipping over S-Exps") unittest
 }
 
 /++
-    Skip over a S-expression, but do not read the character following it.
-    Params:
-        t = The tokenizer
+Skip over a S-expression, but do not read the character following it.
+Params:
+    t = The tokenizer
 +/
 void skipSexpInternal(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -868,11 +872,11 @@ if (isInstanceOf!(IonTokenizer, T)) {
 }
 
 /++
-    Skip over a list.
-    Params:
-        t = The tokenizer
-    Returns:
-        A character located after the list skipped.
+Skip over a list.
+Params:
+    t = The tokenizer
+Returns:
+    A character located after the list skipped.
 +/
 T.inputType skipList(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -891,9 +895,9 @@ version(mir_ion_parser_test) @("Test skipping over a list") unittest
 }
 
 /++
-    Skip over a list, but do not read the character following it.
-    Params:
-        t = The tokenizer
+Skip over a list, but do not read the character following it.
+Params:
+    t = The tokenizer
 +/
 void skipListInternal(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
@@ -902,11 +906,11 @@ if (isInstanceOf!(IonTokenizer, T)) {
 }
 
 /++
-    Skip over the current token.
-    Params:
-        t = The tokenizer
-    Returns:
-        A non-whitespace character following the current token.
+Skip over the current token.
+Params:
+    t = The tokenizer
+Returns:
+    A non-whitespace character following the current token.
 +/
 T.inputType skipValue(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {

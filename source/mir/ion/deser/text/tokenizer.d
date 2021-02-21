@@ -1,5 +1,7 @@
 /++
-    Tokenizer to split up the contents of an Ion Text file into tokens
+Tokenizer to split up the contents of an Ion Text file into tokens
+
+Authors: Harrison Ford
 +/
 module mir.ion.deser.text.tokenizer;
 import mir.ion.deser.text.readers;
@@ -10,7 +12,7 @@ import std.range;
 import std.traits : Unqual;
 
 /++
-    Check to verify that a range meets the specifications (no UTF support, ATM)
+Check to verify that a range meets the specifications (no UTF support, ATM)
 +/
 @safe @nogc nothrow template isValidTokenizerInput(T) {
     const isValidElementType = is(Unqual!(ElementType!(T)) == ubyte);
@@ -18,16 +20,16 @@ import std.traits : Unqual;
 }
 
 /++
-    Create a tokenizer for a given string.
+Create a tokenizer for a given string.
 
-    This function will take in a given string, and will verify that it is a UTF-8/ASCII string.
-    It will then proceed to create a duplicate of the string, and tokenize it.
+This function will take in a given string, and will verify that it is a UTF-8/ASCII string.
+It will then proceed to create a duplicate of the string, and tokenize it.
 
-    $(NOTE Currently, UTF-16/UTF-32 support is not included.)
-    Params:
-        input = String to tokenize
-    Returns:
-        [IonTokenizer]
+$(NOTE Currently, UTF-16/UTF-32 support is not included.)
+Params:
+    input = String to tokenize
+Returns:
+    [IonTokenizer]
 +/
 @safe
 IonTokenizer!(ubyte[]) tokenizeString(string input) {
@@ -39,13 +41,13 @@ IonTokenizer!(ubyte[]) tokenizeString(string input) {
 }
 
 /++
-    Create a tokenizer for a given range.
-    
-    This function will take in a given range, duplicate it, and then tokenize it.
-    Params:
-        input = Range to tokenize
-    Returns:
-        [IonTokenizer]
+Create a tokenizer for a given range.
+
+This function will take in a given range, duplicate it, and then tokenize it.
+Params:
+    input = Range to tokenize
+Returns:
+    [IonTokenizer]
 +/
 @safe
 IonTokenizer!(Input) tokenize(Input)(immutable(Input) input) 
@@ -55,7 +57,7 @@ if (isValidTokenizerInput!(Input)) {
 }
 
 /++
-    Tokenizer based off of how ion-go handles tokenization
+Tokenizer based off of how ion-go handles tokenization
 +/
 struct IonTokenizer(Input) 
 if (isValidTokenizerInput!(Input)) {
@@ -79,18 +81,18 @@ if (isValidTokenizerInput!(Input)) {
     IonTokenType currentToken;
 
     /++ 
-        Constructor
-        Params:
-            input = The input range to read over 
+    Constructor
+    Params:
+        input = The input range to read over 
     +/
     this(Input input) {
         this.input = input;
     }
 
     /++
-        Variable to indicate if we at the end of our range
-        Returns:
-            true if end of file, false otherwise
+    Variable to indicate if we at the end of our range
+    Returns:
+        true if end of file, false otherwise
     +/
     bool isEOF() {
         return this.input.empty == true || this.currentToken == IonTokenType.TokenEOF;
@@ -98,9 +100,9 @@ if (isValidTokenizerInput!(Input)) {
 
 
     /++ 
-        Unread a given character and append it to the peek buffer 
-        Params:
-            c = Character to append to the top of the peek buffer.
+    Unread a given character and append it to the peek buffer 
+    Params:
+        c = Character to append to the top of the peek buffer.
     +/
     void unread(inputType c) {
         if (this.position <= 0) {
@@ -145,9 +147,9 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++ 
-        Pop the top-most character off of the peek buffer, and return it 
-        Returns:
-            a character representing the top-most character on the peek buffer.
+    Pop the top-most character off of the peek buffer, and return it 
+    Returns:
+        a character representing the top-most character on the peek buffer.
     +/
     inputType popFromPeekBuffer() 
     in {
@@ -159,11 +161,10 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++ 
-        Skip a single character within our input range, and discard it 
-        Returns:
-            true if it was able to skip a single character
-
-            false if it was unable (due to hitting an EOF or the like)
+    Skip a single character within our input range, and discard it 
+    Returns:
+        true if it was able to skip a single character,
+        false if it was unable (due to hitting an EOF or the like)
     +/
     bool skipOne() {
         const inputType c = readInput();
@@ -340,13 +341,13 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Read a single character from the input range (or from the peek buffer, if it's not empty)
+    Read a single character from the input range (or from the peek buffer, if it's not empty)
 
-        $(NOTE `readInput` normalizes CRLF to a simple new-line.)
-        Returns:
-            a single character from the input range, or 0 if the EOF is encountered.
-        Throws:
-            [MirIonTokenizerException]
+    $(NOTE `readInput` normalizes CRLF to a simple new-line.)
+    Returns:
+        a single character from the input range, or 0 if the EOF is encountered.
+    Throws:
+        [MirIonTokenizerException]
     +/
     inputType readInput() {
         this.position++;
@@ -403,15 +404,15 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Skip any whitespace that is present between our current token and the next valid token.
+    Skip any whitespace that is present between our current token and the next valid token.
 
-        Additionally, skip comments (or fail on comments).
+    Additionally, skip comments (or fail on comments).
 
-        $(NOTE `skipComments` and `failOnComment` cannot both be true.)
-        Returns:
-            The character located directly after the whitespace.
-        Throws:
-            [MirIonTokenizerException]
+    $(NOTE `skipComments` and `failOnComment` cannot both be true.)
+    Returns:
+        The character located directly after the whitespace.
+    Throws:
+        [MirIonTokenizerException]
     +/
     inputType skipWhitespace(bool skipComments = true, bool failOnComment = false)() 
     if (skipComments != failOnComment || (skipComments == false && skipComments == failOnComment)) { // just a sanity check, we cannot skip comments and also fail on comments -- it is one or another (fail or skip)
@@ -463,14 +464,14 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Skip whitespace within a clob/blob. 
+    Skip whitespace within a clob/blob. 
 
-        This function is just a wrapper around skipWhitespace, but toggles on it's "fail on comment" mode, as
-        comments are not allowed within clobs/blobs.
-        Returns:
-            a character located after the whitespace within a clob/blob
-        Throws:
-            MirIonTokenizerException if a comment is found
+    This function is just a wrapper around skipWhitespace, but toggles on it's "fail on comment" mode, as
+    comments are not allowed within clobs/blobs.
+    Returns:
+        a character located after the whitespace within a clob/blob
+    Throws:
+        MirIonTokenizerException if a comment is found
     +/
     inputType skipLobWhitespace() {
         return skipWhitespace!(false, false);
@@ -492,12 +493,12 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Check if the next characters within the input range are the special "infinity" type.
+    Check if the next characters within the input range are the special "infinity" type.
 
-        Params:
-            c = The last character read off of the stream (typically '+' or '-')
-        Returns:
-            true if it is the infinity type, false if it is not.
+    Params:
+        c = The last character read off of the stream (typically '+' or '-')
+    Returns:
+        true if it is the infinity type, false if it is not.
     +/
     bool isInfinity(inputType c) {
         if (c != '+' && c != '-') return false;
@@ -554,12 +555,12 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Check if the current character selected is part of a triple quote (''')
+    Check if the current character selected is part of a triple quote (''')
 
-        $(NOTE This function will not throw if an EOF is hit. It will simply return false.)
-        Returns:
-            true if the character is part of a triple quote,
-            false if it is not.
+    $(NOTE This function will not throw if an EOF is hit. It will simply return false.)
+    Returns:
+        true if the character is part of a triple quote,
+        false if it is not.
     +/
     bool isTripleQuote() {
         inputType[] cs;
@@ -578,13 +579,13 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Check if the current character selected is part of a whole number.
+    Check if the current character selected is part of a whole number.
 
-        If it is part of a whole number, then return the type of number (hex, binary, timestamp, number)
-        Params:
-            c = The last character read from the range
-        Returns:
-            the corresponding number type (or invalid)
+    If it is part of a whole number, then return the type of number (hex, binary, timestamp, number)
+    Params:
+        c = The last character read from the range
+    Returns:
+        the corresponding number type (or invalid)
     +/
     IonTokenType scanForNumber(inputType c) in {
         assert(isDigit(c), "Scan for number called with non-digit number");
@@ -654,10 +655,10 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Set the current token, and if we want to go into the token.
-        Params:
-            token = The updated token type
-            finished = Whether or not we want to go into the token (and parse it)
+    Set the current token, and if we want to go into the token.
+    Params:
+        token = The updated token type
+        finished = Whether or not we want to go into the token (and parse it)
     +/
     void ok(IonTokenType token, bool unfinished) {
         this.currentToken = token;
@@ -665,9 +666,9 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Read the next token from the range.
-        Returns:
-            true if it was able to read a valid token from the range.
+    Read the next token from the range.
+    Returns:
+        true if it was able to read a valid token from the range.
     +/
     bool nextToken() {
         inputType c;
@@ -815,14 +816,14 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Finish reading the current token, and skip to the end of it.
-        
-        This function will only work if we are in the middle of reading a token.
-        Returns:
-            false if we already finished with a token,
-            true if we were able to skip to the end of it.
-        Throws:
-            MirIonTokenizerException if we were not able to skip to the end.
+    Finish reading the current token, and skip to the end of it.
+    
+    This function will only work if we are in the middle of reading a token.
+    Returns:
+        false if we already finished with a token,
+        true if we were able to skip to the end of it.
+    Throws:
+        MirIonTokenizerException if we were not able to skip to the end.
     +/
     bool finish() {
         if (finished) {
@@ -836,13 +837,13 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Check if the given character is a "stop" character.
+    Check if the given character is a "stop" character.
 
-        Stop characters are typically terminators of objects, but here we overload and check if there's a comment after our character.
-        Params:
-            c = The last character read from the input range.
-        Returns:
-            true if the character is the "stop" character.
+    Stop characters are typically terminators of objects, but here we overload and check if there's a comment after our character.
+    Params:
+        c = The last character read from the input range.
+    Returns:
+        true if the character is the "stop" character.
     +/
     bool isStopChar(inputType c) {
         if (mir.ion.deser.text.tokens.isStopChar(c)) { // make sure
@@ -860,7 +861,7 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Helper to generate a thrown exception (if an unexpected character is hit)
+    Helper to generate a thrown exception (if an unexpected character is hit)
     +/
     void unexpectedChar(string file = __FILE__, int line = __LINE__)(inputType c, size_t pos = -1) {
         import std.format : format;
@@ -875,7 +876,7 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Helper to throw if an unexpected end-of-file is hit.
+    Helper to throw if an unexpected end-of-file is hit.
     +/
     void unexpectedEOF(string file = __FILE__, int line = __LINE__)(size_t pos = -1) {
         if (pos == -1) pos = this.position;
@@ -883,11 +884,11 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Ensure that the next item in the range fulfills the predicate given.
-        Params:
-            pred = A predicate that the next character in the range must fulfill
-        Throws:
-            [MirIonTokenizerException] if the predicate is not fulfilled
+    Ensure that the next item in the range fulfills the predicate given.
+    Params:
+        pred = A predicate that the next character in the range must fulfill
+    Throws:
+        [MirIonTokenizerException] if the predicate is not fulfilled
     +/
     template expect(alias pred = "a", bool noRead = false, string file = __FILE__, int line = __LINE__) {
         import std.functional : unaryFun;
@@ -942,14 +943,14 @@ if (isValidTokenizerInput!(Input)) {
     }
 
     /++
-        Ensure that the next item in the range does NOT fulfill the predicate given.
+    Ensure that the next item in the range does NOT fulfill the predicate given.
 
-        This is the opposite of `expect` - which expects that the predicate is fulfilled.
-        However, for all intents and purposes, the functionality of `expectFalse` is identical to `expect`.
-        Params:
-            pred = A predicate that the next character in the range must NOT fulfill.
-        Throws:
-            [MirIonTokenizerException] if the predicate is fulfilled.
+    This is the opposite of `expect` - which expects that the predicate is fulfilled.
+    However, for all intents and purposes, the functionality of `expectFalse` is identical to `expect`.
+    Params:
+        pred = A predicate that the next character in the range must NOT fulfill.
+    Throws:
+        [MirIonTokenizerException] if the predicate is fulfilled.
     +/
     template expectFalse(alias pred = "a", bool noRead = false, string file = __FILE__, int line = __LINE__) {
         import std.functional : unaryFun;
@@ -981,7 +982,7 @@ version(mir_ion_parser_test):
 import unit_threaded;
 
 /++
-    Generic helper to verify the functionality of the parsing code in unit-tests
+Generic helper to verify the functionality of the parsing code in unit-tests
 +/
 template testRead(T) {
     void testRead(ref T t, ubyte expected) {
@@ -990,7 +991,7 @@ template testRead(T) {
 } 
 
 /++
-    Generic helper to verify the functionality of the parsing code in unit-tests
+Generic helper to verify the functionality of the parsing code in unit-tests
 +/
 template testPeek(T) {
     void testPeek(ref T t, ubyte expected) {

@@ -1,11 +1,12 @@
 /++
-    Token definitions for parsing Ion Text.
+Token definitions for parsing Ion Text.
+Authors: Harrison Ford
 +/
 module mir.ion.deser.text.tokens;
 import std.ascii : uppercase, lowercase, fullHexDigits, digits, isControl, isASCII;
 
 /++
-    Ion Token Types
+Ion Token Types
 +/
 enum IonTokenType : ubyte 
 {
@@ -31,9 +32,9 @@ enum IonTokenType : ubyte
     TokenFloatMinusInf,
 
     /++
-       2020-01-01T00:00:00.000Z
+    2020-01-01T00:00:00.000Z
 
-       All timestamps *must* be compliant to ISO-8601
+    All timestamps *must* be compliant to ISO-8601
     +/
     TokenTimestamp,
 
@@ -148,54 +149,54 @@ version(mir_ion_test) unittest
 
 
 /++
-    All valid Ion operator characters.
+All valid Ion operator characters.
 +/
 static immutable ION_OPERATOR_CHARS = ['!', '#', '%', '&', '*', '+', '-', '.', '/', ';', '<', '=',
-		'>', '?', '@', '^', '`', '|', '~'];
+        '>', '?', '@', '^', '`', '|', '~'];
 
 /++
-    All characters that Ion considers to be whitespace
+All characters that Ion considers to be whitespace
 +/
 static immutable ION_WHITESPACE = [' ', '\t', '\n', '\r'];
 
 /++
-    All characterst that Ion considers to be the end of a token (stop chars)
+All characters that Ion considers to be the end of a token (stop chars)
 +/
 static immutable ION_STOP_CHARS = [0, '{', '}', '[', ']', '(', ')', ',', '"', '\'',
-		' ', '\t', '\n', '\r'];
+        ' ', '\t', '\n', '\r'];
 
 /++
-    All valid digits within Ion (0-9)
+All valid digits within Ion (0-9)
 +/
 static immutable ION_DIGITS = digits;
 
 /++
-    All valid hex digits within Ion ([a-fA-F0-9])
+All valid hex digits within Ion ([a-fA-F0-9])
 +/
 static immutable  ION_HEX_DIGITS = fullHexDigits;
 
 /++
-    All valid characters which can be the beginning of an identifier (a-zA-Z_$)
+All valid characters which can be the beginning of an identifier (a-zA-Z_$)
 +/
 static immutable  ION_IDENTIFIER_START_CHARS = lowercase ~ uppercase ~ ['_', '$'];
 
 /++
-    All valid characters which can be within an identifier (a-zA-Z$_0-9)
+All valid characters which can be within an identifier (a-zA-Z$_0-9)
 +/
 static immutable  ION_IDENTIFIER_CHARS = ION_IDENTIFIER_START_CHARS ~ digits;
 
 /++
-    All symbols which must be surrounded by quotes
+All symbols which must be surrounded by quotes
 +/
 static immutable ION_QUOTED_SYMBOLS = ["", "null", "true", "false", "nan"];
 
 @safe:
 /++
-    Check if a character is considered by Ion to be a digit.
-    Params:
-        c = The character to check
-    Returns:
-        true if the character is considered by Ion to be a digit.
+Check if a character is considered by Ion to be a digit.
+Params:
+    c = The character to check
+Returns:
+    true if the character is considered by Ion to be a digit.
 +/
 bool isDigit(ubyte c) {
     static foreach(member; ION_DIGITS) {
@@ -205,11 +206,11 @@ bool isDigit(ubyte c) {
 }
 
 /++
-    Check if a character is considered by Ion to be a hex digit.
-    Params:
-        c = The character to check
-    Returns:
-        true if the character is considered by Ion to be a hex digit.
+Check if a character is considered by Ion to be a hex digit.
+Params:
+    c = The character to check
+Returns:
+    true if the character is considered by Ion to be a hex digit.
 +/
 bool isHexDigit(ubyte c) {
     static foreach(member; ION_HEX_DIGITS) {
@@ -219,11 +220,11 @@ bool isHexDigit(ubyte c) {
 }
 
 /++
-    Check if a character is considered by Ion to be a valid start to an identifier.
-    Params:
-        c = The character to check
-    Returns:
-        true if the character is considered by Ion to be a valid start to an identifier.
+Check if a character is considered by Ion to be a valid start to an identifier.
+Params:
+    c = The character to check
+Returns:
+    true if the character is considered by Ion to be a valid start to an identifier.
 +/
 bool isIdentifierStart(ubyte c) {
     static foreach(member; ION_IDENTIFIER_CHARS) {
@@ -233,22 +234,22 @@ bool isIdentifierStart(ubyte c) {
 }
 
 /++
-    Check if a character is considered by Ion to be a valid part of an identifier.
-    Params:
-        c = The character to check
-    Returns:
-        true if the character is considered by Ion to be a valid part of an identifier.
+Check if a character is considered by Ion to be a valid part of an identifier.
+Params:
+    c = The character to check
+Returns:
+    true if the character is considered by Ion to be a valid part of an identifier.
 +/
 bool isIdentifierPart(ubyte c) {
     return isIdentifierStart(c) || isDigit(c);
 }   
 
 /++
-    Check if a character is considered by Ion to be a symbol operator character.
-    Params:
-        c = The character to check
-    Returns:
-        true if the character is considered by Ion to be a symbol operator character.
+Check if a character is considered by Ion to be a symbol operator character.
+Params:
+    c = The character to check
+Returns:
+    true if the character is considered by Ion to be a symbol operator character.
 +/
 bool isOperatorChar(ubyte c) {
     static foreach(member; ION_OPERATOR_CHARS) {
@@ -258,11 +259,11 @@ bool isOperatorChar(ubyte c) {
 }
 
 /++
-    Check if a character is considered by Ion to be a "stop" character.
-    Params:
-        c = The character to check
-    Returns:
-        true if the character is considered by Ion to be a "stop" character.
+Check if a character is considered by Ion to be a "stop" character.
+Params:
+    c = The character to check
+Returns:
+    true if the character is considered by Ion to be a "stop" character.
 +/
 bool isStopChar(ubyte c) {
     static foreach(member; ION_STOP_CHARS) {
@@ -273,11 +274,11 @@ bool isStopChar(ubyte c) {
 }
 
 /++
-    Check if a character is considered by Ion to be whitespace.
-    Params:
-        c = The character to check
-    Returns:
-        true if the character is considered by Ion to be whitespace.
+Check if a character is considered by Ion to be whitespace.
+Params:
+    c = The character to check
+Returns:
+    true if the character is considered by Ion to be whitespace.
 +/
 bool isWhitespace(ubyte c) {
     static foreach(member; ION_WHITESPACE) {
@@ -287,11 +288,11 @@ bool isWhitespace(ubyte c) {
 }
 
 /++
-    Check if a character is considered by Ion to be a hex digit.
-    Params:
-        c = The character to check
-    Returns:
-        true if the character is considered by Ion to be a hex digit.
+Check if a character is considered by Ion to be a hex digit.
+Params:
+    c = The character to check
+Returns:
+    true if the character is considered by Ion to be a hex digit.
 +/
 bool symbolNeedsQuotes(string symbol) {
     static foreach(member; ION_QUOTED_SYMBOLS) {
@@ -308,59 +309,59 @@ bool symbolNeedsQuotes(string symbol) {
 // TODO: do we really need these two functions? shouldn't std.ascii provide them?
 
 /++
-    Check if a character is a new-line character.
+Check if a character is a new-line character.
 
-    Params:
-        c = The character to check
-    Returns:
-        true if a character is considered to be a new-line.
+Params:
+    c = The character to check
+Returns:
+    true if a character is considered to be a new-line.
 +/
 bool isNewLine(ubyte c) {
     return c == 0x0A || 0x0D;
 }
 
 /++
-    Check if a character is printable whitespace within a string.
+Check if a character is printable whitespace within a string.
 
-    Params:
-        c = The character to check
-    Returns:
-        true if a character is considered to be printable whitespace.
+Params:
+    c = The character to check
+Returns:
+    true if a character is considered to be printable whitespace.
 +/
 bool isStringWhitespace(ubyte c) {
     return c == 0x09 || c == 0x0B || c == 0x0C;
 }
 
 /++
-    Check if a character is a control character.
+Check if a character is a control character.
 
-    Params:
-        c = The character to check
-    Returns:
-        true if a character is considered a control character.
+Params:
+    c = The character to check
+Returns:
+    true if a character is considered a control character.
 +/
 bool isControlChar(ubyte c) {
     return isControl(c);
 }
 
 /++
-    Check if a character is within the valid ASCII range (0x00 - 0x7F)
+Check if a character is within the valid ASCII range (0x00 - 0x7F)
     
-    Params:
-        c = The character to check
-    Returns:
-        true if a character is considered to be valid ASCII.
+Params:
+    c = The character to check
+Returns:
+    true if a character is considered to be valid ASCII.
 +/
 bool isASCIIChar(ubyte c) {
     return isASCII(c);
 }
 
 /++
-    Check if a character is invalid (non-printable).
-    Params:
-        c = The character to check
-    Returns:
-        true if a character is invalid, false otherwise
+Check if a character is invalid (non-printable).
+Params:
+    c = The character to check
+Returns:
+    true if a character is invalid, false otherwise
 +/
 bool isInvalidChar(ubyte c) {
     if (isStringWhitespace(c) || isNewLine(c)) return false;
@@ -369,17 +370,16 @@ bool isInvalidChar(ubyte c) {
 }
 
 /++
-    Convert a character that represents a hex-digit into it's actual form.
+Convert a character that represents a hex-digit into it's actual form.
 
-    This is to convert a hex-literal as fast as possible.
-    Params:
-        c = a charact
+This is to convert a hex-literal as fast as possible.
+Params:
+    c = a hex character
 +/
 ubyte hexLiteral(ubyte c) {
-    import std.conv : to;
-    if (isDigit(c)) return to!(ubyte)(c - digits[0]);
-    else if (c >= 'a' && c <= 'f') return to!(ubyte)(10 + (c - lowercase[0]));
-    else if (c >= 'A' && c <= 'F') return to!(ubyte)(10 + (c - uppercase[0]));
+    if (isDigit(c)) return cast(ubyte)(c - digits[0]);
+    else if (c >= 'a' && c <= 'f') return cast(ubyte)(10 + (c - lowercase[0]));
+    else if (c >= 'A' && c <= 'F') return cast(ubyte)(10 + (c - uppercase[0]));
     throw new MirIonTokenizerException("invalid hex literal");
 }
 
@@ -387,7 +387,7 @@ version(D_Exceptions):
 import mir.ion.exception;
 
 /++
-    Mir Ion Tokenizer Exception
+Mir Ion Tokenizer Exception
 +/
 class MirIonTokenizerException : MirIonException 
 {

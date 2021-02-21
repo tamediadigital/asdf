@@ -1,5 +1,7 @@
 /++
-    Helpers for reading values from a given Ion token.
+Helpers for reading values from a given Ion token.
+
+Authors: Harrison Ford
 +/
 module mir.ion.deser.text.readers;
 import mir.ion.deser.text.tokenizer;
@@ -13,15 +15,15 @@ version(mir_ion_parser_test) import unit_threaded;
 // IIRC, they *do* not allocate above their max of 1024, so we may *need* to verify this is correct
 
 /++
-    Read the contents of a given token from the input range.
+Read the contents of a given token from the input range.
 
-    $(WARNING This function does no checking if the current token
-              is the given function that you pass in. Use with caution.)
-    Params:
-        t = The tokenizer
-        token = The token type to read from the input range.
-    Returns:
-        The string contents of the token given
+$(WARNING This function does no checking if the current token
+is the given function that you pass in. Use with caution.)
+Params:
+    t = The tokenizer
+    token = The token type to read from the input range.
+Returns:
+    The string contents of the token given
 +/
 string readValue(T)(ref T t, IonTokenType token) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -65,26 +67,26 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 }
 
 /++
-    Read a UTF-32 code-point from the input range (for clobs).
-    Params:
-        t = The tokenizer
-    Returns:
-        a UTF-32 code-point
+Read a UTF-32 code-point from the input range (for clobs).
+Params:
+    t = The tokenizer
+Returns:
+    a UTF-32 code-point
 +/
 dchar readEscapedClobChar(T)(ref T t) {
     return readEscapedChar!(T, true)(t);
 }
 
 /++
-    Read out a UTF-32 code-point from a hex escape within our input range.
+Read out a UTF-32 code-point from a hex escape within our input range.
 
-    For simplicity's sake, this will return the largest type possible (a UTF-32 code-point).
-    Params:
-        t = The tokenizer
-    Returns:
-        a code-point representing the escape value that was read
-    Throws:
-        MirIonTokenizerException if an invalid escape value was found.
+For simplicity's sake, this will return the largest type possible (a UTF-32 code-point).
+Params:
+    t = The tokenizer
+Returns:
+    a code-point representing the escape value that was read
+Throws:
+    MirIonTokenizerException if an invalid escape value was found.
 +/
 dchar readEscapedChar(T, bool isClob = false)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -109,7 +111,9 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 
     switch (c) {
         case '0':
-            return '\0'; // TODO: will this cause an error and make our code confused? \0 should not normally exist (except in it's escaped form) -- determine if this is expected behavior
+            // TODO: will this cause an error and make our code confused? 
+            // \0 should not normally exist (except in it's escaped form) -- determine if this is expected behavior
+            return '\0'; 
         static foreach(member; ['a', 'b', 't', 'n', 'f', 'r', 'v']) {
             case member:
                 return mixin("'\\" ~ member ~ "'");
@@ -157,12 +161,12 @@ version(mir_ion_parser_test) @("Test reading a unicode escape") unittest
 }
 
 /++
-    Read a UTF-32 escape sequence, and return it as UTF-8 character(s).
-    Params:
-        t = The tokenizer
-    Returns:
-        A string containing the UTF-32 escape sequence, or nothing if we read a new-line.
-        The length of the string is not well-defined, it can change depending on the escape sequence.
+Read a UTF-32 escape sequence, and return it as UTF-8 character(s).
+Params:
+    t = The tokenizer
+Returns:
+    A string containing the UTF-32 escape sequence, or nothing if we read a new-line.
+    The length of the string is not well-defined, it can change depending on the escape sequence.
 +/
 string readEscapeSeq(T, bool isClob = false)(ref T t)
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -222,13 +226,13 @@ version(mir_ion_parser_test) @("Test reading a symbol") unittest
 }
 
 /++
-    Read a quoted symbol from our input range, 
-    and automatically decode any escape sequences found.
+Read a quoted symbol from our input range, 
+and automatically decode any escape sequences found.
     
-    Params:
-        t = The tokenizer
-    Returns:
-        A string containing the quoted symbol.
+Params:
+    t = The tokenizer
+Returns:
+    A string containing the quoted symbol.
 +/
 string readSymbolQuoted(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -275,11 +279,11 @@ version(mir_ion_parser_test) @("Test reading quoted symbols") unittest
 }
 
 /++
-    Read a symbol operator from the input range.
-    Params:
-        t = The tokenizer
-    Returns:
-        A string containing any symbol operators that were able to be read.
+Read a symbol operator from the input range.
+Params:
+    t = The tokenizer
+Returns:
+    A string containing any symbol operators that were able to be read.
 +/
 string readSymbolOperator(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -295,13 +299,13 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 }
 
 /++
-    Read a string from the input range and automatically decode any UTF escapes.
-    Params:
-        longString = Is this string a 'long' string, defined by 3 single-quotes?
-        isClob = Is this string allowed to have UTF escapes?
-        t = The tokenizer
-    Returns:
-        The string's content from the input range.
+Read a string from the input range and automatically decode any UTF escapes.
+Params:
+    longString = Is this string a 'long' string, defined by 3 single-quotes?
+    isClob = Is this string allowed to have UTF escapes?
+    t = The tokenizer
+Returns:
+    The string's content from the input range.
 +/
 string readString(T, bool longString = false, bool isClob = false)(ref T t)
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -372,15 +376,16 @@ version(mir_ion_parser_test) @("Test reading a string") unittest
 }
 
 /++
-    Read a long string (defined by having three single quotes surrounding it's contents).
+Read a long string (defined by having three single quotes surrounding it's contents).
 
-    $(NOTE If this function encounters another long string in the input range separated by whitespace, 
-           it will concatenate the contents of the two long strings together. This is not implementation-specific,
-           rather, part of the Ion specification)
-    Params:
-        t = The tokenizer
-    Returns:
-        A string holding the contents of any long strings found.
+$(NOTE If this function encounters another long string in the input range separated by whitespace, 
+it will concatenate the contents of the two long strings together. This is not implementation-specific,
+rather, part of the Ion specification)
+
+Params:
+    t = The tokenizer
+Returns:
+    A string holding the contents of any long strings found.
 +/
 string readLongString(T)(ref T t)
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -406,15 +411,15 @@ version(mir_ion_parser_test) @("Test reading a long string") unittest
 }
 
 /++
-    Read the contents of a clob, and return it as an untyped array.
+Read the contents of a clob, and return it as an untyped array.
 
-    $(NOTE As per Ion specification, a clob does not contain Base64 data. Use readBlob if you are expecting to decode Base64 data.)
+$(NOTE As per Ion specification, a clob does not contain Base64 data. Use readBlob if you are expecting to decode Base64 data.)
 
-    Params:
-        longClob = Should this function concatenate the contents of multiple clobs within the brackets?
-        t = The tokenizer
-    Returns:
-        An untyped array containing the contents of the clob. This array is guaranteed to have no UTF-8/UTF-32 characters -- only ASCII characters.
+Params:
+    longClob = Should this function concatenate the contents of multiple clobs within the brackets?
+    t = The tokenizer
+Returns:
+    An untyped array containing the contents of the clob. This array is guaranteed to have no UTF-8/UTF-32 characters -- only ASCII characters.
 +/
 ubyte[] readClob(T, bool longClob = false)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -445,13 +450,13 @@ version(mir_ion_parser_test) @("Test reading a short clob") unittest
 }
 
 /++
-    Helper to read a long clob from the input stream.
+Helper to read a long clob from the input stream.
 
-    See [readClob] for any notes.
-    Params:
-        t = The tokenizer
-    Returns:
-        An untyped array holding the contents of the clob.
+See [readClob] for any notes.
+Params:
+    t = The tokenizer
+Returns:
+    An untyped array holding the contents of the clob.
 +/
 ubyte[] readLongClob(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -459,13 +464,13 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 }
 
 /++
-    Read a blob from the input stream, and return the Base64 contents.
+Read a blob from the input stream, and return the Base64 contents.
 
-    $(NOTE This function does not verify if the Base64 contained is valid, or if it is even Base64.)
-    Params:
-        t = The tokenizer
-    Returns:
-        An untyped array containing the Base64 contents of the blob.
+$(NOTE This function does not verify if the Base64 contained is valid, or if it is even Base64.)
+Params:
+    t = The tokenizer
+Returns:
+    An untyped array containing the Base64 contents of the blob.
 +/
 ubyte[] readBlob(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -485,13 +490,13 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 }
 
 /++
-    Read a number from the input stream, and return the type of number, as well as the number itself.
+Read a number from the input stream, and return the type of number, as well as the number itself.
 
-    Params:
-        t = The tokenizer
-    Returns:
-        A struct holding the type and value of the number.
-        See the examples below on how to access the type/value.
+Params:
+    t = The tokenizer
+Returns:
+    A struct holding the type and value of the number.
+    See the examples below on how to access the type/value.
 +/
 auto readNumber(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -588,15 +593,15 @@ version(mir_ion_parser_test) @("Test reading numbers") unittest
 }
 
 /++
-    Read as many digits from the input stream as possible, given the first digit of the digits.
-    
-    This function will stop reading digits as soon as whitespace is hit.
-    Params:
-        t = The tokenizer
-        leader = The leading digit in a sequence of digits following
-        buf = The appender on which this function will put it's output
-    Returns:
-        A character located after it has read every single digit in a sequence.
+Read as many digits from the input stream as possible, given the first digit of the digits.
+
+This function will stop reading digits as soon as whitespace is hit.
+Params:
+    t = The tokenizer
+    leader = The leading digit in a sequence of digits following
+    buf = The appender on which this function will put it's output
+Returns:
+    A character located after it has read every single digit in a sequence.
 +/
 T.inputType readDigits(T)(ref T t, T.inputType leader, ref ScopedBuffer!(char) buf) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -609,15 +614,15 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 }
 
 /++
-    Read as many digits from the input stream as possible, given a validator.
-    
-    This function will stop reading digits as soon as the validator returns false.
-    Params:
-        isValid = The validation function which is called to determine if the reader should halt.
-        t = The tokenizer
-        buf = The appender on which this function will put it's output
-    Returns:
-        A character located after it has read every single digit in a sequence.
+Read as many digits from the input stream as possible, given a validator.
+
+This function will stop reading digits as soon as the validator returns false.
+Params:
+    isValid = The validation function which is called to determine if the reader should halt.
+    t = The tokenizer
+    buf = The appender on which this function will put it's output
+Returns:
+    A character located after it has read every single digit in a sequence.
 +/
 T.inputType readRadixDigits(T, alias isValid = isDigit)(ref T t, ref ScopedBuffer!(char) buf) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -637,14 +642,14 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 }
 
 /++
-    Read a radix number, given two validation functions for it's marker and the validity of each digit read.
+Read a radix number, given two validation functions for it's marker and the validity of each digit read.
 
-    Params:
-        isMarker = A validation function to check if the marker is valid (0b/0x/etc)
-        isValid = A validation function to check if every digit found is valid (0-1/0-9A-F/etc)
-        t = The tokenizer
-    Returns:
-        A string containing the full radix number (including the leading 0 and marker).
+Params:
+    isMarker = A validation function to check if the marker is valid (0b/0x/etc)
+    isValid = A validation function to check if every digit found is valid (0-1/0-9A-F/etc)
+    t = The tokenizer
+Returns:
+    A string containing the full radix number (including the leading 0 and marker).
 +/
 string readRadix(T, alias isMarker, alias isValid)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -671,12 +676,12 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 }
 
 /++
-    Read a binary number (marked by '0b') from the input stream.
+Read a binary number (marked by '0b') from the input stream.
 
-    Params:
-        t = The tokenizer
-    Returns:
-        A string containing the entire binary number read.
+Params:
+    t = The tokenizer
+Returns:
+    A string containing the entire binary number read.
 +/
 string readBinary(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -700,12 +705,12 @@ version(mir_ion_parser_test) @("Test reading a binary number") unittest
 }
 
 /++
-    Read a hex number (marked by '0x') from the input stream.
+Read a hex number (marked by '0x') from the input stream.
 
-    Params:
-        t = The tokenizer
-    Returns:
-        A string containing the entire hex number read.
+Params:
+    t = The tokenizer
+Returns:
+    A string containing the entire hex number read.
 +/
 string readHex(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
@@ -731,14 +736,15 @@ version(mir_ion_parser_test) @("Test reading a hex number") unittest
 }
 
 /++
-    Read a ISO-8601 extended timestamp from the input stream.
-    
-    $(NOTE This function does some rudimentary checks to see if the timestamp is valid,
-           but it does nothing more then that.)
-    Params:
-        t = The tokenizer
-    Returns:
-        A string containing the entire timestamp read from the input stream.
+Read a ISO-8601 extended timestamp from the input stream.
+
+$(NOTE This function does some rudimentary checks to see if the timestamp is valid,
+but it does nothing more then that.)
+
+Params:
+    t = The tokenizer
+Returns:
+    A string containing the entire timestamp read from the input stream.
 +/
 string readTimestamp(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
