@@ -307,7 +307,7 @@ Params:
 Returns:
     The string's content from the input range.
 +/
-string readString(T, bool longString = false, bool isClob = false)(ref T t)
+const(char)[] readString(T, bool longString = false, bool isClob = false)(ref T t)
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
     ScopedBuffer!char buf;
     while (true) {
@@ -387,7 +387,7 @@ Params:
 Returns:
     A string holding the contents of any long strings found.
 +/
-string readLongString(T)(ref T t)
+const(char)[] readLongString(T)(ref T t)
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
     return readString!(T, true)(t);
 }
@@ -424,8 +424,7 @@ Returns:
 ubyte[] readClob(T, bool longClob = false)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
     // Always read out bytes, as clobs are octet-based (and not necessarily a string)
-    import std.string : representation;
-    ubyte[] data = readString!(T, longClob, true)(t).representation.dup;
+    ubyte[] data = cast(ubyte[])(readString!(T, longClob, true)(t).dup);
 
     // read out the following }}
     T.inputType c = t.expect!("a == '}'", true)(t.skipLobWhitespace()); // after skipping any whitespace, it should be the terminator ('}')

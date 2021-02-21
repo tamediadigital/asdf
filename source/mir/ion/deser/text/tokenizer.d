@@ -32,12 +32,11 @@ Returns:
     [IonTokenizer]
 +/
 @safe
-IonTokenizer!(ubyte[]) tokenizeString(string input) {
-    import std.string : representation;
-    auto _input = representation(input);
+IonTokenizer!(ubyte[]) tokenizeString(const(char)[] input) {
+    auto _input = cast(const(ubyte)[])input;
     // cannot handle utf-16/utf-32 as of current, so just rely on utf-8/ascii sized characters
-    assert(is(typeof(_input) == immutable(ubyte)[]), "Expected a single byte-sized representation"); 
-    return tokenize!(ubyte[])(_input);
+    assert(is(typeof(_input) == const(ubyte)[]), "Expected a single byte-sized representation"); 
+    return tokenize!(ubyte[])(_input.dup);
 }
 
 /++
