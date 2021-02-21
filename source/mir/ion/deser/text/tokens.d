@@ -356,6 +356,19 @@ bool isASCIIChar(ubyte c) {
 }
 
 /++
+    Check if a character is invalid (non-printable).
+    Params:
+        c = The character to check
+    Returns:
+        true if a character is invalid, false otherwise
++/
+bool isInvalidChar(ubyte c) {
+    if (isStringWhitespace(c) || isNewLine(c)) return false;
+    if (isControlChar(c)) return true;
+    return false;
+}
+
+/++
     Convert a character that represents a hex-digit into it's actual form.
 
     This is to convert a hex-literal as fast as possible.

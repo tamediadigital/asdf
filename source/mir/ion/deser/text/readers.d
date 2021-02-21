@@ -13,19 +13,6 @@ version(mir_ion_parser_test) import unit_threaded;
 // IIRC, they *do* not allocate above their max of 1024, so we may *need* to verify this is correct
 
 /++
-    Check if a character is invalid (non-printable).
-    Params:
-        c = The character to check
-    Returns:
-        true if a character is invalid, false otherwise
-+/
-bool isInvalidChar(ubyte c) {
-    if (isStringWhitespace(c) || isNewLine(c)) return false;
-    if (isControlChar(c)) return true;
-    return false;
-}
-
-/++
     Read the contents of a given token from the input range.
 
     $(WARNING This function does no checking if the current token
@@ -186,7 +173,8 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
         return "";
     }
 
-    dchar[] r = [readEscapedChar!(T, isClob)(t)]; // I hate this, but apparently toUTF8 cannot take in a single UTF-32 code-point.
+    // I hate this, but apparently toUTF8 cannot take in a single UTF-32 code-point
+    dchar[] r = [readEscapedChar!(T, isClob)(t)]; 
     return r.toUTF8();
 }
 
@@ -507,7 +495,14 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 +/
 auto readNumber(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+    import mir.ion.type_code : IonTypeCode;
+    struct IonNumberRead {
+        string val;
+        IonTypeCode type;
+    }
+    IonNumberRead num;
     ScopedBuffer!char buf;
+
     T.inputType readExponent() {
         T.inputType c = t.readInput();
         if (c == '+' || c == '-') {
@@ -517,14 +512,6 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 
         return readDigits!T(t, c, buf);
     }
-
-    import mir.ion.type_code : IonTypeCode;
-    struct IonNumberRead {
-        string val;
-        IonTypeCode type;
-    }
-
-    IonNumberRead num;
 
     T.inputType c = t.readInput();
     if (c == '-') {
@@ -618,7 +605,6 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
         return c;
     }
     buf.put(c);
-
     return readRadixDigits!T(t, buf);
 }
 
@@ -881,4 +867,3 @@ version(mir_ion_parser_test) @("Test reading timestamps") unittest
     test("2001-01-02T03:04:05.666Z ", "2001-01-02T03:04:05.666Z", ' ');
     test("2001-01-02T03:04:05.666666z ", "2001-01-02T03:04:05.666666z", ' ');
 }
-
