@@ -58,6 +58,21 @@ enum IonSystemSymbol : ubyte
     ion_shared_symbol_table,
 }
 
+package string[] removeSystemSymbols(const(string)[] keys) @safe pure nothrow
+{
+    string[] ret;
+    F: foreach (key; keys) switch(key)
+    {
+        static foreach (skey; IonSystemSymbolTable_v1)
+        {
+            case skey: continue F;
+        }
+        default:
+            ret ~= key;
+    }
+    return ret;
+}
+
 /++
 +/
 struct IonSymbolTable(bool gc)
@@ -128,19 +143,14 @@ pure nothrow:
             keySpace = initialKeysSpace[];
         }
 
-        auto annotationStart = nextKeyPosition;
+        assert(nextKeyPosition == 0);
         nextKeyPosition += ionPutStartLength; // annotation object
-        auto annotationListStart = nextKeyPosition;
-        nextKeyPosition +=  ionPutAnnotationsListStartLength;
-        auto symbolLength = ionPutVarUInt(keySpace.ptr + nextKeyPosition, IonSystemSymbol.ion_symbol_table);
-        nextKeyPosition = cast(uint)(annotationListStart + ionPutAnnotationsListEnd(keySpace.ptr + annotationListStart, symbolLength));
-        auto objectStart = nextKeyPosition;
+        nextKeyPosition += ionPutVarUInt(keySpace.ptr + nextKeyPosition, ubyte(1u));
+        nextKeyPosition += ionPutVarUInt(keySpace.ptr + nextKeyPosition, ubyte(IonSystemSymbol.ion_symbol_table));
+        assert(nextKeyPosition == 5);
         nextKeyPosition += ionPutStartLength; // object
         nextKeyPosition += ionPutVarUInt(keySpace.ptr + nextKeyPosition, IonSystemSymbol.symbols);
-        auto arrayStart = nextKeyPosition;
-        assert(annotationStart == 0);
-        assert(objectStart == 5);
-        assert(arrayStart == 9);
+        assert(nextKeyPosition == 9);
         nextKeyPosition += ionPutStartLength; // symbol array
     }
 
@@ -167,6 +177,11 @@ pure nothrow:
             auto length = nextKeyPosition - (shift + ionPutStartLength);
             nextKeyPosition = cast(uint)(shift + ionPutEnd(keySpace.ptr + shift, IonTypeCode.annotations, length));
         }
+    }
+
+    inout(ubyte)[] tapeData() inout @property
+    {
+        return keySpace[0 .. nextKeyPosition];
     }
 
     private const(char)[] getStringKey(uint keyPosition) scope const
