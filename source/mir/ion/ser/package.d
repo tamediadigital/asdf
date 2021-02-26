@@ -86,7 +86,7 @@ void serializeValue(S, V)(ref S serializer, const V value)
 void serializeValue(S, V : char)(ref S serializer, const V value)
     if (is(V == char) && !is(V == enum))
 {
-    auto v = cast(char[1])value;
+    char[1] v = value;
     serializer.putValue(v[]);
 }
 
@@ -157,8 +157,8 @@ void serializeValue(S, T)(ref S serializer, T[] value)
 
 /// Input range serialization
 void serializeValue(S, R)(ref S serializer, R value)
-    if ((isInputRange!R) &&
-        !isSomeChar!(ElementType!R) &&
+    if ((isIterable!R) &&
+        !isSomeChar!(ForeachType!R) &&
         !isDynamicArray!R &&
         !isNullable!R)
 {
@@ -332,7 +332,7 @@ unittest
 
 /// Struct and class type serialization
 void serializeValue(S, V)(ref S serializer, auto ref V value)
-    if (!isNullable!V && isAggregateType!V && !is(V == BigInt!size0, size_t size0) && !isInputRange!V)
+    if (!isNullable!V && isAggregateType!V && !is(V == BigInt!size0, size_t size0) && (!isIterable!V || hasUDA!(V, serdeProxy)))
 {
     static if(is(V == class) || is(V == interface))
     {

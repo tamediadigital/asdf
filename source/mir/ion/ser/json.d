@@ -378,6 +378,18 @@ unittest
     assert(serializeJson(S("str", 4)) == `{"foo":"str","bar":4}`);
 }
 
+unittest
+{
+    import mir.ion.ser.json : serializeJson;
+    import mir.appender : ScopedBuffer;
+    import mir.small_string;
+
+    SmallString!8 smll = SmallString!8("ciaociao");
+    ScopedBuffer!char buffer;
+
+    serializeJson(buffer, smll);
+    assert(buffer.data == `"ciaociao"`);
+}
 
 ///
 unittest
@@ -478,6 +490,14 @@ unittest
 
     assert(serializeJson(S(3)) == `{"a":3}`, serializeJson(S(3)));
     assert(serializeJson(S(-3)) == `{}`);
+}
+
+///
+unittest
+{
+    import mir.rc.array;
+    auto ar = rcarray!int(1, 2, 4);
+    assert(ar.serializeJson == "[1,2,4]");
 }
 
 ///

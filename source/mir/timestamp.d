@@ -887,7 +887,7 @@ struct Timestamp
             // fraction
             {
                 const strOldLength = str.length;
-                size_t fractionCoefficient;
+                ulong fractionCoefficient;
                 if (str.length < 1 || !str[0].isDigit || !parse!ulong(str, fractionCoefficient))
                     return false;
                 sizediff_t fractionExponent = str.length - strOldLength;
