@@ -129,6 +129,12 @@ pure nothrow:
     }
 
     ///
+    bool initialized() @property
+    {
+        return keySpace.length != 0;
+    }
+
+    ///
     void initialize()
     {
         static if (gc)
