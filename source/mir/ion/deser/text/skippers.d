@@ -97,6 +97,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over single-line comments.
 version(mir_ion_parser_test) unittest 
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString, testRead;
     auto t = tokenizeString("single-line comment\r\nok");
     assert(t.skipSingleLineComment());
 
@@ -107,6 +108,7 @@ version(mir_ion_parser_test) unittest
 /// Test skipping of a single-line comment on the last line
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString, testRead;
     auto t = tokenizeString("single-line comment");
     assert(t.skipSingleLineComment());
     t.testRead(0);
@@ -139,12 +141,14 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping of an invalid comment
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
     auto t = tokenizeString("this is a string that never ends");
     assert(!t.skipBlockComment());
 }
 /// Test skipping of a multi-line comment
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString, testRead;
     auto t = tokenizeString("this is/ a\nmulti-line /** comment.**/ok");
     assert(t.skipBlockComment());
 
@@ -180,6 +184,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test single-line skipping
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString, testRead;
     auto t = tokenizeString("/comment\nok");
     assert(t.skipComment());
     t.testRead('o');
@@ -189,6 +194,7 @@ version(mir_ion_parser_test) unittest
 /// Test block skipping
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString, testRead;
     auto t = tokenizeString("*comm\nent*/ok");
     assert(t.skipComment());
     t.testRead('o');
@@ -198,6 +204,7 @@ version(mir_ion_parser_test) unittest
 /// Test false-alarm skipping
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString, testRead;
     auto t = tokenizeString(" 0)");
     assert(!t.skipComment());
     t.testRead(' ');
@@ -256,6 +263,9 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over numbers
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : MirIonTokenizerException;
+
     void test(string ts, ubyte expected) {
         auto t = tokenizeString(ts);
         assert(t.skipNumber() == expected);
@@ -290,6 +300,9 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over binary numbers
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : MirIonTokenizerException;
+
     void test(string ts, ubyte expected) {
         auto t = tokenizeString(ts);
         assert(t.skipBinary() == expected);
@@ -322,6 +335,9 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over hex numbers
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : MirIonTokenizerException;
+
     void test(string ts, ubyte expected) {
         auto t = tokenizeString(ts);
         assert(t.skipHex() == expected);
@@ -474,6 +490,9 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over timestamps
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : MirIonTokenizerException;
+
     void test(string ts, ubyte result) {
         auto t = tokenizeString(ts);
         assert(t.skipTimestamp() == result);
@@ -532,6 +551,8 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over symbols
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+
     void test(string ts, ubyte result) {
         auto t = tokenizeString(ts);
         assert(t.skipSymbol() == result);
@@ -585,6 +606,9 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over quoted symbols
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : MirIonTokenizerException;
+
     void test(string ts, ubyte result) {
         auto t = tokenizeString(ts);
         assert(t.skipSymbolQuoted() == result);
@@ -623,6 +647,8 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over symbol operators
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+
     void test(string ts, ubyte result) {
         auto t = tokenizeString(ts);
         assert(t.skipSymbolOperator() == result);
@@ -671,6 +697,9 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over strings
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : MirIonTokenizerException;
+ 
     void test(string ts, ubyte result) {
         auto t = tokenizeString(ts);
         assert(t.skipString() == result);
@@ -757,11 +786,12 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over long strings
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+
     void test(string ts, ubyte result) {
         auto t = tokenizeString(ts);
         assert(t.skipLongString() == result);
     }
-
 }
 
 /++
@@ -779,6 +809,8 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over blobs
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+
     void test(string ts, ubyte result) {
         auto t = tokenizeString(ts);
         assert(t.skipBlob() == result);
@@ -821,6 +853,8 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over structs
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+ 
     void test(string ts, ubyte result) {
         auto t = tokenizeString(ts);
         assert(t.skipStruct() == result);
@@ -856,6 +890,8 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over S-expressions
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+ 
     void test(string ts, ubyte result) {
         auto t = tokenizeString(ts);
         assert(t.skipSexp() == result);
@@ -890,6 +926,8 @@ if (isInstanceOf!(IonTokenizer, T)) {
 /// Test skipping over lists
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+ 
     void test(string ts, ubyte result) {
         auto t = tokenizeString(ts);
         assert(t.skipList() == result);

@@ -262,6 +262,9 @@ if (isValidTokenizerInput!(Input)) {
     version(mir_ion_parser_test) unittest
     {
         import std.exception : assertThrown;
+        import mir.exception : enforce;
+        import mir.ion.deser.text.tokens : MirIonTokenizerException;
+
         auto t = tokenizeString("abc\r\ndef");
         
         assert(t.peekExactly(1) == "a");
@@ -279,8 +282,8 @@ if (isValidTokenizerInput!(Input)) {
         t.testRead('\n');
         t.testRead('d');
 
-        assertThrown!MirIonTokenizerException(t.peekExactly(3) == "ef");
-        assertThrown!MirIonTokenizerException(t.peekExactly(3) == "ef");
+        assertThrown!MirIonTokenizerException(enforce!"Did not match"(t.peekExactly(3) == "ef"));
+        assertThrown!MirIonTokenizerException(enforce!"Did not match"(t.peekExactly(3) == "ef"));
         assert(t.peekExactly(2) == "ef");
 
         t.testRead('e');
@@ -320,6 +323,8 @@ if (isValidTokenizerInput!(Input)) {
     version(mir_ion_parser_test) unittest
     {
         import std.exception : assertThrown;
+        import mir.ion.deser.text.tokens : MirIonTokenizerException;
+
         auto t = tokenizeString("abc");
 
         t.testPeek('a');
@@ -450,9 +455,10 @@ if (isValidTokenizerInput!(Input)) {
     /// Test skipping over whitespace 
     version(mir_ion_parser_test) unittest
     {
+        import std.exception : assertNotThrown;
+        import mir.exception : enforce;
+        import mir.ion.deser.text.tokens : MirIonTokenizerException;
         void test(string txt, ubyte expectedChar) {
-            import std.exception : assertNotThrown;
-            import mir.exception : enforce;
             auto t = tokenizeString(txt);
             assertNotThrown!MirIonTokenizerException(enforce!"skipWhitespace did not return expected character"(t.skipWhitespace() == expectedChar));
         }
@@ -482,9 +488,10 @@ if (isValidTokenizerInput!(Input)) {
     /// Test skipping over whitespace within a (c|b)lob
     version(mir_ion_parser_test) unittest
     {
+        import std.exception : assertNotThrown;
+        import mir.exception : enforce;
+        import mir.ion.deser.text.tokens : MirIonTokenizerException;
         void test(string txt, ubyte expectedChar)() {
-            import std.exception : assertNotThrown;
-            import mir.exception : enforce;
             auto t = tokenizeString(txt);
             assertNotThrown!MirIonTokenizerException(enforce!"Lob whitespace did not match expecte character"(t.skipLobWhitespace() == expectedChar));
         }
@@ -634,6 +641,8 @@ if (isValidTokenizerInput!(Input)) {
     /// Test scanning for numbers 
     version(mir_ion_parser_test) unittest
     {
+        import mir.ion.deser.text.tokens : IonTokenType;
+
         void test(string txt, IonTokenType expectedToken) {
             auto t = tokenizeString(txt);
             auto c = t.readInput();
@@ -920,6 +929,9 @@ if (isValidTokenizerInput!(Input)) {
     /// Text expect()
     version(mir_ion_parser_test) unittest
     {
+        import mir.ion.deser.text.tokens : MirIonTokenizerException, isHexDigit;
+        import std.range : empty;
+
         void testIsHex(string ts) {
             auto t = tokenizeString(ts);
             while (!t.input.empty) {
@@ -981,18 +993,14 @@ if (isValidTokenizerInput!(Input)) {
             }
         }
     }
-
-
 }
-
-version(mir_ion_parser_test):
 
 /++
 Generic helper to verify the functionality of the parsing code in unit-tests
 +/
 template testRead(T, string file = __FILE__, int line = __LINE__) {
     void testRead(ref T t, ubyte expected) {
-        import mir.exception;
+        import mir.exception : MirError;
         ubyte v = t.readInput();
         if (v != expected) {
             import mir.format;
@@ -1007,7 +1015,7 @@ Generic helper to verify the functionality of the parsing code in unit-tests
 +/
 template testPeek(T, string file = __FILE__, int line = __LINE__) {
     void testPeek(ref T t, ubyte expected) {
-        import mir.exception;
+        import mir.exception : MirError;
         ubyte v = t.peekOne();
         if (v != expected) {
             import mir.format;

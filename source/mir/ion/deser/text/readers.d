@@ -135,6 +135,9 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 /// Test reading a unicode escape
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : MirIonTokenizerException;
+
     void test(string ts, dchar expected) {
         auto t = tokenizeString(ts);
         assert(t.readEscapedChar() == expected);
@@ -208,6 +211,9 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 /// Test reading a symbol
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : MirIonTokenizerException, IonTokenType;
+
     void test(string ts, string expected, IonTokenType after) {
         import std.exception : assertNotThrown;
         auto t = tokenizeString(ts); 
@@ -257,6 +263,9 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 /// Test reading quoted symbols
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : IonTokenType;
+
     void test(string ts, string expected, ubyte after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
@@ -363,6 +372,9 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 /// Test reading a string
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : IonTokenType;
+
     void test(string ts, string expected, ubyte after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
@@ -395,6 +407,9 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 /// Test reading a long string
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : IonTokenType;
+
     void test(string ts, string expected, ubyte after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
@@ -437,6 +452,9 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 /// Test reading a short clob
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : IonTokenType;
+
     void test(string ts, string expected, ubyte after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
@@ -573,7 +591,10 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 /// Test reading numbers
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : IonTokenType;
     import mir.ion.type_code : IonTypeCode;
+
     void test(string ts, string expected, IonTypeCode type, ubyte after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
@@ -689,6 +710,9 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 /// Test reading a binary number
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : IonTokenType;
+
     void test(string ts, string expected, ubyte after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
@@ -718,6 +742,9 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 /// Test reading a hex number
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : IonTokenType;
+
     void test(string ts, string expected, ubyte after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
@@ -849,6 +876,9 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 /// Test reading timestamps
 version(mir_ion_parser_test) unittest
 {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : IonTokenType;
+
     void test(string ts, string expected, ubyte after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
