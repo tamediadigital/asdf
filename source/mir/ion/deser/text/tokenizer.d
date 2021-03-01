@@ -111,8 +111,8 @@ if (isValidTokenizerInput!(Input)) {
         this.position--;
         this.buffer ~= c; 
     }
-    ///
-    version(mir_ion_parser_test) @("Test read()/unread()") unittest
+    /// Test reading / unreading bytes
+    version(mir_ion_parser_test) unittest
     {
         auto t = tokenizeString("abc\rd\ne\r\n");
 
@@ -258,35 +258,36 @@ if (isValidTokenizerInput!(Input)) {
 
         return ret;
     }
-    ///
-    version(mir_ion_parser_test) @("Test peekExactly()") unittest
+    /// Test peekExactly
+    version(mir_ion_parser_test) unittest
     {
+        import std.exception : assertThrown;
         auto t = tokenizeString("abc\r\ndef");
         
-        t.peekExactly(1).shouldEqual("a");
-        t.peekExactly(2).shouldEqual("ab");
-        t.peekExactly(3).shouldEqual("abc");
+        assert(t.peekExactly(1) == "a");
+        assert(t.peekExactly(2) == "ab");
+        assert(t.peekExactly(3) == "abc");
 
         t.testRead('a');
         t.testRead('b');
         
-        t.peekExactly(3).shouldEqual("c\nd");
-        t.peekExactly(2).shouldEqual("c\n");
-        t.peekExactly(3).shouldEqual("c\nd");
+        assert(t.peekExactly(3) == "c\nd");
+        assert(t.peekExactly(2) == "c\n");
+        assert(t.peekExactly(3) == "c\nd");
 
         t.testRead('c');
         t.testRead('\n');
         t.testRead('d');
 
-        t.peekExactly(3).shouldEqual("ef").shouldThrow();
-        t.peekExactly(3).shouldEqual("ef").shouldThrow();
-        t.peekExactly(2).shouldEqual("ef");
+        assertThrown!MirIonTokenizerException(t.peekExactly(3) == "ef");
+        assertThrown!MirIonTokenizerException(t.peekExactly(3) == "ef");
+        assert(t.peekExactly(2) == "ef");
 
         t.testRead('e');
         t.testRead('f');
         t.testRead(0);
 
-        t.peekExactly(10).shouldThrow();
+        assertThrown!MirIonTokenizerException(t.peekExactly(10));
     }
 
     /++
@@ -315,9 +316,10 @@ if (isValidTokenizerInput!(Input)) {
         
         return c;
     }
-    ///
-    version(mir_ion_parser_test) @("Test peekOne()") unittest
+    /// Test peeking the next byte in the stream
+    version(mir_ion_parser_test) unittest
     {
+        import std.exception : assertThrown;
         auto t = tokenizeString("abc");
 
         t.testPeek('a');
@@ -334,9 +336,9 @@ if (isValidTokenizerInput!(Input)) {
         t.testPeek('c');
         t.testRead('c');
         
-        t.peekOne().shouldEqual(0).shouldThrow();
-        t.peekOne().shouldEqual(0).shouldThrow();
-        t.readInput().shouldEqual(0);
+        assertThrown!MirIonTokenizerException(t.peekOne() == 0);
+        assertThrown!MirIonTokenizerException(t.peekOne() == 0);
+        assert(t.readInput() == 0);
     }
 
     /++
@@ -374,8 +376,8 @@ if (isValidTokenizerInput!(Input)) {
 
         return c;
     }
-    ///
-    version(mir_ion_parser_test) @("Test readInput()") unittest 
+    /// Test reading bytes off of a range
+    version(mir_ion_parser_test) unittest 
     {
         auto t = tokenizeString("abcdefghijklmopqrstuvwxyz1234567890");
         t.testRead('a');
@@ -388,8 +390,8 @@ if (isValidTokenizerInput!(Input)) {
         t.testRead('h');
         t.testRead('i');
     }
-    ///
-    version(mir_ion_parser_test) @("Test normalization of CRLF") unittest
+    /// Test the normalization of CRLFs
+    version(mir_ion_parser_test) unittest
     {
         auto t = tokenizeString("a\r\nb\r\nc\rd");
         t.testRead('a');
@@ -445,12 +447,14 @@ if (isValidTokenizerInput!(Input)) {
         }
         return 0;
     }
-    ///
-    version(mir_ion_parser_test) @("Test skipping whitespace") unittest
+    /// Test skipping over whitespace 
+    version(mir_ion_parser_test) unittest
     {
         void test(string txt, ubyte expectedChar) {
+            import std.exception : assertNotThrown;
+            import mir.exception : enforce;
             auto t = tokenizeString(txt);
-            t.skipWhitespace().shouldEqual(expectedChar).shouldNotThrow();
+            assertNotThrown!MirIonTokenizerException(enforce!"skipWhitespace did not return expected character"(t.skipWhitespace() == expectedChar));
         }
 
         test("/ 0)", '/');
@@ -475,12 +479,14 @@ if (isValidTokenizerInput!(Input)) {
     inputType skipLobWhitespace() {
         return skipWhitespace!(false, false);
     }
-    ///
-    version(mir_ion_parser_test) @("Test skipping lob whitespace") unittest
+    /// Test skipping over whitespace within a (c|b)lob
+    version(mir_ion_parser_test) unittest
     {
         void test(string txt, ubyte expectedChar)() {
+            import std.exception : assertNotThrown;
+            import mir.exception : enforce;
             auto t = tokenizeString(txt);
-            t.skipLobWhitespace().shouldEqual(expectedChar).shouldNotThrow();
+            assertNotThrown!MirIonTokenizerException(enforce!"Lob whitespace did not match expecte character"(t.skipLobWhitespace() == expectedChar));
         }
 
         test!("///=", '/');
@@ -518,14 +524,14 @@ if (isValidTokenizerInput!(Input)) {
 
         return false;
     }
-    ///
-    version(mir_ion_parser_test) @("Test scanning for inf") unittest
+    /// Test scanning for inf
+    version(mir_ion_parser_test) unittest
     {
         void test(string txt, bool inf, ubyte after) {
             auto t = tokenizeString(txt);
             auto c = t.readInput();
-            t.isInfinity(c).shouldEqual(inf);
-            t.readInput().shouldEqual(after);
+            assert(t.isInfinity(c) == inf);
+            assert(t.readInput() == after);
         }
         
         test("+inf", true, 0);
@@ -625,13 +631,13 @@ if (isValidTokenizerInput!(Input)) {
         return IonTokenType.TokenNumber;
 
     }
-    ///
-    version(mir_ion_parser_test) @("Test scanning for numbers") unittest
+    /// Test scanning for numbers 
+    version(mir_ion_parser_test) unittest
     {
         void test(string txt, IonTokenType expectedToken) {
             auto t = tokenizeString(txt);
             auto c = t.readInput();
-            t.scanForNumber(c).shouldEqual(expectedToken);
+            assert(t.scanForNumber(c) == expectedToken);
         }
 
         test("0b0101", IonTokenType.TokenBinary);
@@ -911,20 +917,22 @@ if (isValidTokenizerInput!(Input)) {
             }
         }
     }
-    ///
-    version(mir_ion_parser_test) @("Test expect()") unittest
+    /// Text expect()
+    version(mir_ion_parser_test) unittest
     {
         void testIsHex(string ts) {
             auto t = tokenizeString(ts);
             while (!t.input.empty) {
-                t.expect!(isHexDigit).shouldNotThrow();
+                import std.exception : assertNotThrown;
+                assertNotThrown!MirIonTokenizerException(t.expect!(isHexDigit));
             }
         }
 
         void testFailHex(string ts) {
             auto t = tokenizeString(ts);
             while (!t.input.empty) {
-                t.expect!(isHexDigit).shouldThrow();
+                import std.exception : assertThrown;
+                assertThrown!MirIonTokenizerException(t.expect!(isHexDigit));
             }
         }
 
@@ -979,22 +987,32 @@ if (isValidTokenizerInput!(Input)) {
 
 version(mir_ion_parser_test):
 
-import unit_threaded;
-
 /++
 Generic helper to verify the functionality of the parsing code in unit-tests
 +/
-template testRead(T) {
+template testRead(T, string file = __FILE__, int line = __LINE__) {
     void testRead(ref T t, ubyte expected) {
-        t.readInput().shouldEqual(expected);
+        import mir.exception;
+        ubyte v = t.readInput();
+        if (v != expected) {
+            import mir.format;
+            stringBuf buf;
+            throw new MirError(buf.print("Expected ", v, " but got ", expected).data, file, line);
+        }
     }
 } 
 
 /++
 Generic helper to verify the functionality of the parsing code in unit-tests
 +/
-template testPeek(T) {
+template testPeek(T, string file = __FILE__, int line = __LINE__) {
     void testPeek(ref T t, ubyte expected) {
-        t.peekOne().shouldEqual(expected);
+        import mir.exception;
+        ubyte v = t.peekOne();
+        if (v != expected) {
+            import mir.format;
+            stringBuf buf;
+            throw new MirError(buf.print("Expected ", v, " but got ", expected).data, file, line);
+        }
     }
 }
