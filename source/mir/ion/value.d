@@ -17,9 +17,20 @@ Ion Version Marker
 struct IonVersionMarker
 {
     /// Major Version
-    ushort major = 1;
+    ubyte major = 1;
     /// Minor Version
-    ushort minor = 0;
+    ubyte minor = 0;
+}
+
+package IonErrorCode parseVersion(ref const(ubyte)[] data, scope ref IonVersionMarker versionMarker)
+    @safe pure nothrow @nogc
+{
+    version(LDC) pragma(inline, true);
+    if (data.length < 4 || data[0] != 0xE0 || data[3] != 0xEA)
+        return IonErrorCode.cantParseValueStream;
+    versionMarker = IonVersionMarker(data[1], data[2]);
+    data = data[4 .. $];
+    return IonErrorCode.none;
 }
 
 /// Aliases the $(SUBREF type_code, IonTypeCode) to the corresponding Ion Typed Value type.
@@ -210,8 +221,9 @@ struct IonValue
     ///
     unittest
     {
+        import mir.ion.stream;
         import mir.ion.ser.json;
-        assert(IonValue([0x11]).serializeJson == "true");
+        assert(IonValueStream([0x11]).serializeJson == "true");
     }
 }
 
@@ -256,6 +268,15 @@ struct IonDescribedValue
         @safe pure nothrow @nogc const
     {
         return descriptor.L == 0xF;
+    }
+
+    /++
+    Returns: true if the values have the same binary representation.
+    +/
+    bool opEquals(IonDescribedValue rhs)
+        @safe pure nothrow @nogc const
+    {
+        return this.descriptor == rhs.descriptor && this.data == rhs.data;
     }
 
     /++
@@ -401,7 +422,7 @@ struct IonDescribedValue
                     break;
                 case IonTypeCode.uInt:
                 case IonTypeCode.nInt:
-                    // trustedGet!IonInt.serialize(serializer);
+                    trustedGet!IonInt.serialize(serializer);
                     break;
                 case IonTypeCode.float_:
                     trustedGet!IonFloat.serialize(serializer);
@@ -413,28 +434,28 @@ struct IonDescribedValue
                     trustedGet!IonTimestamp.serialize(serializer);
                     break;
                 case IonTypeCode.symbol:
-                    // trustedGet!IonSymbolID.serialize(serializer);
+                    trustedGet!IonSymbolID.serialize(serializer);
                     break;
                 case IonTypeCode.string:
-                    // trustedGet!(const(char)[]).serialize(serializer);
+                    serializer.putValue(trustedGet!(const(char)[]));
                     break;
                 case IonTypeCode.clob:
-                    // trustedGet!IonClob.serialize(serializer);
+                    // serializer.putValue(trustedGet!IonClob);
                     break;
                 case IonTypeCode.blob:
-                    // trustedGet!IonBlob.serialize(serializer);
+                    // serializer.putValue(trustedGet!IonBlob);
                     break;
                 case IonTypeCode.list:
-                    // trustedGet!IonList.serialize(serializer);
+                    trustedGet!IonList.serialize(serializer);
                     break;
                 case IonTypeCode.sexp:
-                    // trustedGet!IonSexp.serialize(serializer);
+                    trustedGet!IonSexp.serialize(serializer);
                     break;
                 case IonTypeCode.struct_:
-                    // trustedGet!IonStruct.serialize(serializer);
+                    trustedGet!IonStruct.serialize(serializer);
                     break;
                 case IonTypeCode.annotations:
-                    // trustedGet!IonAnnotationWrapper.serialize(serializer);
+                    trustedGet!IonAnnotationWrapper.serialize(serializer);
                     break;
             }
         }
@@ -836,8 +857,8 @@ struct IonInt
     +/
     void serialize(S)(ref S serializer) const
     {
-        pragma(msg, S);
-        serializer.putValue(field);
+        BigIntView!(const ubyte, WordEndian.big) f = field;
+        serializer.putValue(f);
     }
 }
 
@@ -1421,14 +1442,14 @@ struct IonSymbolID
     Serializes SymbolId as Ion value.
     Note: This serialization shouldn't be used for `struct` keys or `annotation` list.
     Params:
-        serializer = serializer with `ionPutValueId` primitive.
+        serializer = serializer with `putValueId` primitive.
     +/
     void serialize(S)(ref S serializer) const
     {
-        uint id;
+        size_t id;
         if (auto overflow = representation.get(id))
             throw IonErrorCode.overflowInSymbolId.ionException;
-        serializer.ionPutValueId(cast(uint) representation);
+        serializer.putValueId(id);
     }
 }
 
@@ -1652,13 +1673,13 @@ const:
     +/
     void serialize(S)(ref S serializer) const
     {
-        serializer.listBegin;
+        auto state = serializer.listBegin;
         foreach (IonDescribedValue value; this)
         {
             serializer.elemBegin;
             value.serialize(serializer);
         }
-        serializer.listEnd;
+        serializer.listEnd(state);
     }
 }
 
@@ -1839,13 +1860,13 @@ const:
     +/
     void serialize(S)(ref S serializer) const
     {
-        serializer.sexpBegin;
+        auto state = serializer.sexpBegin;
         foreach (IonDescribedValue value; this)
         {
             serializer.elemBegin;
             value.serialize(serializer);
         }
-        serializer.sexpEnd;
+        serializer.sexpEnd(state);
     }
 }
 
@@ -2056,13 +2077,13 @@ const:
     +/
     void serialize(S)(ref S serializer) const
     {
-        serializer.structBegin;
+        auto state = serializer.structBegin;
         foreach (size_t symbolID, IonDescribedValue value; this)
         {
             serializer.putKeyId(symbolID);
             value.serialize(serializer);
         }
-        serializer.structEnd;
+        serializer.structEnd(state);
     }
 }
 
@@ -2179,12 +2200,12 @@ struct IonAnnotationWrapper
         IonAnnotations annotations;
         auto value = unwrap(annotations);
 
-        serializer.annotationWrapperBegin;
-
-        annotations.serialize(serializer);
-        value.serialize(serializer);
-
-        serializer.annotationWrapperEnd;
+        auto state = serializer.annotationWrapperBegin;
+        {
+            annotations.serialize(serializer);
+            value.serialize(serializer);
+        }
+        serializer.annotationWrapperEnd(state);
     }
 }
 
@@ -2387,16 +2408,16 @@ const:
     void serialize(S)(ref S serializer) const
     {
         IonAnnotations annotations;
-        auto value = unwrap(annotations);
 
-        serializer.annotationsBegin;
+        auto state = serializer.annotationsBegin;
 
         foreach (size_t id; this)
         {
+            serializer.elemBegin;
             serializer.putAnnotationId(id);
         }
 
-        serializer.annotationsEnd;
+        serializer.annotationsEnd(state);
     }
 }
 
@@ -2473,7 +2494,7 @@ private IonErrorCode parseVarInt(S)(scope ref const(ubyte)[] data, scope out S r
     }
 }
 
-private IonErrorCode parseValue(ref const(ubyte)[] data, scope ref IonDescribedValue describedValue)
+package IonErrorCode parseValue(ref const(ubyte)[] data, scope ref IonDescribedValue describedValue)
     @safe pure nothrow @nogc
 {
     version(LDC) pragma(inline, true);
