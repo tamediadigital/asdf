@@ -15,6 +15,7 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
 {
     import mir.bignum.decimal: Decimal;
     import mir.bignum.integer: BigInt;
+    import mir.ion.lob;
     import mir.ion.symbol_table: IonSymbolTable, IonSystemSymbolTable_v1;
     import mir.ion.tape;
     import mir.ion.type_code;
@@ -203,12 +204,24 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     }
 
     ///
+    void putValue(IonClob value)
+    {
+        tapeHolder.reserve(value.data.length + size_t.sizeof + 1);
+        tapeHolder.currentTapePosition += ionPut(tapeHolder.data.ptr + tapeHolder.currentTapePosition, value);
+    }
+
+    ///
+    void putValue(IonBlob value)
+    {
+        tapeHolder.reserve(value.data.length + size_t.sizeof + 1);
+        tapeHolder.currentTapePosition += ionPut(tapeHolder.data.ptr + tapeHolder.currentTapePosition, value);
+    }
+
+    ///
     void elemBegin()
     {
     }
 }
-
-private static immutable ubyte[] ionPrefix = [0xe0, 0x01, 0x00, 0xea];
 
 /++
 Ion serialization function.
@@ -216,7 +229,7 @@ Ion serialization function.
 immutable(ubyte)[] serializeIon(T)(auto ref T value)
 {
     import mir.utility: _expect;
-    import mir.ion.internal.data_holder;
+    import mir.ion.internal.data_holder: ionPrefix, IonTapeHolder;
     import mir.ion.ser: serializeValue;
     import mir.ion.symbol_table: IonSymbolTable, removeSystemSymbols;
     import mir.serde: serdeGetDeserializationKeysRecurse;
@@ -225,7 +238,7 @@ immutable(ubyte)[] serializeIon(T)(auto ref T value)
     enum keys = serdeGetSerializationKeysRecurse!T.removeSystemSymbols;
 
     alias TapeHolder = IonTapeHolder!(nMax * 8);
-    auto tapeHolder = IonTapeHolder!(nMax * 8)(nMax * 8);
+    auto tapeHolder = TapeHolder(nMax * 8);
     IonSymbolTable!true table;
     auto serializer = IonSerializer!(TapeHolder, keys)(
         ()@trusted { return &tapeHolder; }(),

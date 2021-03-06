@@ -16,6 +16,7 @@ struct JsonSerializer(string sep, Appender)
     import mir.bignum.decimal: Decimal;
     import mir.bignum.integer: BigInt;
     import mir.bignum.low_level_view: BigIntView, WordEndian;
+    import mir.ion.lob;
     import mir.ion.type_code;
     import mir.timestamp;
     import std.traits: isNumeric;
@@ -354,6 +355,18 @@ struct JsonSerializer(string sep, Appender)
     }
 
     ///
+    void putValue(IonClob value)
+    {
+        putValue(value.data);
+    }
+
+    ///
+    void putValue(IonBlob value)
+    {
+        putValue(cast(const(char)[])value.data);
+    }
+
+    ///
     void putValue(Timestamp value)
     {
         appender.put('\"');
@@ -550,7 +563,7 @@ unittest
         private int sum;
 
         // opApply is used for serialization
-        int opApply(int delegate(scope const char[] key, ref const int val) pure dg) pure
+        int opApply(int delegate(scope const char[] key, ref const int val) pure @safe dg) pure @safe
         {
             { int var = 1; if (auto r = dg("a", var)) return r; }
             { int var = 2; if (auto r = dg("b", var)) return r; }
@@ -606,7 +619,7 @@ string serializeJsonPretty(string sep = "\t", V)(auto ref V value)
 
     auto app = appender!(char[]);
     serializeJsonPretty!sep(app, forward!value);
-    return cast(string) app.data;
+    return (()@trusted => cast(string) app.data)();
 }
 
 ///

@@ -16,11 +16,16 @@ Please use https://github.com/libmir/asdf for now.
  - [x] JSON stage3 SIMD parsing
  - [x] JSON single-thread parsing
  - [ ] JSON multi-thread parsing
- - [ ] MessagePack parsing
- - [ ] Ion to JSON
- - [ ] Ion to MessagePack
+ - [x] Ion to JSON
+ - [ ] Text Ion parsing
  - [ ] Ion to Text Ion
- - [ ] Serialization API
+ - [x] Serialization API
  - [x] Deserialization API
  - [x] Precise decimal to floating conversion (except subnormals)
  - [x] Precise floating to decimal conversion.
+ - [x] Local Symbol Tables
+ - [ ] Shared Symbol Tables
+ - [x] Chunked JSON reader
+ - [x] Chunked binary Ion Value Stream reader
+ - [ ] MessagePack parsing
+ - [ ] Ion to MessagePack

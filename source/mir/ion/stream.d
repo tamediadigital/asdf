@@ -92,7 +92,6 @@ const:
         while (d.length)
         {
             import std.stdio;
-            try debug writeln("Length = ", d.length); catch(Exception e) {}
             IonErrorCode error;
             IonVersionMarker versionMarker;
             IonDescribedValue describedValue;
@@ -119,7 +118,7 @@ const:
                     // check first annotation is $ion_symbol_table
                     {
                         bool nextAnnotation;
-                        foreach (annotationError, annotationId; annotations)
+                        foreach (IonErrorCode annotationError, size_t annotationId; annotations)
                         {
                             error = annotationError;
                             if (error)
@@ -146,7 +145,7 @@ const:
                         bool preserveCurrentSymbols;
                         IonList symbols;
 
-                        foreach (symbolTableError, symbolTableKeyId, symbolTableValue; symbolTableStruct)
+                        foreach (IonErrorCode symbolTableError, size_t symbolTableKeyId, IonDescribedValue elementValue; symbolTableStruct)
                         {
                             error = symbolTableError;
                             if (error)
@@ -155,18 +154,18 @@ const:
                             {
                                 case IonSystemSymbol.imports:
                                 {
-                                    if (preserveCurrentSymbols || (symbolTableValue.descriptor.type != IonTypeCode.symbol && symbolTableValue.descriptor.type != IonTypeCode.list))
+                                    if (preserveCurrentSymbols || (elementValue.descriptor.type != IonTypeCode.symbol && elementValue.descriptor.type != IonTypeCode.list))
                                     {
                                         error = IonErrorCode.invalidLocalSymbolTable;
                                         goto C;
                                     }
-                                    if (symbolTableValue.descriptor.type == IonTypeCode.list)
+                                    if (elementValue.descriptor.type == IonTypeCode.list)
                                     {
                                         error = IonErrorCode.sharedSymbolTablesAreUnsupported;
                                         goto C;
                                     }
                                     size_t id;
-                                    error = symbolTableValue.trustedGet!IonSymbolID.get(id);
+                                    error = elementValue.trustedGet!IonSymbolID.get(id);
                                     if (error)
                                         goto C;
                                     if (id != IonSystemSymbol.ion_symbol_table)
@@ -179,14 +178,14 @@ const:
                                 }
                                 case IonSystemSymbol.symbols:
                                 {
-                                    if (symbols != symbols.init || symbolTableValue.descriptor.type != IonTypeCode.list)
+                                    if (symbols != symbols.init || elementValue.descriptor.type != IonTypeCode.list)
                                     {
                                         error = IonErrorCode.invalidLocalSymbolTable;
                                         goto C;
                                     }
-                                    if (symbolTableValue != null)
+                                    if (elementValue != null)
                                     {
-                                        symbols = symbolTableValue.trustedGet!IonList;
+                                        symbols = elementValue.trustedGet!IonList;
                                     }
                                     if (error)
                                         goto C;
@@ -205,7 +204,7 @@ const:
                             resetSymbolTable();
                         }
 
-                        foreach(symbolsError, symbolValue; symbols)
+                        foreach (IonErrorCode symbolsError, IonDescribedValue symbolValue; symbols)
                         {
                             error = symbolsError;
                             if (error)
@@ -321,10 +320,6 @@ const:
             }
             else
             {
-        import std.stdio;
-                writeln("symbolTable = ", symbolTable);
-                writeln("value = ", value.data);
-
                 import mir.ion.ser.unwrap_ids;
                 auto unwrappedSerializer = unwrapSymbolIds(serializer, symbolTable);
             }
@@ -333,9 +328,7 @@ const:
     }
 
     ///
-    // @safe
-    // nothrow
-    // pure 
+    @safe pure
     unittest
     {
         import mir.ion.ser.json;
