@@ -24,9 +24,9 @@ Params:
 Returns:
     The string contents of the token given
 +/
-string readValue(T)(ref T t, IonTokenType token) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
-    string val;
+const(char)[] readValue(T)(ref T t, IonTokenType token) 
+if (isInstanceOf!(IonTokenizer, T)) {
+    const(char)[] val;
 
     with(IonTokenType) switch (token) {
         case TokenSymbol:
@@ -88,7 +88,7 @@ Throws:
     MirIonTokenizerException if an invalid escape value was found.
 +/
 dchar readEscapedChar(T, bool isClob = false)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+if (isInstanceOf!(IonTokenizer, T)) {
     dchar readHexEscapeLiteral(int length)() { 
         typeof(return) val;
         dchar codePoint = 0;
@@ -101,7 +101,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
         return val;
     }
 
-    T.inputType c;
+    ubyte c;
     static if (isClob) {
         c = t.expect!"a != 'U' && a != 'u'"; // cannot have unicode escapes within clobs
     } else {
@@ -171,8 +171,8 @@ Returns:
     A string containing the UTF-32 escape sequence, or nothing if we read a new-line.
     The length of the string is not well-defined, it can change depending on the escape sequence.
 +/
-string readEscapeSeq(T, bool isClob = false)(ref T t)
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+const(char)[] readEscapeSeq(T, bool isClob = false)(ref T t)
+if (isInstanceOf!(IonTokenizer, T)) {
     import std.utf : toUTF8;
     const(ubyte) esc = t.peekOne();
     if (esc == '\n') {
@@ -192,12 +192,12 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
     Returns:
         A string containing the un-quoted symbol from the input range in the tokenizer.
 +/
-string readSymbol(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+const(char)[] readSymbol(T)(ref T t) 
+if (isInstanceOf!(IonTokenizer, T)) {
     ScopedBuffer!char buf;
     l: while (true) {
         // TODO: can modify this for chunking
-        T.inputType[] cbuf = t.peekMax(1); 
+        ubyte[] cbuf = t.peekMax(1); 
         if (cbuf.length == 0) break l;
         foreach(c; cbuf) {
             if (!c.isIdentifierPart()) break l;
@@ -206,7 +206,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
         }
     }
 
-    return buf.data.idup;
+    return buf.data;
 }
 /// Test reading a symbol
 version(mir_ion_parser_test) unittest
@@ -241,17 +241,17 @@ Params:
 Returns:
     A string containing the quoted symbol.
 +/
-string readSymbolQuoted(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+const(char)[] readSymbolQuoted(T)(ref T t) 
+if (isInstanceOf!(IonTokenizer, T)) {
     ScopedBuffer!char buf;
     while (true) {
-        T.inputType c = t.expect!"a != 0 && a != '\\n'";
+        ubyte c = t.expect!"a != 0 && a != '\\n'";
         switch (c) {
             case '\'': // found the end 
-                return buf.data.idup;
+                return buf.data;
             case '\\':
-                string esc = t.readEscapeSeq();
-                if (esc == "") continue;
+                const(char)[] esc = t.readEscapeSeq();
+                if (esc.length == 0) continue;
                 buf.put(esc);
                 break;
             default:
@@ -295,17 +295,17 @@ Params:
 Returns:
     A string containing any symbol operators that were able to be read.
 +/
-string readSymbolOperator(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+const(char)[] readSymbolOperator(T)(ref T t) 
+if (isInstanceOf!(IonTokenizer, T)) {
     ScopedBuffer!char buf;
-    T.inputType c = t.peekOne();
+    ubyte c = t.peekOne();
     while (c.isOperatorChar()) {
         buf.put(c);
         t.skipOne();
         c = t.peekOne();
     }
 
-    return buf.data.idup;
+    return buf.data;
 }
 
 /++
@@ -318,10 +318,10 @@ Returns:
     The string's content from the input range.
 +/
 const(char)[] readString(T, bool longString = false, bool isClob = false)(ref T t)
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+if (isInstanceOf!(IonTokenizer, T)) {
     ScopedBuffer!char buf;
     while (true) {
-        T.inputType c = t.expect!"a != 0";
+        ubyte c = t.expect!"a != 0";
         t.expectFalse!(isInvalidChar, true)(c);
 
         static if (!longString) {
@@ -336,10 +336,10 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
         s: switch (c) {
             static if (!longString) {
                 case '"':
-                    return buf.data.idup;
+                    return buf.data;
             } else {
                 case '\'':
-                    const(T.inputType[]) v = t.peekMax(2);
+                    const(ubyte[]) v = t.peekMax(2);
                     if (v.length != 2) {
                         goto default;
                     } else {
@@ -349,17 +349,17 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
                     }
                     static if (isClob) {
                         if (t.skipLobWhitespace!(false, true)) { // fail on comments
-                            return buf.data.idup;
+                            return buf.data;
                         }
                     } else {
                         if (t.skipLongStringEnd()) {
-                            return buf.data.idup;
+                            return buf.data;
                         }
                     }
                     break s;
             }
             case '\\':
-                string esc = readEscapeSeq!(T, isClob)(t);
+                const(char)[] esc = readEscapeSeq!(T, isClob)(t);
                 buf.put(esc);
                 break s;
             default:
@@ -401,7 +401,7 @@ Returns:
     A string holding the contents of any long strings found.
 +/
 const(char)[] readLongString(T)(ref T t)
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+if (isInstanceOf!(IonTokenizer, T)) {
     return readString!(T, true)(t);
 }
 /// Test reading a long string
@@ -438,12 +438,12 @@ Returns:
     An untyped array containing the contents of the clob. This array is guaranteed to have no UTF-8/UTF-32 characters -- only ASCII characters.
 +/
 ubyte[] readClob(T, bool longClob = false)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+if (isInstanceOf!(IonTokenizer, T)) {
     // Always read out bytes, as clobs are octet-based (and not necessarily a string)
-    ubyte[] data = cast(ubyte[])(readString!(T, longClob, true)(t).dup);
+    ubyte[] data = cast(ubyte[])(readString!(T, longClob, true)(t));
 
     // read out the following }}
-    T.inputType c = t.expect!("a == '}'", true)(t.skipLobWhitespace()); // after skipping any whitespace, it should be the terminator ('}')
+    ubyte c = t.expect!("a == '}'", true)(t.skipLobWhitespace()); // after skipping any whitespace, it should be the terminator ('}')
     c = t.expect!"a == '}'"; // and no whitespace should between one bracket and another
 
     t.finished = true; // we're done reading!
@@ -477,7 +477,7 @@ Returns:
     An untyped array holding the contents of the clob.
 +/
 ubyte[] readLongClob(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+if (isInstanceOf!(IonTokenizer, T)) {
     return readClob!(T, true)(t);
 }
 
@@ -491,9 +491,9 @@ Returns:
     An untyped array containing the Base64 contents of the blob.
 +/
 ubyte[] readBlob(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+if (isInstanceOf!(IonTokenizer, T)) {
     ScopedBuffer!ubyte buf;
-    T.inputType c;
+    ubyte c;
     while (true) {
         c = t.expect!("a != 0", true)(t.skipLobWhitespace());
         if (c == '}') {
@@ -504,7 +504,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 
     c = t.expect!"a == '}'";
     t.finished = true;
-    return buf.data.dup;
+    return buf.data;
 }
 
 /++
@@ -517,17 +517,17 @@ Returns:
     See the examples below on how to access the type/value.
 +/
 auto readNumber(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+if (isInstanceOf!(IonTokenizer, T)) {
     import mir.ion.type_code : IonTypeCode;
     struct IonNumberRead {
-        string val;
+        const(char)[] val;
         IonTypeCode type;
     }
     IonNumberRead num;
     ScopedBuffer!char buf;
 
-    T.inputType readExponent() {
-        T.inputType c = t.readInput();
+    ubyte readExponent() {
+        ubyte c = t.readInput();
         if (c == '+' || c == '-') {
             buf.put(c);
             c = t.expect!"a != 0";
@@ -536,7 +536,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
         return readDigits!T(t, c, buf);
     }
 
-    T.inputType c = t.readInput();
+    ubyte c = t.readInput();
     if (c == '-') {
         c = t.readInput();
         if (c == 0) {
@@ -549,7 +549,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
         num.type = IonTypeCode.uInt;
     }
 
-    T.inputType leader = c;
+    ubyte leader = c;
     const(size_t) len = buf.length;
     c = readDigits!T(t, leader, buf);
     if (leader == '0') {
@@ -561,7 +561,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
     if (c == '.') {
         buf.put('.');
         num.type = IonTypeCode.decimal;
-        T.inputType decimalLeader = t.expect!"a != 0";
+        ubyte decimalLeader = t.expect!"a != 0";
         c = readDigits!T(t, decimalLeader, buf);
     }
 
@@ -584,7 +584,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
 
     t.expect!(t.isStopChar, true)(c);
     t.unread(c);
-    num.val = buf.data.idup;
+    num.val = buf.data;
 
     return num; 
 }
@@ -624,9 +624,9 @@ Params:
 Returns:
     A character located after it has read every single digit in a sequence.
 +/
-T.inputType readDigits(T)(ref T t, T.inputType leader, ref ScopedBuffer!(char) buf) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
-    T.inputType c = leader;
+ubyte readDigits(T)(ref T t, ubyte leader, ref ScopedBuffer!(char) buf) 
+if (isInstanceOf!(IonTokenizer, T)) {
+    ubyte c = leader;
     if (!isDigit(c)) {
         return c;
     }
@@ -645,10 +645,10 @@ Params:
 Returns:
     A character located after it has read every single digit in a sequence.
 +/
-T.inputType readRadixDigits(T, alias isValid = isDigit)(ref T t, ref ScopedBuffer!(char) buf) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+ubyte readRadixDigits(T, alias isValid = isDigit)(ref T t, ref ScopedBuffer!(char) buf) 
+if (isInstanceOf!(IonTokenizer, T)) {
     import mir.functional : naryFun;
-    T.inputType c;
+    ubyte c;
     while (true) {
         c = t.readInput();
         if (c == '_') {
@@ -672,10 +672,10 @@ Params:
 Returns:
     A string containing the full radix number (including the leading 0 and marker).
 +/
-string readRadix(T, alias isMarker, alias isValid)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+const(char)[] readRadix(T, alias isMarker, alias isValid)(ref T t) 
+if (isInstanceOf!(IonTokenizer, T)) {
     ScopedBuffer!char buf;
-    T.inputType c = t.readInput();
+    ubyte c = t.readInput();
     if (c == '-') {
         buf.put('-');
         c = t.readInput();
@@ -692,7 +692,7 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
     t.expect!(t.isStopChar, true)(c);
     t.unread(c);
 
-    return buf.data.idup; 
+    return buf.data; 
 }
 
 /++
@@ -703,8 +703,8 @@ Params:
 Returns:
     A string containing the entire binary number read.
 +/
-string readBinary(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+const(char)[] readBinary(T)(ref T t) 
+if (isInstanceOf!(IonTokenizer, T)) {
     return readRadix!(T, "a == 'b' || a == 'B'", "a == '0' || a == '1'")(t);
 }
 /// Test reading a binary number
@@ -735,8 +735,8 @@ Params:
 Returns:
     A string containing the entire hex number read.
 +/
-string readHex(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+const(char)[] readHex(T)(ref T t) 
+if (isInstanceOf!(IonTokenizer, T)) {
     return readRadix!(T, "a == 'x' || a == 'X'", isHexDigit)(t);
 }
 /// Test reading a hex number
@@ -772,29 +772,29 @@ Params:
 Returns:
     A string containing the entire timestamp read from the input stream.
 +/
-string readTimestamp(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
+const(char)[] readTimestamp(T)(ref T t) 
+if (isInstanceOf!(IonTokenizer, T)) {
     ScopedBuffer!char buf;
 
-    T.inputType readTSDigits(int nums) {
+    ubyte readTSDigits(int nums) {
         for (int i = 0; i < nums; i++) {
-            T.inputType c = t.expect!isDigit;
+            ubyte c = t.expect!isDigit;
             buf.put(c);
         }
         return t.readInput();
     }
 
-    T.inputType readTSOffset(T.inputType c) {
+    ubyte readTSOffset(ubyte c) {
         if (c != '-' && c != '+') {
             return c;
         }
         buf.put(c);
-        const(T.inputType) cs = t.expect!("a == ':'", true)(readTSDigits(2));
+        const(ubyte) cs = t.expect!("a == ':'", true)(readTSDigits(2));
         buf.put(':');
         return readTSDigits(2);
     }
 
-    T.inputType readTSOffsetOrZ(T.inputType c) {
+    ubyte readTSOffsetOrZ(ubyte c) {
         t.expect!("a == '-' || a == '+' || a == 'z' || a == 'Z'", true)(c);
         if (c == '-' || c == '+') {
             return readTSOffset(c);
@@ -806,25 +806,25 @@ if (isInstanceOf!(IonTokenizer, T) && is(T.inputType == ubyte)) {
         assert(0);
     }
 
-    string readTSFinish(T.inputType c) {
+    const(char)[] readTSFinish(ubyte c) {
         t.expect!(t.isStopChar, true)(c);
         t.unread(c);
-        return buf.data.idup;
+        return buf.data;
     }
 
     // yyyy(T || -)
-    T.inputType c = t.expect!("a == 'T' || a == '-'", true)(readTSDigits(4));
+    ubyte c = t.expect!("a == 'T' || a == '-'", true)(readTSDigits(4));
     if (c == 'T') {
         // yyyyT
         buf.put('T');
-        return buf.data.idup;
+        return buf.data;
     }
     buf.put('-');
     // yyyy-mm(T || -)
     c = t.expect!("a == 'T' || a == '-'", true)(readTSDigits(2));
     if (c == 'T') {
         buf.put('T');
-        return buf.data.idup;
+        return buf.data;
     }
     buf.put('-');
     // yyyy-mm-dd(T)?

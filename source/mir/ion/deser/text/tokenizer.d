@@ -9,23 +9,25 @@ import mir.ion.deser.text.skippers;
 import mir.ion.deser.text.tokens;
 import mir.ion.internal.data_holder : IonTapeHolder;
 import std.traits : Unqual;
-import std.range;
+import std.range : dropBack, empty, front, popFront;
+import std.range.primitives : isInputRange, ElementType;
 
 /++
-Check to verify that a range meets the specifications (no UTF support, ATM)
+Check to verify that a range meets the specifications
 +/
 @safe @nogc nothrow template isValidTokenizerInput(T) {
-    const isValidElementType = is(Unqual!(ElementType!(T)) == ubyte);
+    const isValidElementType = is(Unqual!(ElementType!(T)) == ubyte) || is(Unqual!(ElementType!(T)) == char);
     const isValidTokenizerInput = isValidElementType && isInputRange!(T);
 }
 
 /++
-Create a tokenizer for a given string.
+Create a tokenizer for a given UTF-8 string.
 
-This function will take in a given string, and will verify that it is a UTF-8/ASCII string.
-It will then proceed to create a duplicate of the string, and tokenize it.
+This function will take in a given string, and duplicate it.
+Then, it will proceed to tokenize it.
 
-$(NOTE Currently, UTF-16/UTF-32 support is not included.)
+$(NOTE If this string is not a UTF-8 string, consider using the overload which accepts a UTF-16/UTF-32 string.)
+
 Params:
     input = String to tokenize
 Returns:
@@ -40,6 +42,42 @@ IonTokenizer!(ubyte[]) tokenizeString(const(char)[] input) {
 }
 
 /++
+Create a tokenizer for a given UTF-16/UTF-32 string.
+
+This function will take in a UTF-16/UTF-32 string, and convert it to a UTF-8 string on the fly.
+
+Params:
+    input = UTF-16 string to tokenize.
+Returns:
+    [IonTokenizer]
++/
+@safe
+auto tokenizeString(Input)(Input input) 
+if (is(Input == wstring) || is(Input == dstring)) {
+    import std.utf : byUTF;
+    auto range = input.byUTF!char();
+    return tokenize!(typeof(range))(range);
+}
+/// UTF-16 string
+version(mir_ion_parser_test) unittest {
+    import mir.ion.deser.text.tokens : IonTokenType;
+    import mir.ion.deser.text.readers : readString;
+    auto t = tokenizeString(`"hello𐐷world"`w);
+    assert(t.nextToken());
+    assert(t.currentToken == IonTokenType.TokenString);
+    assert(t.readString() == "hello𐐷world");
+}
+/// UTF-32 string
+version(mir_ion_parser_test) unittest {
+    import mir.ion.deser.text.tokens : IonTokenType;
+    import mir.ion.deser.text.readers : readString;
+    auto t = tokenizeString(`"hello𐐷world"`d);
+    assert(t.nextToken());
+    assert(t.currentToken == IonTokenType.TokenString);
+    assert(t.readString() == "hello𐐷world");
+}
+
+/++
 Create a tokenizer for a given range.
 
 This function will take in a given range, duplicate it, and then tokenize it.
@@ -49,9 +87,9 @@ Returns:
     [IonTokenizer]
 +/
 @safe
-IonTokenizer!(Input) tokenize(Input)(immutable(Input) input) 
+IonTokenizer!(Input) tokenize(Input)(Input input) 
 if (isValidTokenizerInput!(Input)) {
-    IonTokenizer!(Input) tokenizer = IonTokenizer!(Input)(input.dup);
+    IonTokenizer!(Input) tokenizer = IonTokenizer!(Input)(input);
     return tokenizer;
 }
 
@@ -64,11 +102,8 @@ if (isValidTokenizerInput!(Input)) {
     /++ Our input range that we read from +/
     Input input;
 
-    /++ The raw input type that reading an element from our range will return (typically `ubyte`) +/
-    alias inputType = Unqual!(ElementType!(Input));
-
     /++ Peek buffer (to support look-ahead) +/
-    inputType[] buffer;
+    Unqual!(ElementType!(Input))[] buffer;
 
     /++ Bool specifying if we want to read through the contents of the current token +/
     bool finished;
@@ -103,7 +138,7 @@ if (isValidTokenizerInput!(Input)) {
     Params:
         c = Character to append to the top of the peek buffer.
     +/
-    void unread(inputType c) {
+    void unread(ubyte c) {
         if (this.position <= 0) {
             throw new MirIonTokenizerException("Cannot unread when at position >= 0");
         }
@@ -150,11 +185,11 @@ if (isValidTokenizerInput!(Input)) {
     Returns:
         a character representing the top-most character on the peek buffer.
     +/
-    inputType popFromPeekBuffer() 
+    ubyte popFromPeekBuffer() 
     in {
         assert(this.buffer.length != 0, "Cannot pop from empty peek buffer");
     } body {
-        inputType c = this.buffer[$ - 1];
+        ubyte c = this.buffer[$ - 1];
         this.buffer = this.buffer.dropBack(1);
         return c; 
     }
@@ -166,7 +201,7 @@ if (isValidTokenizerInput!(Input)) {
         false if it was unable (due to hitting an EOF or the like)
     +/
     bool skipOne() {
-        const inputType c = readInput();
+        const(ubyte) c = readInput();
         if (c == 0) {
             return false;
         }
@@ -204,10 +239,10 @@ if (isValidTokenizerInput!(Input)) {
     Returns:
         Array of peeked characters
     +/
-    inputType[] peekMax(int n) {
-        inputType[] ret;
+    ubyte[] peekMax(int n) {
+        ubyte[] ret;
         for (auto i = 0; i < n; i++) {
-            inputType c = readInput();
+            ubyte c = readInput();
             if (c == 0) {
                 break;
             }
@@ -233,12 +268,12 @@ if (isValidTokenizerInput!(Input)) {
     Throws:
         [MirIonTokenizerException]
     +/
-    inputType[] peekExactly(int n) {
-        inputType[] ret;
+    ubyte[] peekExactly(int n) {
+        ubyte[] ret;
         bool hitEOF;
         size_t EOFlocation;
         for (auto i = 0; i < n; i++) {
-            inputType c = readInput();
+            ubyte c = readInput();
             if (c == 0) {
                 // jump out, 
                 EOFlocation = this.position;
@@ -304,7 +339,7 @@ if (isValidTokenizerInput!(Input)) {
     Throws:
         [MirIonTokenizerException]
     +/
-    inputType peekOne() {
+    ubyte peekOne() {
         if (this.buffer.length != 0) {
             return this.buffer[$ - 1];
         }
@@ -313,7 +348,7 @@ if (isValidTokenizerInput!(Input)) {
             this.unexpectedEOF();
         }
 
-        inputType c;
+        ubyte c;
         c = readInput();
         unread(c);
         
@@ -355,7 +390,7 @@ if (isValidTokenizerInput!(Input)) {
     Throws:
         [MirIonTokenizerException]
     +/
-    inputType readInput() {
+    ubyte readInput() {
         this.position++;
         if (this.buffer.length != 0) {
             return popFromPeekBuffer();
@@ -365,7 +400,7 @@ if (isValidTokenizerInput!(Input)) {
             return 0;
         }
 
-        inputType c = this.input.front;
+        ubyte c = this.input.front;
         this.input.popFront();
 
         if (c == '\r') {
@@ -420,10 +455,10 @@ if (isValidTokenizerInput!(Input)) {
     Throws:
         [MirIonTokenizerException]
     +/
-    inputType skipWhitespace(bool skipComments = true, bool failOnComment = false)() 
+    ubyte skipWhitespace(bool skipComments = true, bool failOnComment = false)() 
     if (skipComments != failOnComment || (skipComments == false && skipComments == failOnComment)) { // just a sanity check, we cannot skip comments and also fail on comments -- it is one or another (fail or skip)
         while (true) {
-            inputType c = readInput();
+            ubyte c = readInput();
             sw: switch(c) {
                 static foreach(member; ION_WHITESPACE) {
                     case member:
@@ -482,7 +517,7 @@ if (isValidTokenizerInput!(Input)) {
     Throws:
         MirIonTokenizerException if a comment is found
     +/
-    inputType skipLobWhitespace() {
+    ubyte skipLobWhitespace() {
         return skipWhitespace!(false, false);
     }
     /// Test skipping over whitespace within a (c|b)lob
@@ -512,10 +547,10 @@ if (isValidTokenizerInput!(Input)) {
     Returns:
         true if it is the infinity type, false if it is not.
     +/
-    bool isInfinity(inputType c) {
+    bool isInfinity(ubyte c) {
         if (c != '+' && c != '-') return false;
 
-        inputType[] cs = peekMax(5);
+        ubyte[] cs = peekMax(5);
 
         if (cs.length == 3 || (cs.length >= 3 && isStopChar(cs[3]))) {
             if (cs[0] == 'i' && cs[1] == 'n' && cs[2] == 'f') {
@@ -575,7 +610,7 @@ if (isValidTokenizerInput!(Input)) {
         false if it is not.
     +/
     bool isTripleQuote() {
-        inputType[] cs;
+        ubyte[] cs;
         try {
             cs = peekExactly(2);
         } catch (MirIonTokenizerException e) {
@@ -599,10 +634,10 @@ if (isValidTokenizerInput!(Input)) {
     Returns:
         the corresponding number type (or invalid)
     +/
-    IonTokenType scanForNumber(inputType c) in {
+    IonTokenType scanForNumber(ubyte c) in {
         assert(isDigit(c), "Scan for number called with non-digit number");
     } body {
-        inputType[] cs;
+        ubyte[] cs;
         try {
             cs = peekMax(4);
         } catch(MirIonTokenizerException e) {
@@ -685,7 +720,7 @@ if (isValidTokenizerInput!(Input)) {
         true if it was able to read a valid token from the range.
     +/
     bool nextToken() {
-        inputType c;
+        ubyte c;
         // if we're finished with the current value, then skip over the rest of it and go to the next token
         // this typically happens when we hit commas (or the like) and don't have anything to extract
         if (this.finished) {
@@ -701,7 +736,7 @@ if (isValidTokenizerInput!(Input)) {
         bool inf;
 
         // second character
-        inputType cs;
+        ubyte cs;
         
         with(IonTokenType) switch(c) {
             case 0:
@@ -844,7 +879,7 @@ if (isValidTokenizerInput!(Input)) {
             return false;
         }
 
-        inputType c = this.skipValue();
+        ubyte c = this.skipValue();
         unread(c);
         finished = true;
         return true;
@@ -859,13 +894,13 @@ if (isValidTokenizerInput!(Input)) {
     Returns:
         true if the character is the "stop" character.
     +/
-    bool isStopChar(inputType c) {
+    bool isStopChar(ubyte c) {
         if (mir.ion.deser.text.tokens.isStopChar(c)) { // make sure
             return true;
         }
 
         if (c == '/') {
-            const(inputType) c2 = peekOne();
+            const(ubyte) c2 = peekOne();
             if (c2 == '/' || c2 == '*') {
                 return true;
             }
@@ -877,7 +912,7 @@ if (isValidTokenizerInput!(Input)) {
     /++
     Helper to generate a thrown exception (if an unexpected character is hit)
     +/
-    void unexpectedChar(string file = __FILE__, int line = __LINE__)(inputType c, size_t pos = -1) {
+    void unexpectedChar(string file = __FILE__, int line = __LINE__)(ubyte c, size_t pos = -1) {
         import mir.format : print;
         import mir.appender : ScopedBuffer;
         ScopedBuffer!char msg;
@@ -908,7 +943,7 @@ if (isValidTokenizerInput!(Input)) {
     template expect(alias pred = "a", bool noRead = false, string file = __FILE__, int line = __LINE__) {
         import mir.functional : naryFun;
         static if (noRead) {
-            @trusted inputType expect(inputType c) {
+            @trusted ubyte expect(ubyte c) {
                 if (!naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
@@ -916,8 +951,8 @@ if (isValidTokenizerInput!(Input)) {
                 return c;
             }
         } else {
-            @trusted inputType expect() {
-                inputType c = readInput();
+            @trusted ubyte expect() {
+                ubyte c = readInput();
                 if (!naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
@@ -975,7 +1010,7 @@ if (isValidTokenizerInput!(Input)) {
     template expectFalse(alias pred = "a", bool noRead = false, string file = __FILE__, int line = __LINE__) {
         import mir.functional : naryFun;
         static if (noRead) {
-            @trusted inputType expectFalse(inputType c) {
+            @trusted ubyte expectFalse(ubyte c) {
                 if (naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
@@ -983,8 +1018,8 @@ if (isValidTokenizerInput!(Input)) {
                 return c;
             }
         } else {
-            @trusted inputType expectFalse() {
-                inputType c = readInput();
+            @trusted ubyte expectFalse() {
+                ubyte c = readInput();
                 if (naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }

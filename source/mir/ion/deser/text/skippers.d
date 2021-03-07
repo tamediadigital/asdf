@@ -19,7 +19,7 @@ Params:
 Returns:
     A character located after the [s-exp, struct, list, blob].
 +/
-T.inputType skipContainer(T)(ref T t, T.inputType term) 
+ubyte skipContainer(T)(ref T t, ubyte term) 
 if (isInstanceOf!(IonTokenizer, T)) {
     skipContainerInternal!T(t, term);
     return t.readInput();
@@ -32,12 +32,12 @@ Params:
     t = The tokenizer
     term = The last character read from the tokenizer's input range
 +/
-void skipContainerInternal(T)(ref T t, T.inputType term) 
+void skipContainerInternal(T)(ref T t, ubyte term) 
 if (isInstanceOf!(IonTokenizer, T)) 
 in {
     assert(term == ']' || term == '}' || term == ')', "Unexpected character for skipping");
 } body {
-    T.inputType c;
+    ubyte c;
     while (true) {
         c = t.skipWhitespace();
         if (c == term) return;
@@ -88,7 +88,7 @@ Returns:
 bool skipSingleLineComment(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     while (true) {
-        const(T.inputType) c = t.readInput();
+        const(ubyte) c = t.readInput();
         if (c == '\n' || c == 0) {
             return true;
         }
@@ -125,7 +125,7 @@ bool skipBlockComment(T)(ref T t)
 if (isInstanceOf!(IonTokenizer, T)) {
     bool foundStar = false;
     while (true) {
-        const(T.inputType) c = t.readInput();
+        const(ubyte) c = t.readInput();
         if (foundStar && c == '/') {
             return true;
         }
@@ -169,7 +169,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
     if (t.input.empty) {
         return false;
     }
-    const(T.inputType) c = t.peekOne();
+    const(ubyte) c = t.peekOne();
     switch(c) {
         case '/':
             return t.skipSingleLineComment();
@@ -221,7 +221,7 @@ Params:
 Returns:
     A character located after the last digit skipped.
 +/
-T.inputType skipDigits(T)(ref T t, T.inputType _c)
+ubyte skipDigits(T)(ref T t, ubyte _c)
 if(isInstanceOf!(IonTokenizer, T)) {
     auto c = _c;
     while (c.isDigit()) {
@@ -237,9 +237,9 @@ Params:
 Returns:
     A character located after the number skipped.
 +/
-T.inputType skipNumber(T)(ref T t) 
+ubyte skipNumber(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
-    T.inputType c = t.readInput();
+    ubyte c = t.readInput();
     if (c == '-') {
         c = t.readInput();
     }
@@ -293,7 +293,7 @@ Params:
 Returns:
     A character located after the number skipped.
 +/
-T.inputType skipBinary(T)(ref T t) 
+ubyte skipBinary(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     return skipRadix!(T, "a == 'b' || a == 'B'", "a == '0' || a == '1'")(t);   
 }
@@ -328,7 +328,7 @@ Params:
 Returns:
     A character located after the number skipped.
 +/
-T.inputType skipHex(T)(ref T t) 
+ubyte skipHex(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     return skipRadix!(T, "a == 'x' || a == 'X'", isHexDigit)(t); 
 }
@@ -369,7 +369,7 @@ Returns:
 template skipRadix(T, alias isMarker, alias isValid)
 if (isInstanceOf!(IonTokenizer, T)) {
     import mir.functional : naryFun;
-    T.inputType skipRadix(ref T t) {
+    ubyte skipRadix(ref T t) {
         auto c = t.readInput();
 
         // Skip over negatives 
@@ -396,9 +396,9 @@ Params:
 Returns:
     A character located after the timestamp skipped.
 +/
-T.inputType skipTimestamp(T)(ref T t) 
+ubyte skipTimestamp(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
-    T.inputType skipTSDigits(int count) {
+    ubyte skipTSDigits(int count) {
         int i = count;
         while (i > 0) {
             t.expect!(isDigit);
@@ -407,7 +407,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
         return t.readInput();
     }
 
-    T.inputType skipTSOffset(T.inputType c) {
+    ubyte skipTSOffset(ubyte c) {
         if (c != '+' && c != '-') {
             return c;
         }
@@ -416,7 +416,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
         return skipTSDigits(2);
     }
 
-    T.inputType skipTSOffsetOrZ(T.inputType c) {
+    ubyte skipTSOffsetOrZ(ubyte c) {
         t.expect!("a == '+' || a == '-' || a == 'z' || a == 'Z'", true)(c);
         if (c == '+' || c == '-') 
             return skipTSOffset(c);
@@ -425,37 +425,37 @@ if (isInstanceOf!(IonTokenizer, T)) {
         assert(0); // should never hit this
     }
 
-    T.inputType skipTSFinish(T.inputType c) {
+    ubyte skipTSFinish(ubyte c) {
         return t.expect!(isStopChar, true)(c);
     }
 
     // YYYY(T || '-')
-    const(T.inputType) afterYear = t.expect!("a == 'T' || a == '-'", true)(skipTSDigits(4));
+    const(ubyte) afterYear = t.expect!("a == 'T' || a == '-'", true)(skipTSDigits(4));
     if (afterYear == 'T') {
         // skipped yyyyT
         return t.readInput();
     }
 
     // YYYY-MM('T' || '-')
-    const(T.inputType) afterMonth = t.expect!("a == 'T' || a == '-'", true)(skipTSDigits(2));
+    const(ubyte) afterMonth = t.expect!("a == 'T' || a == '-'", true)(skipTSDigits(2));
     if (afterMonth == 'T') {
         // skipped yyyy-mmT
         return t.readInput();
     }
 
     // YYYY-MM-DD('T')?
-    T.inputType afterDay = skipTSDigits(2);
+    ubyte afterDay = skipTSDigits(2);
     if (afterDay != 'T') {
         // skipped yyyy-mm-dd
         return skipTSFinish(afterDay);
     }
 
     // YYYY-MM-DDT('+' || '-' || 'z' || 'Z' || isDigit)
-    T.inputType offsetH = t.readInput();
+    ubyte offsetH = t.readInput();
     if (!offsetH.isDigit()) {
         // YYYY-MM-DDT('+' || '-' || 'z' || 'Z')
         // skipped yyyy-mm-ddT(+hh:mm)
-        T.inputType afterOffset = skipTSOffset(offsetH);
+        ubyte afterOffset = skipTSOffset(offsetH);
         return skipTSFinish(afterOffset);
     }
 
@@ -463,28 +463,28 @@ if (isInstanceOf!(IonTokenizer, T)) {
     t.expect!("a == ':'", true)(skipTSDigits(1));
 
     // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9](':' || '+' || '-' || 'z' || 'Z')
-    T.inputType afterOffsetMM = t.expect!("a == ':' || a == '+' || a == '-' || a == 'z' || a == 'Z'", true)
+    ubyte afterOffsetMM = t.expect!("a == ':' || a == '+' || a == '-' || a == 'z' || a == 'Z'", true)
                                                                                             (skipTSDigits(2));
     if (afterOffsetMM != ':') {
         // skipped yyyy-mm-ddThh:mmZ
-        T.inputType afterOffset = skipTSOffsetOrZ(afterOffsetMM);
+        ubyte afterOffset = skipTSOffsetOrZ(afterOffsetMM);
         return skipTSFinish(afterOffset);
     }
     // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9]:[0-9][0-9]('.')?
-    T.inputType afterOffsetSS = skipTSDigits(2);
+    ubyte afterOffsetSS = skipTSDigits(2);
     if (afterOffsetSS != '.') {
-        T.inputType afterOffset = skipTSOffsetOrZ(afterOffsetSS);
+        ubyte afterOffset = skipTSOffsetOrZ(afterOffsetSS);
         return skipTSFinish(afterOffset); 
     }
 
     // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9]*
-    T.inputType offsetNS = t.readInput();
+    ubyte offsetNS = t.readInput();
     if (isDigit(offsetNS)) {
         offsetNS = skipDigits!T(t, offsetNS);
     }
 
     // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9]*('+' || '-' || 'z' || 'Z')([0-9][0-9]:[0-9][0-9])?
-    T.inputType afterOffsetNS = skipTSOffsetOrZ(offsetNS);
+    ubyte afterOffsetNS = skipTSOffsetOrZ(offsetNS);
     return skipTSFinish(afterOffsetNS);  
 }
 /// Test skipping over timestamps
@@ -539,9 +539,9 @@ Params:
 Returns:
     A character located after the symbol skipped.
 +/
-T.inputType skipSymbol(T)(ref T t) 
+ubyte skipSymbol(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
-    T.inputType c = t.readInput();
+    ubyte c = t.readInput();
     while (isIdentifierPart(c)) { 
         c = t.readInput();
     }
@@ -576,7 +576,7 @@ Params:
 +/
 void skipSymbolQuotedInternal(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
-    T.inputType c;
+    ubyte c;
     while (true) {
         c = t.expect!"a != 0 && a != '\\n'";
         switch (c) {
@@ -598,7 +598,7 @@ Params:
 Returns:
     A character located after the quoted symbol skipped.
 +/
-T.inputType skipSymbolQuoted(T)(ref T t) 
+ubyte skipSymbolQuoted(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     t.skipSymbolQuotedInternal();
     return t.readInput();  
@@ -635,9 +635,9 @@ Params:
 Returns:
     A character located after the symbol operator skipped.
 +/
-T.inputType skipSymbolOperator(T)(ref T t) 
+ubyte skipSymbolOperator(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
-    T.inputType c = t.readInput();
+    ubyte c = t.readInput();
 
     while (isOperatorChar(c)) {
         c = t.readInput();
@@ -667,7 +667,7 @@ Params:
 +/
 void skipStringInternal(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
-    T.inputType c;
+    ubyte c;
     while (true) {
         c = t.expect!("a != 0 && a != '\\n'");
         switch (c) {
@@ -689,7 +689,7 @@ Params:
 Returns:
     A character located after the string skipped.
 +/
-T.inputType skipString(T)(ref T t) 
+ubyte skipString(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     t.skipStringInternal();
     return t.readInput();  
@@ -727,7 +727,7 @@ Params:
 +/
 void skipLongStringInternal(T, bool skipComments = true, bool failOnComment = false)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T) && __traits(compiles, { t.skipWhitespace!(skipComments, failOnComment); })) {
-    T.inputType c;
+    ubyte c;
     while (true) {
         c = t.expect!("a != 0");
         switch (c) {
@@ -760,7 +760,7 @@ if (isInstanceOf!(IonTokenizer, T) && __traits(compiles, { t.skipWhitespace!(ski
     }
 
     t.skipExactly(2);
-    T.inputType c = t.skipWhitespace!(skipComments, failOnComment);
+    ubyte c = t.skipWhitespace!(skipComments, failOnComment);
     if (c == '\'') {
         if (t.isTripleQuote()) {
             return false;
@@ -778,7 +778,7 @@ Params:
 Returns:
     A character located after the long string skipped.
 +/
-T.inputType skipLongString(T)(ref T t) 
+ubyte skipLongString(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     skipLongStringInternal!(T, true, false)(t);
     return t.readInput();
@@ -801,7 +801,7 @@ Params:
 Returns:
     A character located after the blob skipped.
 +/
-T.inputType skipBlob(T)(ref T t) 
+ubyte skipBlob(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     t.skipBlobInternal();
     return t.readInput();  
@@ -828,7 +828,7 @@ Params:
 +/
 void skipBlobInternal(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
-    T.inputType c = t.skipLobWhitespace();
+    ubyte c = t.skipLobWhitespace();
     while (c != '}') {
         c = t.skipLobWhitespace();
         t.expect!("a != 0", true)(c);
@@ -846,7 +846,7 @@ Params:
 Returns:
     A character located after the struct skipped.
 +/
-T.inputType skipStruct(T)(ref T t) 
+ubyte skipStruct(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     return skipContainer!T(t, '}');
 }
@@ -883,7 +883,7 @@ Params:
 Returns:
     A character located after the S-expression skipped.
 +/
-T.inputType skipSexp(T)(ref T t) 
+ubyte skipSexp(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     return skipContainer!T(t, ')');
 }
@@ -919,7 +919,7 @@ Params:
 Returns:
     A character located after the list skipped.
 +/
-T.inputType skipList(T)(ref T t) 
+ubyte skipList(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
     return skipContainer!T(t, ']'); 
 }
@@ -955,9 +955,9 @@ Params:
 Returns:
     A non-whitespace character following the current token.
 +/
-T.inputType skipValue(T)(ref T t) 
+ubyte skipValue(T)(ref T t) 
 if (isInstanceOf!(IonTokenizer, T)) {
-    T.inputType ret;
+    ubyte ret;
     with(IonTokenType) switch(t.currentToken) {
         case TokenNumber:
             ret = t.skipNumber();
