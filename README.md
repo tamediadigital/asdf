@@ -11,13 +11,9 @@ Please use https://github.com/libmir/asdf for now.
  - [x] Fast hash table for Ion Symbol Tables
  - [x] Fast CTFE Symbol Table for deserialization
  - [x] Ion Symbol Tables
- - [x] JSON stage1 SIMD parsing
- - [x] JSON stage2 SIMD parsing
- - [x] JSON stage3 SIMD parsing
- - [x] JSON single-thread parsing
- - [ ] JSON multi-thread parsing
+ - [x] JSON to Ion
  - [x] Ion to JSON
- - [ ] Text Ion parsing
+ - [ ] Text Ion to Ion
  - [ ] Ion to Text Ion
  - [x] Serialization API
  - [x] Deserialization API
