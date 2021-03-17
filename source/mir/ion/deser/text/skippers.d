@@ -8,7 +8,7 @@ import mir.ion.deser.text.tokenizer;
 import mir.ion.deser.text.tokens;
 import mir.ion.type_code;
 import std.traits : isInstanceOf;
-import std.range;
+import std.range : empty;
 
 /++
 Skip over the contents of a S-Exp/Struct/List/Blob.

@@ -118,10 +118,7 @@ if (isValidTokenizerInput!(Input)) {
     +/
     this(Input input) @safe pure {
         import std.array : replace;
-        import std.algorithm.mutation : remove;
-        import std.algorithm.searching : countUntil; 
         this.input = input.replace(ION_CR_LF, ION_LF).replace(ION_CR, ION_LF);
-
         resizeWindow(0);
     }
 
@@ -285,7 +282,6 @@ if (isValidTokenizerInput!(Input)) {
 
         auto t = tokenizeString("abc\r\ndef");
         
-        import std.stdio;
         assert(t.peekExactly(1) == "a");
         assert(t.peekExactly(2) == "ab");
         assert(t.peekExactly(3) == "abc");
@@ -882,7 +878,6 @@ if (isValidTokenizerInput!(Input)) {
     Helper to generate a thrown exception (if an unexpected character is hit)
     +/
     void unexpectedChar(string file = __FILE__, int line = __LINE__)(ubyte c, size_t pos = -1) @safe @nogc pure {
-        import mir.format : print;
         if (c == 0) {
             throw ionTokenizerException!(file, line)(IonTokenizerErrorCode.unexpectedEOF);
         } else {
@@ -930,7 +925,6 @@ if (isValidTokenizerInput!(Input)) {
     version(mir_ion_parser_test) unittest
     {
         import mir.ion.deser.text.tokens : MirIonTokenizerException, isHexDigit;
-        import std.range : empty;
 
         void testIsHex(string ts) {
             auto t = tokenizeString(ts);
