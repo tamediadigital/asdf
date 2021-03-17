@@ -200,7 +200,21 @@ All symbols which must be surrounded by quotes
 +/
 static immutable ION_QUOTED_SYMBOLS = ["", "null", "true", "false", "nan"];
 
-@safe:
+/++
+Carriage-Return + Line-Feed
++/
+static immutable ubyte[] ION_CR_LF = ION_CR ~ ION_LF;
+
+/++
+Carriage-Return
++/
+static immutable ubyte[] ION_CR = ['\r'];
+
+/++
+Line-Feed
++/
+static immutable ubyte[] ION_LF = ['\n'];
+
 /++
 Check if a character is considered by Ion to be a digit.
 Params:
@@ -208,7 +222,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a digit.
 +/
-bool isDigit(ubyte c) {
+bool isDigit(ubyte c) @safe @nogc pure {
     static foreach(member; ION_DIGITS) {
         if (c == member) return true;
     }
@@ -222,7 +236,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a hex digit.
 +/
-bool isHexDigit(ubyte c) {
+bool isHexDigit(ubyte c) @safe @nogc pure {
     static foreach(member; ION_HEX_DIGITS) {
         if (c == member) return true;
     }
@@ -236,7 +250,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a valid start to an identifier.
 +/
-bool isIdentifierStart(ubyte c) {
+bool isIdentifierStart(ubyte c) @safe @nogc pure{
     static foreach(member; ION_IDENTIFIER_CHARS) {
         if (c == member) return true;
     }
@@ -250,7 +264,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a valid part of an identifier.
 +/
-bool isIdentifierPart(ubyte c) {
+bool isIdentifierPart(ubyte c) @safe @nogc pure {
     return isIdentifierStart(c) || isDigit(c);
 }   
 
@@ -261,7 +275,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a symbol operator character.
 +/
-bool isOperatorChar(ubyte c) {
+bool isOperatorChar(ubyte c) @safe @nogc pure {
     static foreach(member; ION_OPERATOR_CHARS) {
         if (c == member) return true;
     }
@@ -275,7 +289,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a "stop" character.
 +/
-bool isStopChar(ubyte c) {
+bool isStopChar(ubyte c) @safe @nogc pure {
     static foreach(member; ION_STOP_CHARS) {
         if (c == member) return true;
     }
@@ -290,7 +304,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be whitespace.
 +/
-bool isWhitespace(ubyte c) {
+bool isWhitespace(ubyte c) @safe @nogc pure {
     static foreach(member; ION_WHITESPACE) {
         if (c == member) return true;
     }
@@ -304,7 +318,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a hex digit.
 +/
-bool symbolNeedsQuotes(string symbol) {
+bool symbolNeedsQuotes(string symbol) @safe @nogc pure {
     static foreach(member; ION_QUOTED_SYMBOLS) {
         if (symbol == member) return true;
     }
@@ -324,7 +338,7 @@ Params:
 Returns:
     true if a character is considered to be a new-line.
 +/
-bool isNewLine(ubyte c) {
+bool isNewLine(ubyte c) @safe @nogc pure {
     return c == 0x0A || 0x0D;
 }
 
@@ -336,7 +350,7 @@ Params:
 Returns:
     true if a character is considered to be printable whitespace.
 +/
-bool isStringWhitespace(ubyte c) {
+bool isStringWhitespace(ubyte c) @safe @nogc pure {
     return c == 0x09 || c == 0x0B || c == 0x0C;
 }
 
@@ -348,7 +362,7 @@ Params:
 Returns:
     true if a character is considered a control character.
 +/
-bool isControlChar(ubyte c) {
+bool isControlChar(ubyte c) @safe @nogc pure {
     return c < 0x20 || c == 0x7F;
 }
 
@@ -360,7 +374,7 @@ Params:
 Returns:
     true if a character is considered to be valid ASCII.
 +/
-bool isASCIIChar(ubyte c) {
+bool isASCIIChar(ubyte c) @safe @nogc pure {
     return c <= 0x7F;
 }
 
@@ -371,7 +385,7 @@ Params:
 Returns:
     true if a character is invalid, false otherwise
 +/
-bool isInvalidChar(ubyte c) {
+bool isInvalidChar(ubyte c) @safe @nogc pure {
     if (isStringWhitespace(c) || isNewLine(c)) return false;
     if (isControlChar(c)) return true;
     return false;
@@ -384,15 +398,49 @@ This is to convert a hex-literal as fast as possible.
 Params:
     c = a hex character
 +/
-ubyte hexLiteral(ubyte c) {
+ubyte hexLiteral(ubyte c) @safe @nogc pure {
     if (isDigit(c)) return cast(ubyte)(c - ION_DIGITS[0]);
     else if (c >= 'a' && c <= 'f') return cast(ubyte)(10 + (c - ION_LOWERCASE[0]));
     else if (c >= 'A' && c <= 'F') return cast(ubyte)(10 + (c - ION_UPPERCASE[0]));
-    throw new MirIonTokenizerException("invalid hex literal");
+    throw ionTokenizerException(IonTokenizerErrorCode.invalidHexLiteral);
 }
 
 version(D_Exceptions):
 import mir.ion.exception;
+
+enum IonTokenizerErrorCode {
+    none,
+    unexpectedEOF,
+    invalidHexLiteral,
+    unexpectedCharacter,
+    negativeTimestamp,
+    commentsNotAllowed,
+    normalizeEOFFail,
+    cannotUnreadAtPos0,
+    invalidHexEscape,
+    invalidLeadingZeros,
+    cannotUpdateWindow,
+}
+
+string ionTokenizerMsg(IonTokenizerErrorCode error) @property
+@safe pure nothrow @nogc
+{
+    static immutable string[] errors = [
+        null,
+        "unexpected EOF",
+        "invalid hex literal",
+        "unexpected character",
+        "encountered negative timestamp",
+        "encountered unexpected comment",
+        "could not normalize EOF",
+        "cannot unread when pos >= 0",
+        "invalid hex escape",
+        "invalid leading zeros in integer literal",
+        "cannot update sliding window"
+    ];
+
+    return errors[error - IonTokenizerErrorCode.min];
+}
 
 /++
 Mir Ion Tokenizer Exception
@@ -405,4 +453,19 @@ class MirIonTokenizerException : MirIonException
     {
         super(msg, file, line);
     }
+}
+
+MirIonTokenizerException ionTokenizerException(string file = __FILE__, int line = __LINE__)(IonTokenizerErrorCode code) @property
+@trusted pure nothrow @nogc
+{
+    import mir.array.allocation: array;
+    import mir.ndslice.topology: map;
+    import std.traits: EnumMembers;
+
+    static immutable MirIonTokenizerException[] exceptions =
+        [EnumMembers!IonTokenizerErrorCode]
+        .map!(code => code ? new MirIonTokenizerException("MirIonTokenizerException: " ~ code.ionTokenizerMsg, file, line) : null)
+        .array;
+        
+    return cast(MirIonTokenizerException) exceptions[code - IonTokenizerErrorCode.min];
 }

@@ -197,7 +197,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
     ScopedBuffer!char buf;
     l: while (true) {
         // TODO: can modify this for chunking
-        ubyte[] cbuf = t.peekMax(1); 
+        auto cbuf = t.peekMax(1); 
         if (cbuf.length == 0) break l;
         foreach(c; cbuf) {
             if (!c.isIdentifierPart()) break l;
@@ -339,7 +339,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
                     return buf.data;
             } else {
                 case '\'':
-                    const(ubyte[]) v = t.peekMax(2);
+                    auto v = t.peekMax(2);
                     if (v.length != 2) {
                         goto default;
                     } else {

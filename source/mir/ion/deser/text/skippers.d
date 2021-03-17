@@ -10,7 +10,6 @@ import mir.ion.type_code;
 import std.traits : isInstanceOf;
 import std.range;
 
-@safe:
 /++
 Skip over the contents of a S-Exp/Struct/List/Blob.
 Params:
@@ -19,7 +18,7 @@ Params:
 Returns:
     A character located after the [s-exp, struct, list, blob].
 +/
-ubyte skipContainer(T)(ref T t, ubyte term) 
+ubyte skipContainer(T)(ref T t, ubyte term) @safe @nogc pure 
 if (isInstanceOf!(IonTokenizer, T)) {
     skipContainerInternal!T(t, term);
     return t.readInput();
@@ -32,7 +31,7 @@ Params:
     t = The tokenizer
     term = The last character read from the tokenizer's input range
 +/
-void skipContainerInternal(T)(ref T t, ubyte term) 
+void skipContainerInternal(T)(ref T t, ubyte term) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) 
 in {
     assert(term == ']' || term == '}' || term == ')', "Unexpected character for skipping");
@@ -85,7 +84,7 @@ Params:
 Returns:
     true if it was able to skip over the comment.
 +/
-bool skipSingleLineComment(T)(ref T t) 
+bool skipSingleLineComment(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     while (true) {
         const(ubyte) c = t.readInput();
@@ -121,7 +120,7 @@ version(mir_ion_parser_test) unittest
     Returns:
         true if the block comment was able to be skipped, false if EOF was hit
 +/
-bool skipBlockComment(T)(ref T t)
+bool skipBlockComment(T)(ref T t) @safe @nogc pure 
 if (isInstanceOf!(IonTokenizer, T)) {
     bool foundStar = false;
     while (true) {
@@ -164,7 +163,7 @@ Params:
 Returns:
     true if it was able to skip over the comment
 +/
-bool skipComment(T)(ref T t) 
+bool skipComment(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     if (t.input.empty) {
         return false;
@@ -221,7 +220,7 @@ Params:
 Returns:
     A character located after the last digit skipped.
 +/
-ubyte skipDigits(T)(ref T t, ubyte _c)
+ubyte skipDigits(T)(ref T t, ubyte _c) @safe @nogc pure 
 if(isInstanceOf!(IonTokenizer, T)) {
     auto c = _c;
     while (c.isDigit()) {
@@ -237,7 +236,7 @@ Params:
 Returns:
     A character located after the number skipped.
 +/
-ubyte skipNumber(T)(ref T t) 
+ubyte skipNumber(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     ubyte c = t.readInput();
     if (c == '-') {
@@ -293,7 +292,7 @@ Params:
 Returns:
     A character located after the number skipped.
 +/
-ubyte skipBinary(T)(ref T t) 
+ubyte skipBinary(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     return skipRadix!(T, "a == 'b' || a == 'B'", "a == '0' || a == '1'")(t);   
 }
@@ -328,7 +327,7 @@ Params:
 Returns:
     A character located after the number skipped.
 +/
-ubyte skipHex(T)(ref T t) 
+ubyte skipHex(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     return skipRadix!(T, "a == 'x' || a == 'X'", isHexDigit)(t); 
 }
@@ -369,7 +368,7 @@ Returns:
 template skipRadix(T, alias isMarker, alias isValid)
 if (isInstanceOf!(IonTokenizer, T)) {
     import mir.functional : naryFun;
-    ubyte skipRadix(ref T t) {
+    ubyte skipRadix(ref T t) @safe @nogc pure {
         auto c = t.readInput();
 
         // Skip over negatives 
@@ -396,7 +395,7 @@ Params:
 Returns:
     A character located after the timestamp skipped.
 +/
-ubyte skipTimestamp(T)(ref T t) 
+ubyte skipTimestamp(T)(ref T t) @safe @nogc pure 
 if (isInstanceOf!(IonTokenizer, T)) {
     ubyte skipTSDigits(int count) {
         int i = count;
@@ -539,7 +538,7 @@ Params:
 Returns:
     A character located after the symbol skipped.
 +/
-ubyte skipSymbol(T)(ref T t) 
+ubyte skipSymbol(T)(ref T t) @safe @nogc pure 
 if (isInstanceOf!(IonTokenizer, T)) {
     ubyte c = t.readInput();
     while (isIdentifierPart(c)) { 
@@ -574,7 +573,7 @@ Skip over a quoted symbol, but do not read the character after.
 Params:
     t = The tokenizer
 +/
-void skipSymbolQuotedInternal(T)(ref T t) 
+void skipSymbolQuotedInternal(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     ubyte c;
     while (true) {
@@ -598,7 +597,7 @@ Params:
 Returns:
     A character located after the quoted symbol skipped.
 +/
-ubyte skipSymbolQuoted(T)(ref T t) 
+ubyte skipSymbolQuoted(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     t.skipSymbolQuotedInternal();
     return t.readInput();  
@@ -635,7 +634,7 @@ Params:
 Returns:
     A character located after the symbol operator skipped.
 +/
-ubyte skipSymbolOperator(T)(ref T t) 
+ubyte skipSymbolOperator(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     ubyte c = t.readInput();
 
@@ -665,7 +664,7 @@ Skip over a string, but do not read the character following it.
 Params:
     t = The tokenizer
 +/
-void skipStringInternal(T)(ref T t) 
+void skipStringInternal(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     ubyte c;
     while (true) {
@@ -689,7 +688,7 @@ Params:
 Returns:
     A character located after the string skipped.
 +/
-ubyte skipString(T)(ref T t) 
+ubyte skipString(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     t.skipStringInternal();
     return t.readInput();  
@@ -725,7 +724,7 @@ Skip over a long string, but do not read the character following it.
 Params:
     t = The tokenizer
 +/
-void skipLongStringInternal(T, bool skipComments = true, bool failOnComment = false)(ref T t) 
+void skipLongStringInternal(T, bool skipComments = true, bool failOnComment = false)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T) && __traits(compiles, { t.skipWhitespace!(skipComments, failOnComment); })) {
     ubyte c;
     while (true) {
@@ -752,7 +751,7 @@ Params:
 Returns:
     true if it was able to skip over the end of the long string.
 +/
-bool skipLongStringEnd(T, bool skipComments = true, bool failOnComment = false)(ref T t) 
+bool skipLongStringEnd(T, bool skipComments = true, bool failOnComment = false)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T) && __traits(compiles, { t.skipWhitespace!(skipComments, failOnComment); })) {
     auto cs = t.peekMax(2);
     if (cs.length < 2 || cs[0] != '\'' || cs[1] != '\'') {
@@ -778,7 +777,7 @@ Params:
 Returns:
     A character located after the long string skipped.
 +/
-ubyte skipLongString(T)(ref T t) 
+ubyte skipLongString(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     skipLongStringInternal!(T, true, false)(t);
     return t.readInput();
@@ -801,7 +800,7 @@ Params:
 Returns:
     A character located after the blob skipped.
 +/
-ubyte skipBlob(T)(ref T t) 
+ubyte skipBlob(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     t.skipBlobInternal();
     return t.readInput();  
@@ -826,7 +825,7 @@ Skip over a blob, but do not read the character following it.
 Params:
     t = The tokenizer
 +/
-void skipBlobInternal(T)(ref T t) 
+void skipBlobInternal(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     ubyte c = t.skipLobWhitespace();
     while (c != '}') {
@@ -846,7 +845,7 @@ Params:
 Returns:
     A character located after the struct skipped.
 +/
-ubyte skipStruct(T)(ref T t) 
+ubyte skipStruct(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     return skipContainer!T(t, '}');
 }
@@ -870,7 +869,7 @@ Skip over a struct, but do not read the character following it.
 Params:
     t = The tokenizer
 +/
-void skipStructInternal(T)(ref T t) 
+void skipStructInternal(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     skipContainerInternal!T(t, '}');
     return;
@@ -883,7 +882,7 @@ Params:
 Returns:
     A character located after the S-expression skipped.
 +/
-ubyte skipSexp(T)(ref T t) 
+ubyte skipSexp(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     return skipContainer!T(t, ')');
 }
@@ -906,7 +905,7 @@ Skip over a S-expression, but do not read the character following it.
 Params:
     t = The tokenizer
 +/
-void skipSexpInternal(T)(ref T t) 
+void skipSexpInternal(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     skipContainerInternal!T(t, ')');
     return;
@@ -919,7 +918,7 @@ Params:
 Returns:
     A character located after the list skipped.
 +/
-ubyte skipList(T)(ref T t) 
+ubyte skipList(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     return skipContainer!T(t, ']'); 
 }
@@ -942,7 +941,7 @@ Skip over a list, but do not read the character following it.
 Params:
     t = The tokenizer
 +/
-void skipListInternal(T)(ref T t) 
+void skipListInternal(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     skipContainerInternal!T(t, ']');
     return;
@@ -955,7 +954,7 @@ Params:
 Returns:
     A non-whitespace character following the current token.
 +/
-ubyte skipValue(T)(ref T t) 
+ubyte skipValue(T)(ref T t) @safe @nogc pure  
 if (isInstanceOf!(IonTokenizer, T)) {
     ubyte ret;
     with(IonTokenType) switch(t.currentToken) {
@@ -999,7 +998,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
             ret = t.skipList();
             break;
         default:
-            assert(0, "unhandled token: " ~ ionTokenMsg(t.currentToken));
+            assert(0, "unhandled token");
     }
 
     if (ret.isWhitespace()) {
