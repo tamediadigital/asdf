@@ -8,7 +8,8 @@ immutable(ubyte)[] json2ion(scope const(char)[] text)
     @safe pure
 {
     pragma(inline, false);
-    import mir.ion.exception: ionException;
+    import mir.exception: MirException;
+    import mir.ion.exception: ionErrorMsg;
     import mir.ion.internal.data_holder: ionPrefix, IonTapeHolder;
     import mir.ion.internal.stage4_s;
     import mir.ion.symbol_table: IonSymbolTable;
@@ -21,8 +22,9 @@ immutable(ubyte)[] json2ion(scope const(char)[] text)
 
     IonSymbolTable!true table;
 
-    if (auto error = singleThreadJsonImpl!nMax(text, table, tapeHolder))
-        throw error.ionException;
+    auto error = singleThreadJsonImpl!nMax(text, table, tapeHolder);
+    if (error.code)
+        throw new MirException(error.code.ionErrorMsg, ". location = ", error.location, ", last input key = ", error.key);
 
     return ()@trusted {
         table.finalize;

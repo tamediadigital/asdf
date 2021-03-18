@@ -31,12 +31,12 @@ private enum isUserAggregate(T) = isAggregateType!T
     && !is(T : SmallArray!(E, maxLength), E, size_t maxLength)
     && !is(T : SmallString!maxLength, size_t maxLength);
 
-private SerdeException unexpectedIonTypeCode(string msg = "Unexpected Ion type code")(IonTypeCode code)
+private string unexpectedIonTypeCode(string msg = "Unexpected Ion type code")(IonTypeCode code)
     @safe pure nothrow @nogc
 {
     import std.traits: EnumMembers;
     import mir.conv: to;
-    static immutable exc(IonTypeCode code) = new SerdeException(msg ~ " " ~ code.to!string);
+    static immutable exc(IonTypeCode code) = msg ~ " " ~ code.to!string;
 
     switch (code)
     {
@@ -45,34 +45,34 @@ private SerdeException unexpectedIonTypeCode(string msg = "Unexpected Ion type c
             return exc!member;
         }
         default:
-            static immutable ret = new SerdeException("Wrong encoding of Ion type code");
+            static immutable ret = "Wrong encoding of Ion type code";
             return ret;
     }
 }
 
-SerdeException deserializeScoped(T)(IonDescribedValue data, ref T value)
+string deserializeScoped(T)(IonDescribedValue data, ref T value)
     if (isFirstOrderSerdeType!T)
 {
-    return deserializeScopedValueImpl(data, value).ionException;
+    return deserializeScopedValueImpl(data, value).ionErrorMsg;
 }
 
-SerdeException deserializeValue_(T)(IonDescribedValue data, ref T value)
+string deserializeValue_(T)(IonDescribedValue data, ref T value)
     if (isFirstOrderSerdeType!T)
 {
-    return deserializeValueImpl(data, value).ionException;
+    return deserializeValueImpl(data, value).ionErrorMsg;
 }
 
 template deserializeListToScopedBuffer(alias impl)
 {
     import mir.appender: ScopedBuffer;
-    private SerdeException deserializeListToScopedBuffer(E, size_t bytes)(IonDescribedValue data, ref ScopedBuffer!(E, bytes) buffer)
+    private string deserializeListToScopedBuffer(E, size_t bytes)(IonDescribedValue data, ref ScopedBuffer!(E, bytes) buffer)
     {
         if (_expect(data.descriptor.type != IonTypeCode.list, false))
-            return IonErrorCode.expectedListValue.ionException;
+            return IonErrorCode.expectedListValue.ionErrorMsg;
         foreach (IonErrorCode error, IonDescribedValue ionElem; data.trustedGet!IonList)
         {
             if (_expect(error, false))
-                return error.ionException;
+                return error.ionErrorMsg;
             E value;
             if (auto exc = impl(ionElem, value))
                 return exc;
@@ -95,7 +95,7 @@ template deserializeValue(string[] symbolTable)
         value = value to deserialize
     Returns: `SerdeException`
     +/
-    SerdeException deserializeValue(T)(IonDescribedValue data, ref T value)
+    string deserializeValue(T)(IonDescribedValue data, ref T value)
         if (!isFirstOrderSerdeType!T)
     {
         import mir.rc.array: RCArray;
@@ -112,9 +112,9 @@ template deserializeValue(string[] symbolTable)
                 foreach (error, ionElem; data.trustedGet!IonList)
                 {
                     if (_expect(error, false))
-                        return error.ionException;
+                        return error.ionErrorMsg;
                     if (value._length == maxLength)
-                        return IonErrorCode.smallArrayOverflow.ionException;
+                        return IonErrorCode.smallArrayOverflow.ionErrorMsg;
                     E elem;
                     if (auto exc = .deserializeValue!symbolTable(ionElem, elem))
                         return exc;
@@ -128,7 +128,7 @@ template deserializeValue(string[] symbolTable)
             {
                 return null;
             }
-            return IonErrorCode.expectedListValue.ionException;
+            return IonErrorCode.expectedListValue.ionErrorMsg;
         }
         else
         static if (is(T == D[], D))
@@ -155,7 +155,7 @@ template deserializeValue(string[] symbolTable)
                 value = null;
                 return null;
             }
-            return IonErrorCode.expectedListValue.ionException;
+            return IonErrorCode.expectedListValue.ionErrorMsg;
         }
         else
         static if (is(T == RCArray!D, D))
@@ -184,7 +184,7 @@ template deserializeValue(string[] symbolTable)
                 value = null;
                 return null;
             }
-            return IonErrorCode.expectedListValue.ionException;
+            return IonErrorCode.expectedListValue.ionErrorMsg;
         }
         else
         static if (isNullable!T)
@@ -234,7 +234,7 @@ template deserializeValue(string[] symbolTable)
                 }
                 else
                 {
-                    static immutable exc = new SerdeException("Can't construct null value of type" ~ T.stringof);
+                    static immutable exc = "Can't construct null value of type" ~ T.stringof;
                     return exc;
                 }
             }
@@ -258,7 +258,7 @@ template deserializeValue(string[] symbolTable)
                     }
                     else
                     {
-                        static immutable cantConstructObjectExc = new SerdeException(T.stringof ~ " must be either not null or have a default constructor.");
+                        static immutable cantConstructObjectExc = T.stringof ~ " must be either not null or have a default constructor.";
                         return cantConstructObjectExc;
                     }
                 }
@@ -267,7 +267,7 @@ template deserializeValue(string[] symbolTable)
             IonStruct ionValue;
             if (auto error = data.get(ionValue))
             {
-                return error.ionException;
+                return error.ionErrorMsg;
             }
 
             SerdeFlags!T requiredFlags;
@@ -283,11 +283,11 @@ template deserializeValue(string[] symbolTable)
             {
                 alias impl = deserializeValueMember!(.deserializeValue!symbolTable, deserializeScoped);
 
-                static immutable exc(string member) = new SerdeException("mir.ion.deser: non-optional member '" ~ member ~ "' in " ~ T.stringof ~ " is missing.");
+                static immutable exc(string member) = "mir.ion.deser: non-optional member '" ~ member ~ "' in " ~ T.stringof ~ " is missing.";
                 
                 enum hasUnexpectedKeyHandler = __traits(hasMember, T, "serdeUnexpectedKeyHandler");
                 static if (!hasUnexpectedKeyHandler)
-                    static immutable unexpectedKeyException = new SerdeException("Unexpected key when deserializing " ~ T.stringof);
+                    static immutable unexpectedKeyException = "Unexpected key when deserializing " ~ T.stringof;
 
 
                 import std.meta: staticMap, aliasSeqOf;
@@ -302,7 +302,7 @@ template deserializeValue(string[] symbolTable)
                             foreach (IonErrorCode error, size_t symbolID, IonDescribedValue elem; ionValue)
                             {
                                 if (error)
-                                    return error.ionException;
+                                    return error.ionErrorMsg;
                                 switch(symbolID)
                                 {
                                     static foreach (key; keys)
@@ -327,7 +327,7 @@ template deserializeValue(string[] symbolTable)
                     foreach (IonErrorCode error, size_t symbolID, IonDescribedValue elem; ionValue)
                     {
                         if (error)
-                            return error.ionException;
+                            return error.ionErrorMsg;
                         S: switch(symbolID)
                         {
                             static foreach(member; serdeFinalProxyDeserializableMembers!T)
@@ -379,7 +379,7 @@ template deserializeValue(string[] symbolTable)
 private template deserializeValueMember(alias deserializeValue, alias deserializeScoped)
 {
     ///
-    SerdeException deserializeValueMember(string member, Data, T, Context...)(Data data, ref T value, ref SerdeFlags!T requiredFlags, ref Context context)
+    string deserializeValueMember(string member, Data, T, Context...)(Data data, ref T value, ref SerdeFlags!T requiredFlags, ref Context context)
     {
         import core.lifetime: move;
         import mir.conv: to;
@@ -397,6 +397,7 @@ private template deserializeValueMember(alias deserializeValue, alias deserializ
             alias Temporal = Member;
 
         enum hasScoped = hasUDA!(__traits(getMember, value, member), serdeScoped) || hasScoped!Temporal;
+        pragma(msg, hasScoped);
 
         enum hasTransform = hasUDA!(__traits(getMember, value, member), serdeTransformIn);
 
@@ -408,14 +409,22 @@ private template deserializeValueMember(alias deserializeValue, alias deserializ
         static assert (hasProxy >= likeList, T.stringof ~ "." ~ member ~ " should have a Proxy type for deserialization");
 
         static if (hasScoped)
+        {
             static if (__traits(compiles, { Temporal temporal; deserializeScoped(data, temporal); }))
+            {
                 alias impl = deserializeScoped;
+            }
             else
+            {
                 alias impl = deserializeValue;
+            }
+        }
         else
+        {
             alias impl = deserializeValue;
+        }
 
-        static immutable excm(string member) = new SerdeException("mir.serde: multiple keys for member '" ~ member ~ "' in " ~ T.stringof ~ " are not allowed.");
+        static immutable excm(string member) = "mir.serde: multiple keys for member '" ~ member ~ "' in " ~ T.stringof ~ " are not allowed.";
 
         static if (!hasUDA!(__traits(getMember, value, member), serdeAllowMultiple))
             if (__traits(getMember, requiredFlags, member))
@@ -516,6 +525,7 @@ private template deserializeValueMember(alias deserializeValue, alias deserializ
 @safe pure
 version(mir_ion_test) unittest
 {
+    import mir.serde: SerdeException;
     import mir.small_array;
     import mir.small_string;
     import mir.bignum.decimal;
@@ -537,8 +547,8 @@ version(mir_ion_test) unittest
     auto data = IonValue(binaryData).describe;
     
     Book book;
-    if (auto serdeException = deserializeValue!(IonSystemSymbolTable_v1 ~ symbolTable)(data, book))
-        throw serdeException;
+    if (auto msg = deserializeValue!(IonSystemSymbolTable_v1 ~ symbolTable)(data, book))
+        throw new SerdeException(msg);
 
     assert(book.description.length == 0);
     assert(book.numberOfNovellas == 5);
