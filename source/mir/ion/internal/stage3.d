@@ -191,7 +191,6 @@ StringLoop: {
                     }
                     goto cant_insert_key;
                 }
-                id++;
             }
             // TODO find id using the key
             currentTapePosition += ionPutVarUInt(tape.ptr + currentTapePosition, id);

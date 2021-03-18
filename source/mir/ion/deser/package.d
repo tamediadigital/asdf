@@ -347,7 +347,7 @@ template deserializeValue(string[] symbolTable)
                             default:
                                 static immutable symbolTableInstance = symbolTable;
                                 static if (hasUnexpectedKeyHandler)
-                                    value.serdeUnexpectedKeyHandler(symbolID == 0 || symbolID > symbolTable.length ? "<@unknown key@>" : symbolTableInstance[symbolID - 1]);
+                                    value.serdeUnexpectedKeyHandler(symbolID == 0 || symbolID > symbolTable.length ? "<@unknown key@>" : symbolTableInstance[symbolID]);
                                 else
                                     return unexpectedKeyException;
                         }
@@ -397,7 +397,6 @@ private template deserializeValueMember(alias deserializeValue, alias deserializ
             alias Temporal = Member;
 
         enum hasScoped = hasUDA!(__traits(getMember, value, member), serdeScoped) || hasScoped!Temporal;
-        pragma(msg, hasScoped);
 
         enum hasTransform = hasUDA!(__traits(getMember, value, member), serdeTransformIn);
 
