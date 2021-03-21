@@ -457,7 +457,7 @@ version(mir_ion_test) unittest
     table.finalize;
 }
 
-package(mir.ion) auto findKey()(string[] symbolTable, string key)
+package(mir.ion) auto findKey()(const string[] symbolTable, string key)
 {
     import mir.algorithm.iteration: findIndex;
     auto ret = symbolTable.findIndex!(a => a == key);

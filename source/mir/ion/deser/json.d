@@ -34,7 +34,7 @@ T deserializeJson(T)(scope const(char)[] text)
     if (auto error = IonValue(tapeHolder.tapeData).describe(ionValue))
         throw new SerdeException(error.ionErrorMsg);
 
-    if (auto msg = deserializeValue!(keys)(ionValue, value))
+    if (auto msg = deserializeValue!(keys, false)(ionValue, value))
         throw new SerdeException(msg);
     return value;
 }
@@ -125,4 +125,3 @@ unittest
     assert(book.weight == 6.88);
     assert(book.wouldRecommend);
 }
-

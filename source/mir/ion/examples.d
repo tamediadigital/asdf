@@ -465,10 +465,13 @@ unittest
     assert(`{"id":"8AB3060E-2cba-4f23-b74c-b52db3bdfb46"}`.deserializeJson!S.id == result);
 }
 
-/// Proxy type for array of algebraics
-version(none)
+///
 unittest
 {
+    import mir.ion.ser.json;
+    import mir.ion.deser.ion;
+    import mir.ion.value;
+    import mir.ion.conv;
     import mir.algebraic: Variant;
 
     static struct ObjectA
@@ -498,35 +501,25 @@ unittest
 
         void serialize(S)(ref S serializer) const
         {
-            auto state = serializer.arrayBegin;
-            foreach (ref e; array)
-            {
-                serializer.elemBegin();
-                // mir.algebraic has builtin support for serialization.
-                // For other algebraic libraies one can use thier visitor handlers.
-                serializeValue(serializer, e);
-            }
-            serializer.arrayEnd(state);
+            import mir.ion.ser: serializeValue;
+            // mir.algebraic has builtin support for serialization.
+            // For other algebraic libraies one can use thier visitor handlers.
+            serializeValue(serializer, array);
         }
 
-        auto deserializeFromIon(Asdf asdfData)
+        /++
+        
+        Returns: error msg if any
+        +/
+        string deserializeFromIon(string[] keys)(scope const char[][] symbolTable, IonDescribedValue value)
         {
-            import asdf : deserializeValue;
-            import std.traits : EnumMembers;
-
-            foreach (e; asdfData.byElement)
+            foreach (elem; value.get!IonList)
             {
-                if (e["name"] != Asdf.init)
-                {
-                    array ~= MyObject(deserializeJson!ObjectA(e));
-                }
-                else
-                {
-                    array ~= MyObject(deserializeJson!ObjectB(e));
-                }
+                array ~= "name" in elem.get!IonStruct.withSymbols(symbolTable)
+                    ? MyObject(deserializeIon!ObjectA(symbolTable, elem))
+                    : MyObject(deserializeIon!ObjectB(symbolTable, elem));
             }
-
-            return SerdeException.init;
+            return null;
         }
     }
 
@@ -537,8 +530,8 @@ unittest
 
     string data = q{{"objects":[{"name":"test"},{"value":1.5}]}};
 
-    auto value = data.deserializeJson!SomeObject;
-    assert (value.serializeJson == data);
+    auto value = data.json2ion.deserializeIon!SomeObject;
+    // assert (value.serializeJson == data);
 }
 
 ///

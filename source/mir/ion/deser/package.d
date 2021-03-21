@@ -56,16 +56,28 @@ string deserializeScoped(T)(IonDescribedValue data, ref T value)
     return deserializeScopedValueImpl(data, value).ionErrorMsg;
 }
 
+string deserializeScoped(T)(IonDescribedValue data, scope TableParams!true params, ref T value)
+    if (isFirstOrderSerdeType!T)
+{
+    return deserializeScoped(data, value);
+}
+
 string deserializeValue_(T)(IonDescribedValue data, ref T value)
     if (isFirstOrderSerdeType!T)
 {
     return deserializeValueImpl(data, value).ionErrorMsg;
 }
 
-template deserializeListToScopedBuffer(alias impl)
+string deserializeValue_(T)(IonDescribedValue data, scope TableParams!true params, ref T value)
+    if (isFirstOrderSerdeType!T)
+{
+    return deserializeValue_(data, value);
+}
+
+template deserializeListToScopedBuffer(alias impl, bool exteneded)
 {
     import mir.appender: ScopedBuffer;
-    private string deserializeListToScopedBuffer(E, size_t bytes)(IonDescribedValue data, ref ScopedBuffer!(E, bytes) buffer)
+    private string deserializeListToScopedBuffer(E, size_t bytes)(IonDescribedValue data, scope TableParams!exteneded params, ref ScopedBuffer!(E, bytes) buffer)
     {
         if (_expect(data.descriptor.type != IonTypeCode.list, false))
             return IonErrorCode.expectedListValue.ionErrorMsg;
@@ -74,7 +86,7 @@ template deserializeListToScopedBuffer(alias impl)
             if (_expect(error, false))
                 return error.ionErrorMsg;
             E value;
-            if (auto exc = impl(ionElem, value))
+            if (auto exc = impl(ionElem, params, value))
                 return exc;
             import core.lifetime: move;
             buffer.put(move(value));
@@ -82,11 +94,25 @@ template deserializeListToScopedBuffer(alias impl)
         return null;
     }
 }
+private alias AliasSeq(T...) = T;
+
+template TableParams(bool exteneded)
+{
+    static if (exteneded)
+    {
+        // realSymbolTable, dynamicIndex
+        alias TableParams = AliasSeq!(const char[][] , const uint[]);
+    }
+    else
+    {
+        alias TableParams = AliasSeq!();
+    }
+}
 
 /++
 Deserialize aggregate value using compile time symbol table
 +/
-template deserializeValue(string[] symbolTable)
+template deserializeValue(string[] symbolTable, bool exteneded = false)
 {
     /++
     Deserialize aggregate value
@@ -95,14 +121,18 @@ template deserializeValue(string[] symbolTable)
         value = value to deserialize
     Returns: `SerdeException`
     +/
-    string deserializeValue(T)(IonDescribedValue data, ref T value)
+    string deserializeValue(T)(IonDescribedValue data, scope TableParams!exteneded tableParams, ref T value)
         if (!isFirstOrderSerdeType!T)
     {
         import mir.rc.array: RCArray;
 
         static if (__traits(hasMember, value, "deserializeFromIon"))
         {
-            return __traits(getMember, value, "deserializeFromIon")(data);
+            static if (!exteneded)
+                static immutable table = symbolTable;
+            else
+                alias table = tableParams[0];
+            return value.deserializeFromIon!(symbolTable)(table, data);
         }
         else
         static if (is(T : SmallArray!(E, maxLength), E, size_t maxLength))
@@ -116,7 +146,7 @@ template deserializeValue(string[] symbolTable)
                     if (value._length == maxLength)
                         return IonErrorCode.smallArrayOverflow.ionErrorMsg;
                     E elem;
-                    if (auto exc = .deserializeValue!symbolTable(ionElem, elem))
+                    if (auto exc = .deserializeValue!symbolTable(ionElem, tableParams, elem))
                         return exc;
                     import core.lifetime: move;
                     value.trustedAppend(move(elem));
@@ -138,7 +168,7 @@ template deserializeValue(string[] symbolTable)
             {
                 import mir.appender: ScopedBuffer;
                 ScopedBuffer!E buffer;
-                if (auto exc = deserializeListToScopedBuffer!(.deserializeValue!symbolTable)(data, buffer))
+                if (auto exc = deserializeListToScopedBuffer!(.deserializeValue!symbolTable, exteneded)(data, tableParams, buffer))
                     return exc;
 
                 import std.array: uninitializedArray;
@@ -165,7 +195,7 @@ template deserializeValue(string[] symbolTable)
             {
                 import mir.appender: ScopedBuffer;
                 ScopedBuffer!E buffer;
-                if (auto exc = deserializeListToScopedBuffer!(.deserializeValue!symbolTable)(data, buffer))
+                if (auto exc = deserializeListToScopedBuffer!(.deserializeValue!symbolTable, exteneded)(data, tableParams, buffer))
                     return exc;
 
                 (()@trusted @nogc {
@@ -197,7 +227,7 @@ template deserializeValue(string[] symbolTable)
             }
 
             typeof(value.get) payload;
-            if (auto exc = .deserializeValue!symbolTable(data, payload))
+            if (auto exc = .deserializeValue!symbolTable(data, tableParams, payload))
                 return exc;
             value = payload;
             return null;
@@ -216,7 +246,7 @@ template deserializeValue(string[] symbolTable)
             else
                 alias impl = .deserializeValue!symbolTable;
 
-            if (auto exc = impl(data, temporal))
+            if (auto exc = impl(data, tableParams, temporal))
                 return exc;
             value = to!T(move(temporal));
             return null;
@@ -275,13 +305,13 @@ template deserializeValue(string[] symbolTable)
             static if (hasUDA!(T, serdeOrderedIn))
             {
                 SerdeOrderedDummy!T temporal;
-                if (auto exc = .deserializeValue!symbolTable(data, temporal))
+                if (auto exc = .deserializeValue!symbolTable(data, tableParams, temporal))
                     return exc;
                 temporal.serdeFinalizeTarget(value, requiredFlags);
             }
             else
             {
-                alias impl = deserializeValueMember!(.deserializeValue!symbolTable, deserializeScoped);
+                alias impl = deserializeValueMember!(.deserializeValue!(symbolTable, exteneded), deserializeScoped, exteneded);
 
                 static immutable exc(string member) = "mir.ion.deser: non-optional member '" ~ member ~ "' in " ~ T.stringof ~ " is missing.";
                 
@@ -303,13 +333,26 @@ template deserializeValue(string[] symbolTable)
                             {
                                 if (error)
                                     return error.ionErrorMsg;
+
+                                static if (exteneded)
+                                {
+                                    auto originalID = symbolID;
+                                    if (symbolID >= tableParams[1].length)
+                                        goto Default;
+                                    symbolID = tableParams[1][symbolID];
+                                }
+                                else
+                                {
+                                    alias originalID = symbolID;
+                                }
+
                                 switch(symbolID)
                                 {
                                     static foreach (key; keys)
                                     {
                                     case findKey(symbolTable, key):
                                     }
-                                        if (auto mexp = impl!member(elem, value, requiredFlags))
+                                        if (auto mexp = impl!member(elem, tableParams, value, requiredFlags))
                                             return mexp;
                                         break;
                                     default:
@@ -327,7 +370,20 @@ template deserializeValue(string[] symbolTable)
                     foreach (IonErrorCode error, size_t symbolID, IonDescribedValue elem; ionValue)
                     {
                         if (error)
+                        {
                             return error.ionErrorMsg;
+                        }
+                        static if (exteneded)
+                        {
+                            auto originalID = symbolID;
+                            if (symbolID >= tableParams[1].length)
+                                goto Default;
+                            symbolID = tableParams[1][symbolID];
+                        }
+                        else
+                        {
+                            alias originalID = symbolID;
+                        }
                         S: switch(symbolID)
                         {
                             static foreach(member; serdeFinalProxyDeserializableMembers!T)
@@ -339,17 +395,33 @@ template deserializeValue(string[] symbolTable)
                                     {
                             case findKey(symbolTable, key):
                                     }
-                                if (auto mexp = impl!member(elem, value, requiredFlags))
+                                if (auto mexp = impl!member(elem, tableParams, value, requiredFlags))
                                     return mexp;
                                 break S;
                                 }
                             }}
+                            Default:
                             default:
-                                static immutable symbolTableInstance = symbolTable;
-                                static if (hasUnexpectedKeyHandler)
-                                    value.serdeUnexpectedKeyHandler(symbolID == 0 || symbolID > symbolTable.length ? "<@unknown key@>" : symbolTableInstance[symbolID]);
+                                static if (!exteneded)
+                                    static immutable symbolTableInstance = symbolTable;
                                 else
+                                    alias symbolTableInstance = tableParams[0];
+                                static if (hasUnexpectedKeyHandler)
+                                    value.serdeUnexpectedKeyHandler(originalID == 0 || originalID > symbolTableInstance.length ? "<@unknown symbol@>" : symbolTableInstance[originalID]);
+                                else
+                                {
+                                    try debug {
+                                        import std.stdio;
+
+                                static if (!exteneded)
+                                    static immutable dd = symbolTable;
+                                else
+                                    alias dd = tableParams[0];
+
+                                        writeln(symbolTable, dd, dd[originalID]);
+                                    } catch(Exception e) {}
                                     return unexpectedKeyException;
+                                }
                         }
                     }
 
@@ -376,10 +448,10 @@ template deserializeValue(string[] symbolTable)
     alias deserializeValue = .deserializeValue_;
 }
 
-private template deserializeValueMember(alias deserializeValue, alias deserializeScoped)
+private template deserializeValueMember(alias deserializeValue, alias deserializeScoped, bool exteneded)
 {
     ///
-    string deserializeValueMember(string member, Data, T, Context...)(Data data, ref T value, ref SerdeFlags!T requiredFlags, ref Context context)
+    string deserializeValueMember(string member, Data, T, Context...)(Data data, scope TableParams!exteneded tableParams, ref T value, ref SerdeFlags!T requiredFlags, ref Context context)
     {
         import core.lifetime: move;
         import mir.conv: to;
@@ -436,7 +508,7 @@ private template deserializeValueMember(alias deserializeValue, alias deserializ
             foreach(elem; data.byElement(context))
             {
                 Temporal temporal;
-                if (auto exc = impl(elem, temporal, context))
+                if (auto exc = impl(elem, tableParams, temporal, context))
                     return exc;
                 __traits(getMember, value, member).put(move(temporal));
             }
@@ -457,7 +529,7 @@ private template deserializeValueMember(alias deserializeValue, alias deserializ
             foreach(v; data.byKeyValue(context))
             {
                 Temporal temporal;
-                if (auto exc = impl(v.value, temporal, context))
+                if (auto exc = impl(v.value, tableParams, temporal, context))
                     return exc;
                 __traits(getMember, value, member)[v.key.idup] = move(temporal);
             }
@@ -479,7 +551,7 @@ private template deserializeValueMember(alias deserializeValue, alias deserializ
         static if (hasProxy)
         {
             Temporal proxy;
-            if (auto exc = impl(data, proxy, context))
+            if (auto exc = impl(data, tableParams, proxy, context))
                 return exc;
             auto temporal = to!(serdeDeserializationMemberType!(T, member))(move(proxy));
             static if (hasTransform)
@@ -489,7 +561,7 @@ private template deserializeValueMember(alias deserializeValue, alias deserializ
         else
         static if (isField!(T, member))
         {
-            if (auto exc = impl(data, __traits(getMember, value, member), context))
+            if (auto exc = impl(data, tableParams, __traits(getMember, value, member), context))
                 return exc;
             static if (hasTransform)
                 transform(__traits(getMember, value, member));
@@ -501,14 +573,14 @@ private template deserializeValueMember(alias deserializeValue, alias deserializ
                 import mir.appender: ScopedBuffer;
                 alias E = Unqual!D;
                 ScopedBuffer!E buffer;
-                if (auto exc = deserializeListToScopedBuffer!deserializeValue(data, buffer))
+                if (auto exc = deserializeListToScopedBuffer!(deserializeValue, exteneded)(data, tableParams, buffer))
                     return exc;
                 auto temporal = (()@trusted => cast(Member)buffer.data)();
             }
             else
             {
                 Member temporal;
-                if (auto exc = impl(data, temporal, context))
+                if (auto exc = impl(data, tableParams, temporal, context))
                     return exc;
             }
             static if (hasTransform)
