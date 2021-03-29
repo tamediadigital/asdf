@@ -189,6 +189,11 @@ template deserializeValue(string[] symbolTable, bool exteneded = false)
             return IonErrorCode.expectedListValue.ionErrorMsg;
         }
         else
+        static if (is(T == K[V], K , V))
+        {
+            return null;
+        }
+        else
         static if (is(T == Slice!(D*, N, kind), D, size_t N, SliceKind kind))
         {
             import mir.ndslice.topology: asKindOf;

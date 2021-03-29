@@ -193,7 +193,7 @@ pure nothrow:
 
     private const(char)[] getStringKey(uint keyPosition) scope const
     {
-        version(LDC) pragma(inline, true);
+        version (LDC) pragma(inline, true);
         import mir.ion.value;
         uint length;
         auto data = keySpace[keyPosition .. $];

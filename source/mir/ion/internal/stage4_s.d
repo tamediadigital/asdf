@@ -14,16 +14,16 @@ struct IonErrorInfo
 }
 
 ///
-IonErrorInfo singleThreadJsonImpl(size_t nMax, SymbolTable, TapeHolder)(
-    scope const(char)[] text,
+IonErrorInfo singleThreadJsonImpl(size_t nMax, alias fillBuffer, SymbolTable, TapeHolder)(
     ref SymbolTable table,
     ref TapeHolder tapeHolder,
     )
     if (nMax % 64 == 0 && nMax)
 {
-    import mir.utility: min;
+    version (LDC) pragma(inline, true);
+
+    import mir.utility: _expect;
     import mir.ion.internal.stage3;
-    import core.stdc.string: memcpy;
 
     enum k = nMax / 64;
 
@@ -40,22 +40,21 @@ IonErrorInfo singleThreadJsonImpl(size_t nMax, SymbolTable, TapeHolder)(
     pairedMask1[$ - 1] = [0UL,  0UL];
     pairedMask1[$ - 1] = [0UL,  ulong.max];
 
-    auto currentText = text;
     Stage3Stage stage;
 
-    auto ret = stage3(
-        table,
-        stage,
-        () @trusted
+    size_t location;
+
+    auto ret = stage3!((ref bool eof) @trusted
         {
+            version (LDC) pragma(inline, true);
             tapeHolder.extend(stage.tape.length + nMax * 4);
             if (stage.tape !is null)
             {
-                assert(stage.n - stage.n < 64);
                 vector[0] = vector[$ - 2];
                 pairedMask1[0] = pairedMask1[$ - 2];
                 pairedMask2[0] = pairedMask2[$ - 2];
                 stage.index -= stage.n;
+                location += stage.n;
             }
             else
             {
@@ -64,30 +63,50 @@ IonErrorInfo singleThreadJsonImpl(size_t nMax, SymbolTable, TapeHolder)(
                 stage.pairedMask2 = pairedMask2.ptr + 1;
             }
             stage.tape = tapeHolder.data;
-            stage.n = min(nMax, currentText.length);
-            if (stage.n == 0)
-                assert(0);
+            if (_expect(!fillBuffer(cast(char*)(vector.ptr.ptr + 64), stage.n, eof), false))
+                return false;
 
-            vector[1 + stage.n / 64] = ' ';
-
-            if (__ctfe)
-                for (size_t i; i < stage.n; i += 64)
-                    vector[i / 64 + 1][0 .. i + 64 <= stage.n ? $ : stage.n % 64] = cast(const(ubyte)[]) currentText[i .. i + 64 <= stage.n ? i + 64 : $];
-            else
-                memcpy(vector.ptr.ptr + 64, currentText.ptr, stage.n);
-
-            currentText = currentText[stage.n .. $];
-
+            assert (stage.n);
             auto vlen = stage.n / 64 + (stage.n % 64 != 0);
             import mir.ion.internal.stage1;
             import mir.ion.internal.stage2;
             stage1(vlen, vector.ptr + 1, pairedMask1.ptr + 1, backwardEscapeBit);
             stage2(vlen, vector.ptr + 1, pairedMask2.ptr + 1);
-            return currentText.length == 0;
-        },
+            return true;
+        })(
+        table,
+        stage,
         tapeHolder.currentTapePosition,
     );
-    return typeof(return)(ret, text.length - currentText.length - stage.index, stage.key);
+    location += stage.index;
+    return typeof(return)(ret, location, stage.key);
+}
+
+///
+IonErrorInfo singleThreadJsonText(size_t nMax, SymbolTable, TapeHolder)(
+    ref SymbolTable table,
+    ref TapeHolder tapeHolder,
+    scope const(char)[] text,
+)
+    if (nMax % 64 == 0 && nMax)
+{
+    version(LDC) pragma(inline, true);
+
+    return singleThreadJsonImpl!(nMax, (scope char* data, ref sizediff_t n, ref bool eof) @trusted
+    {
+        version (LDC) pragma(inline, true);
+
+        import core.stdc.string: memcpy;
+        import mir.utility: min;
+
+        n = min(text.length, nMax);
+        size_t spaceStart = n / 64 * 64;
+        data[spaceStart .. spaceStart + 64] = ' ';
+        memcpy(data, text.ptr, n);
+        text = text[n .. text.length];
+        eof = text.length == 0;
+        return true;
+    })(table, tapeHolder);
 }
 
 ///
@@ -107,7 +126,7 @@ version(mir_ion_test) unittest
         table.initialize;
         auto tapeHolder = IonTapeHolder!(nMax * 4)(nMax * 4);
 
-        auto errorInfo = singleThreadJsonImpl!nMax(text, table, tapeHolder);
+        auto errorInfo = singleThreadJsonText!nMax(table, tapeHolder, text);
         if (errorInfo.code)
             throw new SerdeMirException(errorInfo.code.ionErrorMsg, ". location = ", errorInfo.location, ", last input key = ", errorInfo.key);
 
@@ -151,4 +170,40 @@ version(mir_ion_test) unittest
         ]
     }`);
 
+}
+
+///
+pragma(inline, true)
+IonErrorInfo singleThreadJsonFile(size_t nMax, SymbolTable, TapeHolder)(
+    ref SymbolTable table,
+    ref TapeHolder tapeHolder,
+    scope const(char)[] fileName,
+)
+    if (nMax % 64 == 0 && nMax)
+{
+    version(LDC) pragma(inline, true);
+
+    import mir.utility: _expect;
+    import core.stdc.stdio: fopen, fread, fclose, ferror, feof;
+    import core.stdc.string: memcpy, memset;
+    import mir.appender: ScopedBuffer;
+
+    ScopedBuffer!(char, 256) filenameBuffer;
+    filenameBuffer.put(fileName);
+    filenameBuffer.put('\0');
+
+    auto fp = fopen(filenameBuffer.data.ptr, "r");
+    if (_expect(fp is null, false))
+        return IonErrorInfo(IonErrorCode.unableToOpenFile);
+    scope(exit) fclose(fp);
+    return singleThreadJsonImpl!(nMax, (scope char* data, ref sizediff_t n, ref bool eof) @trusted
+    {
+        version (LDC) pragma(inline, true);
+        n = fread(data, char.sizeof, nMax, fp);
+        if (_expect(ferror(fp), false))
+            return false;
+        memset(data + n, ' ', 64 - (n & 63));
+        eof = feof(fp) != 0;
+        return true;
+    })(table, tapeHolder);
 }

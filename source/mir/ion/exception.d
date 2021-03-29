@@ -92,6 +92,12 @@ enum IonErrorCode
     invalidLocalSymbolTable,
     ///
     sharedSymbolTablesAreUnsupported,
+    ///
+    unableToOpenFile,
+    ///
+    eof,
+    ///
+    errorReadingFile,
 }
 
 ///
@@ -153,6 +159,9 @@ string ionErrorMsg(IonErrorCode code) @property
         "symbol id is too large for the current symbol table",
         "invalid local symbol table",
         "shared symbol tables are unsupported",
+        "unable to open file",
+        "end of file",
+        "error reading file",
     ];
     return msgs[code - IonErrorCode.min];
 }

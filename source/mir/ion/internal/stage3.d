@@ -23,36 +23,52 @@ struct Stage3Stage
     const(char)[] key; // Last key, it is the reference to the tape
 }
 
-IonErrorCode stage3(Table)(
+IonErrorCode stage3(alias fetchNext, Table)(
     ref Table symbolTable,
     ref Stage3Stage stage,
-    scope bool delegate() @safe pure nothrow @nogc fetchNext,
     out size_t currentTapePositionResult,
 )
-@trusted pure nothrow
+@trusted nothrow
 {
-    pragma(inline, false)
+    import std.stdio;
+    version(LDC) pragma(inline, true);
+
+    enum stackLength = 1024;
+
+
+    bool eof;
+    bool currIsKey;// = void;
+    bool seof;
     string _lastError;
+    sizediff_t smallInputLength;
+    sizediff_t stackPos = stackLength;
+    size_t[stackLength] stack;// = void;
 
-    bool last = fetchNext();
+    typeof(return) retCode;
 
+    // IonErrorCode fetchError;
     with(stage){
 
-    ptrdiff_t prepareSmallInput()
+    bool prepareSmallInput()
     {
-        ptrdiff_t ret = n - index;
+        version(LDC) pragma(inline, true);
+
+        smallInputLength = n - index;
         // assert(ret >= 0);
-        if (_expect(ret < 64 && !last, false))
+        if (_expect(smallInputLength < 64 && !eof, false))
         {
-            last = fetchNext();
-            ret = n - index;
-            assert(ret >= 0);
+            if (_expect(!fetchNext(eof), false))
+                return false;
+            smallInputLength = n - index;
+            assert(smallInputLength >= 0);
         }
-        return ret;
+        return true;
     }
 
-    bool skipSpaces()
+    bool skipSpaces(ref bool seof)
     {
+        version(LDC) pragma(inline, true);
+
         assert(index <= n);
         F:
         if (_expect(index < n, true))
@@ -61,10 +77,11 @@ IonErrorCode stage3(Table)(
             auto indexG = index >> 6;
             auto indexL = index & 0x3F;
             auto spacesMask = ~pairedMask2[indexG][1] >> indexL;
-            if (_expect(spacesMask != 0, true))
+            if (spacesMask != 0)
             {
                 auto oldIndex = index;
                 index += cttz(spacesMask);
+                seof = false;
                 return true;
             }
             else
@@ -75,14 +92,19 @@ IonErrorCode stage3(Table)(
         }
         else
         {
-            if (prepareSmallInput > 0)
+            if (_expect(!prepareSmallInput, false))
+                return false;
+            if (smallInputLength > 0)
                 goto L;
-            return false;
+            seof = true;
+            return true;
         }
     }
 
     int readUnicode()(ref dchar d)
     {
+        version(LDC) pragma(inline, true);
+
         uint e = 0;
         size_t i = 4;
         do
@@ -100,17 +122,19 @@ IonErrorCode stage3(Table)(
         return 0;
     }
 
-    size_t[1024] stack;// = void;
-    sizediff_t stackPos = stack.length;
 
-    typeof(return) retCode;
-    bool currIsKey;// = void;
+
+    if (_expect(!fetchNext(eof), false))
+        goto errorReadingFile;
+
     goto value;
 
 /////////// RETURN
 ret:
     assert(stackPos == stack.length);
-    if (prepareSmallInput() > 0)
+    if (!prepareSmallInput)
+        goto errorReadingFile;
+    if (smallInputLength > 0)
     {
         auto indexG = index >> 6;
         auto indexL = index & 0x3F;
@@ -126,7 +150,9 @@ ret_final:
 ///////////
 
 key:
-    if (!skipSpaces)
+    if (!skipSpaces(seof))
+        goto errorReadingFile;
+    if (seof)
         goto object_key_unexpectedEnd;
 key_start:
     if (strPtr[index] != '"')
@@ -142,7 +168,8 @@ StringLoop: {
     currentTapePosition += ionPutStartLength;
     for(;;) 
     {
-        sizediff_t smallInputLength = prepareSmallInput;
+        if (!prepareSmallInput)
+            goto errorReadingFile;
         auto indexG = index >> 6;
         auto indexL = index & 0x3F;
         auto mask = pairedMask1[indexG];
@@ -194,7 +221,9 @@ StringLoop: {
             }
             // TODO find id using the key
             currentTapePosition += ionPutVarUInt(tape.ptr + currentTapePosition, id);
-            if (!skipSpaces)
+            if (!skipSpaces(seof))
+                goto errorReadingFile;
+            if (seof)
                 goto unexpectedEnd;
             if (strPtr[index++] != ':')
                 goto object_after_key_is_missing;
@@ -286,12 +315,16 @@ StringLoop: {
 next:
     if (stackPos == stack.length)
     {
-        if (!skipSpaces)
+        if (!skipSpaces(seof))
+            goto errorReadingFile;
+        if (seof)
             goto ret;
         goto value_start;
     }
 next_start: {
-    if (!skipSpaces)
+    if (!skipSpaces(seof))
+        goto errorReadingFile;
+    if (seof)
         goto next_unexpectedEnd;
     assert(stackPos >= 0);
     assert(stackPos < stack.length);
@@ -321,7 +354,9 @@ structure_end: {
     goto next;
 }
 value: {
-    if (!skipSpaces)
+    if (!skipSpaces(seof))
+        goto errorReadingFile;
+    if (seof)
         goto value_unexpectedEnd;
 value_start:
     auto startC = strPtr[index];
@@ -340,7 +375,8 @@ value_start:
         size_t numberLength;            
         for(;;)
         {
-            sizediff_t smallInputLength = prepareSmallInput;
+            if (!prepareSmallInput)
+                goto errorReadingFile;
             auto indexG = index >> 6;
             auto indexL = index & 0x3F;
             auto endMask = (pairedMask2[indexG][0] | pairedMask2[indexG][1]) >> indexL;
@@ -388,7 +424,9 @@ value_start:
         stack[stackPos] = currentTapePosition;
         tape[currentTapePosition] = startC == '{' ? IonTypeCode.struct_ << 4 : IonTypeCode.list << 4;
         currentTapePosition += ionPutStartLength;
-        if (!skipSpaces)
+        if (!skipSpaces(seof))
+            goto errorReadingFile;
+        if (seof)
             goto next_unexpectedEnd;
         if (strPtr[index] != startC + 2)
         {
@@ -405,7 +443,8 @@ value_start:
             goto structure_end;
         }
     }
-    prepareSmallInput;
+    if (!prepareSmallInput)
+        goto errorReadingFile;
     static foreach(name; AliasSeq!("true", "false", "null"))
     {
         if (*cast(ubyte[name.length]*)(strPtr + index) == cast(ubyte[name.length]) name)
@@ -428,7 +467,8 @@ value_start:
 
 infinity:
 
-    prepareSmallInput;
+    if (!prepareSmallInput)
+        goto errorReadingFile;
     {
         enum name = "inf";
         if (*cast(ubyte[name.length]*)(strPtr + index) == cast(ubyte[name.length]) name)
@@ -441,6 +481,9 @@ infinity:
     goto value_unexpectedStart;
 }
 
+errorReadingFile:
+    retCode = IonErrorCode.errorReadingFile;
+    goto ret_final;
 cant_insert_key:
     retCode = IonErrorCode.symbolTableCantInsertKey;
     goto ret_final;

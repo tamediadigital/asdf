@@ -25,7 +25,7 @@ struct IonVersionMarker
 package IonErrorCode parseVersion(ref const(ubyte)[] data, scope ref IonVersionMarker versionMarker)
     @safe pure nothrow @nogc
 {
-    version(LDC) pragma(inline, true);
+    version (LDC) pragma(inline, true);
     if (data.length < 4 || data[0] != 0xE0 || data[3] != 0xEA)
         return IonErrorCode.cantParseValueStream;
     versionMarker = IonVersionMarker(data[1], data[2]);
@@ -2745,7 +2745,7 @@ package IonErrorCode parseVarUInt(bool checkInput = true, U)(scope ref const(uby
     @safe pure nothrow @nogc
     if (is(U == ubyte) || is(U == ushort) || is(U == uint) || is(U == ulong))
 {
-    version(LDC) pragma(inline, true);
+    version (LDC) pragma(inline, true);
     enum mLength = U(1) << (U.sizeof * 8 / 7 * 7);
     for(;;)
     {
@@ -2780,7 +2780,7 @@ private IonErrorCode parseVarInt(S)(scope ref const(ubyte)[] data, scope out S r
     @safe pure nothrow @nogc
     if (is(S == byte) || is(S == short) || is(S == int) || is(S == long))
 {
-    version(LDC) pragma(inline, true);
+    version (LDC) pragma(inline, true);
     enum mLength = S(1) << (S.sizeof * 8 / 7 * 7 - 1);
     S length;
     if (_expect(data.length == 0, false))
@@ -2817,7 +2817,7 @@ private IonErrorCode parseVarInt(S)(scope ref const(ubyte)[] data, scope out S r
 package IonErrorCode parseValue(ref const(ubyte)[] data, scope ref IonDescribedValue describedValue)
     @safe pure nothrow @nogc
 {
-    version(LDC) pragma(inline, true);
+    version (LDC) pragma(inline, true);
 
     if (_expect(data.length == 0, false))
         return IonErrorCode.unexpectedEndOfData;
@@ -2862,7 +2862,7 @@ private F parseFloating(F)(scope const(ubyte)[] data)
     @trusted pure nothrow @nogc
     if (isFloatingPoint!F)
 {
-    version(LDC) pragma(inline, true);
+    version (LDC) pragma(inline, true);
 
     enum n = F.sizeof;
     static if (n == 4)

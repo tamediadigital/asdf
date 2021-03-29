@@ -32,7 +32,7 @@ package template isFirstOrderSerdeType(T)
 {
     import mir.serde: serdeGetFinalProxy;
 
-    static if (isAggregateType!T)
+    static if (is(T == struct) || is(T == union) || is(T == class) || is(T == interface))
     {
         static if (is(T : BigInt!maxSize64, size_t maxSize64))
             enum isFirstOrderSerdeType = true;
@@ -54,6 +54,9 @@ package template isFirstOrderSerdeType(T)
     else
     static if (isArray!T)
         enum isFirstOrderSerdeType = .isFirstOrderSerdeType!(Unqual!(ForeachType!T));
+    else
+    static if (is(T == V[K], K, V))
+        enum isFirstOrderSerdeType = false;
     else
     static if (is(T == serdeGetFinalProxy!T))
         enum isFirstOrderSerdeType = true;
@@ -89,7 +92,7 @@ IonErrorCode deserializeValueImpl(T)(IonDescribedValue data, ref T value)
     pure @safe nothrow @nogc
     if (is(T == typeof(null)))
 {
-    version(LDC) pragma(inline, true);
+    version (LDC) pragma(inline, true);
     return data == null ? IonErrorCode.none : IonErrorCode.expectedNullValue;
 }
 
