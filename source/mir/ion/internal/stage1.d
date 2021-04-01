@@ -191,7 +191,7 @@ version(mir_ion_test) unittest
     
     ulong[2][dataA.length] pairedMasks;
 
-    stage1(pairedMasks.length, dataA.ptr, pairedMasks.ptr, backwardEscapeBit);
+    stage1(pairedMasks.length, cast(const) dataA.ptr, pairedMasks.ptr, backwardEscapeBit);
 
     import mir.ndslice;
     auto maskData = pairedMasks.sliced;
@@ -241,7 +241,7 @@ version(mir_ion_test) unittest
 
     ulong[2][dataA.length] pairedMasks;
 
-    stage1(pairedMasks.length, dataA.ptr, pairedMasks.ptr, backwardEscapeBit);
+    stage1(pairedMasks.length, cast(const) dataA.ptr, pairedMasks.ptr, backwardEscapeBit);
 
     import mir.ndslice;
     auto maskData = pairedMasks.sliced;

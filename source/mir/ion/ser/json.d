@@ -299,7 +299,7 @@ struct JsonSerializer(string sep, Appender)
     ///
     void putValue(W, WordEndian endian)(BigIntView!(W, endian) view)
     {
-        BigInt!256 num;
+        BigInt!256 num = void;
         if (auto overflow = num.copyFrom(view))
         {
             static immutable exc = new SerdeException("JsonSerializer: overflow when converting " ~ typeof(view).stringof ~ " to " ~ typeof(num).stringof);

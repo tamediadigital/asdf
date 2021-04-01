@@ -196,7 +196,7 @@ version(mir_ion_test) unittest
     import mir.bignum.integer;
 
     auto data = IonValue([0x31, 0x07]).describe;
-    BigInt!256 value; // 256x64
+    BigInt!256 value = void; // 256x64
 
     assert(deserializeValueImpl(data, value) == IonErrorCode.none);
     assert(value.sign);
@@ -245,9 +245,8 @@ IonErrorCode deserializeValueImpl(T)(IonDescribedValue data, ref T value)
                 return error;
 
             import mir.bignum.decimal;
-            Decimal!256 decimal;
+            Decimal!256 decimal = void;
             DecimalExponentKey exponentKey;
-
 
             if (!decimal.fromStringImpl(ionValue, exponentKey))
                 return IonErrorCode.expectedFloatingValue;
@@ -296,7 +295,7 @@ IonErrorCode deserializeValueImpl(T : Decimal!maxW64bitSize, size_t maxW64bitSiz
     IonDescribedDecimal ionDescribedDecimal;
     if (auto error = ionValue.get(ionDescribedDecimal))
         return error;
-    return ionDescribedDecimal.getDecimal(value);
+    return ionDescribedDecimal.get(value);
 }
 
 ///

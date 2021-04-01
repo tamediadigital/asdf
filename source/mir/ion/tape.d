@@ -13,6 +13,9 @@ import mir.ion.type_code;
 import mir.utility: _expect;
 import std.traits;
 
+version(LDC) import ldc.attributes: optStrategy;
+else struct optStrategy { string opt; }
+
 /++
 +/
 size_t ionPutVarUInt(T)(scope ubyte* ptr, const T num)
@@ -305,13 +308,13 @@ version(mir_ion_test) unittest
 
 /++
 +/
+@optStrategy("optsize")
 size_t ionPutUIntField(W, WordEndian endian)(
     scope ubyte* ptr,
     BigUIntView!(const W, endian) value,
     )
     if (isUnsigned!W && (W.sizeof == 1 || endian == TargetEndian))
 {
-    pragma(inline, false);
     auto data = value.mostSignificantFirst;
     size_t ret;
     static if (W.sizeof > 1)
@@ -451,13 +454,13 @@ version(mir_ion_test) unittest
 
 /++
 +/
+@optStrategy("optsize")
 size_t ionPutIntField(W, WordEndian endian)(
     scope ubyte* ptr,
     BigIntView!(const W, endian) value,
     )
     if (isUnsigned!W && (W.sizeof == 1 || endian == TargetEndian))
 {
-    pragma(inline, false);
     auto data = value.unsigned.mostSignificantFirst;
     if (data.length == 0)
         return 0;
@@ -1295,6 +1298,7 @@ size_t ionPutStartLength()()
 +/
 size_t ionPutEnd()(ubyte* startPtr, IonTypeCode tc, size_t totalElementLength)
 {
+    version(LDC) pragma(inline, true);
     assert (tc == IonTypeCode.string || tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_ || tc == IonTypeCode.annotations);
     auto tck = tc << 4;
     if (totalElementLength < 0x80)
@@ -1406,6 +1410,7 @@ size_t ionPutStartLength()(ubyte* startPtr, IonTypeCode tc)
 +/
 size_t ionPutEnd()(ubyte* startPtr, size_t totalElementLength)
 {
+    version(LDC) pragma(inline, true);
     if (totalElementLength < 0x80)
     {
         if (totalElementLength < 0xE)

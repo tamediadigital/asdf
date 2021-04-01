@@ -4,8 +4,12 @@ module mir.ion.deser.json;
 
 public import mir.serde;
 
+version(LDC) import ldc.attributes: optStrategy;
+else struct optStrategy { string opt; }
+
 private template deserializeJsonImpl(bool file)
 {
+    @optStrategy("optsize")
     T deserializeJsonImpl(T)(scope const(char)[] text)
     {
         import mir.ion.deser: deserializeValue;

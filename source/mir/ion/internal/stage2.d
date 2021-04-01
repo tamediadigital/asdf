@@ -270,7 +270,7 @@ version(mir_ion_test) unittest
     
     ulong[2][dataA.length] pairedMasks;
 
-    stage2(pairedMasks.length, dataA.ptr, pairedMasks.ptr);
+    stage2(pairedMasks.length, cast(const) dataA.ptr, pairedMasks.ptr);
 
     import mir.ndslice;
     auto maskData = pairedMasks.sliced;

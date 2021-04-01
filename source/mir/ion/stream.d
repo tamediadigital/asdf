@@ -98,7 +98,6 @@ const:
 
         while (d.length)
         {
-            import std.stdio;
             IonErrorCode error;
             IonVersionMarker versionMarker;
             IonDescribedValue describedValue;

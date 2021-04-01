@@ -70,8 +70,8 @@ IonErrorInfo singleThreadJsonImpl(size_t nMax, alias fillBuffer, SymbolTable, Ta
             auto vlen = stage.n / 64 + (stage.n % 64 != 0);
             import mir.ion.internal.stage1;
             import mir.ion.internal.stage2;
-            stage1(vlen, vector.ptr + 1, pairedMask1.ptr + 1, backwardEscapeBit);
-            stage2(vlen, vector.ptr + 1, pairedMask2.ptr + 1);
+            stage1(vlen, cast(const) vector.ptr + 1, pairedMask1.ptr + 1, backwardEscapeBit);
+            stage2(vlen, cast(const) vector.ptr + 1, pairedMask2.ptr + 1);
             return true;
         })(
         table,
