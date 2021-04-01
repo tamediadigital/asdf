@@ -274,7 +274,6 @@ pure nothrow:
     ///
     uint find(scope const(char)[] key) const
     {
-        pragma(inline, false);
         return find(key, cast(uint)hashOf(key));
     }
 

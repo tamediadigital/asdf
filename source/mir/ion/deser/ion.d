@@ -36,20 +36,29 @@ template deserializeIon(T)
         enum keys = serdeGetDeserializationKeysRecurse!T;
         alias createTableChar = createTable!char;
         static immutable table = createTableChar!(keys, false);
-        ScopedBuffer!(uint, 1024) tableMapBuffer;
-
-        foreach (key; symbolTable)
-        {
-            uint id;
-            if (!table.get(key, id))
-                id = uint.max;
-            tableMapBuffer.put(id);
-        }
 
         T value;
-        if (auto msg = deserializeValue!(keys, true)(ionValue, symbolTable, tableMapBuffer.data, value))
-            throw new SerdeException(msg);
-        
+        if (false)
+        {
+            auto msg = deserializeValue!(keys, true)(ionValue, symbolTable, null, value);
+        }
+        () @trusted {
+
+            ScopedBuffer!(uint, 1024) tableMapBuffer = void;
+            tableMapBuffer.initialize;
+
+            foreach (key; symbolTable)
+            {
+                uint id;
+                if (!table.get(key, id))
+                    id = uint.max;
+                tableMapBuffer.put(id);
+            }
+
+            if (auto msg = deserializeValue!(keys, true)(ionValue, symbolTable, tableMapBuffer.data, value))
+                throw new SerdeException(msg);
+            
+        } ();
         return value;
     }
 }

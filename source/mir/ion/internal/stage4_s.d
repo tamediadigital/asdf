@@ -36,7 +36,7 @@ IonErrorInfo singleThreadJsonImpl(size_t nMax, alias fillBuffer, SymbolTable, Ta
 
     bool backwardEscapeBit;
 
-    vector[$ - 1] = ' ';
+    vector[$ - 1] = '\0';
     pairedMask1[$ - 1] = [0UL,  0UL];
     pairedMask1[$ - 1] = [0UL,  ulong.max];
 
@@ -101,7 +101,7 @@ IonErrorInfo singleThreadJsonText(size_t nMax, SymbolTable, TapeHolder)(
 
         n = min(text.length, nMax);
         size_t spaceStart = n / 64 * 64;
-        data[spaceStart .. spaceStart + 64] = ' ';
+        data[spaceStart .. spaceStart + 64] = '\0';
         memcpy(data, text.ptr, n);
         text = text[n .. text.length];
         eof = text.length == 0;
@@ -183,12 +183,13 @@ IonErrorInfo singleThreadJsonFile(size_t nMax, SymbolTable, TapeHolder)(
 {
     version(LDC) pragma(inline, true);
 
-    import mir.utility: _expect;
     import core.stdc.stdio: fopen, fread, fclose, ferror, feof;
     import core.stdc.string: memcpy, memset;
     import mir.appender: ScopedBuffer;
+    import mir.utility: _expect;
 
-    ScopedBuffer!(char, 256) filenameBuffer;
+    ScopedBuffer!(char, 256) filenameBuffer = void;
+    filenameBuffer.initialize;
     filenameBuffer.put(fileName);
     filenameBuffer.put('\0');
 

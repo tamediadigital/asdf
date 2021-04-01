@@ -28,10 +28,11 @@ IonErrorCode stage3(alias fetchNext, Table)(
     ref Stage3Stage stage,
     out size_t currentTapePositionResult,
 )
-@trusted nothrow
+@trusted nothrow @nogc
 {
-    import std.stdio;
     version(LDC) pragma(inline, true);
+
+    import mir.bignum.decimal: Decimal, DecimalExponentKey;
 
     enum stackLength = 1024;
 
@@ -39,10 +40,12 @@ IonErrorCode stage3(alias fetchNext, Table)(
     bool eof;
     bool currIsKey;// = void;
     bool seof;
-    string _lastError;
     sizediff_t smallInputLength;
     sizediff_t stackPos = stackLength;
-    size_t[stackLength] stack;// = void;
+    sizediff_t stackPosSkip = -1;
+    size_t currentTapePositionSkip;
+    Decimal!256 decimal = void;
+    size_t[stackLength] stack = void;
 
     typeof(return) retCode;
 
@@ -57,10 +60,10 @@ IonErrorCode stage3(alias fetchNext, Table)(
         // assert(ret >= 0);
         if (_expect(smallInputLength < 64 && !eof, false))
         {
-            if (_expect(!fetchNext(eof), false))
+            if (!fetchNext(eof))
                 return false;
             smallInputLength = n - index;
-            assert(smallInputLength >= 0);
+            assert(smallInputLength > 0);
         }
         return true;
     }
@@ -122,8 +125,6 @@ IonErrorCode stage3(alias fetchNext, Table)(
         return 0;
     }
 
-
-
     if (_expect(!fetchNext(eof), false))
         goto errorReadingFile;
 
@@ -152,7 +153,7 @@ ret_final:
 key:
     if (!skipSpaces(seof))
         goto errorReadingFile;
-    if (seof)
+    if (seof || strPtr[index] == '\0')
         goto object_key_unexpectedEnd;
 key_start:
     if (strPtr[index] != '"')
@@ -178,7 +179,7 @@ StringLoop: {
         auto strMask = mask[0] | mask[1];
         // TODO: memcpy optimisation for DMD
         assert(currentTapePosition + 64 <= tape.length);
-        memcpy(tape.ptr + currentTapePosition, strPtr + index, 64);
+        *cast(ubyte[64]*)(tape.ptr + currentTapePosition) = *cast(const ubyte[64]*)(strPtr + index);
         auto value = strMask == 0 ? 64 - indexL : cttz(strMask);
         smallInputLength -= cast(ptrdiff_t) value;
         if (smallInputLength < 0)
@@ -209,21 +210,25 @@ StringLoop: {
             else // mir string table
             {
                 uint id;
-                if (!symbolTable.get(key, id))
+                if (_expect(!symbolTable.get(key, id), false))
                 {
                     debug(ion) if (!__ctfe)
                     {
                         import core.stdc.stdio: stderr, fprintf;
                         fprintf(stderr, "Error: (debug) can't insert key %*.*s\n", cast(int)key.length, cast(int)key.length, key.ptr);
                     }
-                    goto cant_insert_key;
+                    if (stackPos > stackPosSkip)
+                    {
+                        currentTapePositionSkip = currentTapePosition;
+                        stackPosSkip = stackPos;
+                    }
                 }
             }
             // TODO find id using the key
             currentTapePosition += ionPutVarUInt(tape.ptr + currentTapePosition, id);
             if (!skipSpaces(seof))
                 goto errorReadingFile;
-            if (seof)
+            if (seof || strPtr[index] == '\0')
                 goto unexpectedEnd;
             if (strPtr[index++] != ':')
                 goto object_after_key_is_missing;
@@ -317,14 +322,19 @@ next:
     {
         if (!skipSpaces(seof))
             goto errorReadingFile;
-        if (seof)
+        if (seof || strPtr[index] == '\0')
             goto ret;
         goto value_start;
+    }
+    if (stackPosSkip == stackPos)
+    {
+        currentTapePosition = currentTapePositionSkip;
+        stackPosSkip = -1;
     }
 next_start: {
     if (!skipSpaces(seof))
         goto errorReadingFile;
-    if (seof)
+    if (seof || strPtr[index] == '\0')
         goto next_unexpectedEnd;
     assert(stackPos >= 0);
     assert(stackPos < stack.length);
@@ -356,7 +366,7 @@ structure_end: {
 value: {
     if (!skipSpaces(seof))
         goto errorReadingFile;
-    if (seof)
+    if (seof || strPtr[index] == '\0')
         goto value_unexpectedEnd;
 value_start:
     auto startC = strPtr[index];
@@ -365,12 +375,6 @@ value_start:
         currIsKey = false;
         if (startC == '"')
             goto string;
-
-        if (startC == '+')
-        {
-            index++;
-            goto infinity;
-        }
 
         size_t numberLength;            
         for(;;)
@@ -381,26 +385,32 @@ value_start:
             auto indexL = index & 0x3F;
             auto endMask = (pairedMask2[indexG][0] | pairedMask2[indexG][1]) >> indexL;
             // TODO: memcpy optimisation for DMD
-            memcpy(tape.ptr + currentTapePosition + numberLength, strPtr + index, 64);
             auto additive = endMask == 0 ? 64 - indexL : cttz(endMask);
+            *cast(ubyte[64]*)(tape.ptr + currentTapePosition + numberLength) = *cast(const ubyte[64]*)(strPtr + index);
             numberLength += additive;
             index += additive;
-            if (endMask == 0)
-                continue;
-            break;
+            if (endMask != 0)
+                break;
         }
         auto numberStringView = cast(const(char)[]) (tape.ptr + currentTapePosition)[0 .. numberLength];
 
-        import mir.bignum.decimal: Decimal, DecimalExponentKey;
-        Decimal!256 decimal;
         DecimalExponentKey exponentKey;
 
-        if (!decimal.fromStringImpl(numberStringView, exponentKey))
+        if (!decimal.fromStringImpl!(char, false, false, false)(numberStringView, exponentKey))
             goto unexpected_decimal_value;
         if (!exponentKey) // integer
         {
-            currentTapePosition += ionPut(tape.ptr + currentTapePosition, decimal.coefficient.view);
+            auto unsignedView = decimal.coefficient.view.unsigned;
+            enum l = ulong.sizeof / size_t.sizeof;
+            if (_expect(unsignedView.coefficients.length > l, true))
+                goto integerOverflow;
+            currentTapePosition += ionPut(tape.ptr + currentTapePosition, cast(ulong) unsignedView, decimal.coefficient.sign);
             goto next;
+            // else
+            // {
+            //     currentTapePosition += ionPut(tape.ptr + currentTapePosition, decimal.coefficient.view);
+            //     goto next;
+            // }
         }
         else
         if ((exponentKey | 0x20) != DecimalExponentKey.e) // decimal
@@ -411,7 +421,7 @@ value_start:
         else
         {
             // sciencific
-            currentTapePosition += ionPut(tape.ptr + currentTapePosition, cast(double)decimal);
+            currentTapePosition += ionPut(tape.ptr + currentTapePosition, decimal.opCast!(double, true));
             goto next;
         }
     }
@@ -426,7 +436,7 @@ value_start:
         currentTapePosition += ionPutStartLength;
         if (!skipSpaces(seof))
             goto errorReadingFile;
-        if (seof)
+        if (seof || strPtr[index] == '\0')
             goto next_unexpectedEnd;
         if (strPtr[index] != startC + 2)
         {
@@ -454,30 +464,6 @@ value_start:
             goto next;
         }
     }
-    {
-        enum name = "nan";
-        if (*cast(ubyte[name.length]*)(strPtr + index) == cast(ubyte[name.length]) name)
-        {
-            currentTapePosition += ionPut(tape.ptr + currentTapePosition, float.nan);
-            index += name.length;
-            goto next;
-        }
-    }
-    goto value_unexpectedStart;
-
-infinity:
-
-    if (!prepareSmallInput)
-        goto errorReadingFile;
-    {
-        enum name = "inf";
-        if (*cast(ubyte[name.length]*)(strPtr + index) == cast(ubyte[name.length]) name)
-        {
-            currentTapePosition += ionPut(tape.ptr + currentTapePosition, float.nan);
-            index += name.length;
-            goto next;
-        }
-    }
     goto value_unexpectedStart;
 }
 
@@ -493,93 +479,96 @@ unexpectedEnd:
 unexpectedValue:
     retCode = IonErrorCode.jsonUnexpectedValue;
     goto ret_final;
+integerOverflow:
+    // _lastError = "unexpected decimal value";
+    goto unexpectedValue;
 unexpected_decimal_value:
-    _lastError = "unexpected decimal value";
+    // _lastError = "unexpected decimal value";
     goto unexpectedValue;
 unexpected_escape_unicode_value:
-    _lastError = "unexpected escape unicode value";
+    // _lastError = "unexpected escape unicode value";
     goto unexpectedValue;
 unexpected_escape_value:
-    _lastError = "unexpected escape value";
+    // _lastError = "unexpected escape value";
     goto unexpectedValue;
 object_key_unexpectedEnd:
-    _lastError = "unexpected end of object key";
+    // _lastError = "unexpected end of object key";
     goto unexpectedEnd;
 object_after_key_is_missing:
-    _lastError = "expected ':' after key";
+    // _lastError = "expected ':' after key";
     goto unexpectedValue;
 object_key_start_unexpectedValue:
-    _lastError = "expected '\"' when start parsing object key";
+    // _lastError = "expected '\"' when start parsing object key";
     goto unexpectedValue;
 key_is_to_large:
-    _lastError = "key length is limited to 255 characters";
+    // _lastError = "key length is limited to 255 characters";
     goto unexpectedValue;
 next_unexpectedEnd:
     assert(stackPos >= 0);
     assert(stackPos < stack.length);
-    _lastError = (stack[stackPos] & 1) ? "unexpected end when parsing object" : "unexpected end when parsing array";
+    // _lastError = (stack[stackPos] & 1) ? "unexpected end when parsing object" : "unexpected end when parsing array";
     goto unexpectedEnd;
 next_unexpectedValue:
     assert(stackPos >= 0);
     assert(stackPos < stack.length);
-    _lastError = (stack[stackPos] & 1) ? "expected ',' or `}` when parsing object" : "expected ',' or `]` when parsing array";
+    // _lastError = (stack[stackPos] & 1) ? "expected ',' or `}` when parsing object" : "expected ',' or `]` when parsing array";
     goto unexpectedValue;
 value_unexpectedStart:
-    _lastError = "unexpected character when start parsing JSON value";
+    // _lastError = "unexpected character when start parsing JSON value";
     goto unexpectedEnd;
 value_unexpectedEnd:
-    _lastError = "unexpected end when start parsing JSON value";
+    // _lastError = "unexpected end when start parsing JSON value";
     goto unexpectedEnd;
 number_length_unexpectedValue:
-    _lastError = "number length is limited to 255 characters";
+    // _lastError = "number length is limited to 255 characters";
     goto unexpectedValue;
 object_first_value_start_unexpectedEnd:
-    _lastError = "unexpected end of input data after '{'";
+    // _lastError = "unexpected end of input data after '{'";
     goto unexpectedEnd;
 array_first_value_start_unexpectedEnd:
-    _lastError = "unexpected end of input data after '['";
+    // _lastError = "unexpected end of input data after '['";
     goto unexpectedEnd;
 false_unexpectedEnd:
-    _lastError = "unexpected end when parsing 'false'";
+    // _lastError = "unexpected end when parsing 'false'";
     goto unexpectedEnd;
 false_unexpectedValue:
-    _lastError = "unexpected character when parsing 'false'";
+    // _lastError = "unexpected character when parsing 'false'";
     goto unexpectedValue;
 null_unexpectedEnd:
-    _lastError = "unexpected end when parsing 'null'";
+    // _lastError = "unexpected end when parsing 'null'";
     goto unexpectedEnd;
 null_unexpectedValue:
-    _lastError = "unexpected character when parsing 'null'";
+    // _lastError = "unexpected character when parsing 'null'";
     goto unexpectedValue;
 true_unexpectedEnd:
-    _lastError = "unexpected end when parsing 'true'";
+    // _lastError = "unexpected end when parsing 'true'";
     goto unexpectedEnd;
 true_unexpectedValue:
-    _lastError = "unexpected character when parsing 'true'";
+    // _lastError = "unexpected character when parsing 'true'";
     goto unexpectedValue;
 string_unexpectedEnd:
-    _lastError = "unexpected end when parsing string";
+    // _lastError = "unexpected end when parsing string";
     goto unexpectedEnd;
 string_unexpectedValue:
-    _lastError = "unexpected character when parsing string";
+    // _lastError = "unexpected character when parsing string";
     goto unexpectedValue;
 failed_to_read_after_key:
-    _lastError = "unexpected end after object key";
+    // _lastError = "unexpected end after object key";
     goto unexpectedEnd;
 unexpected_character_after_key:
-    _lastError = "unexpected character after key";
+    // _lastError = "unexpected character after key";
     goto unexpectedValue;
 string_length_is_too_large:
-    _lastError = "string size is limited to 2^32-1";
+    // _lastError = "string size is limited to 2^32-1";
     goto unexpectedValue;
 invalid_trail_surrogate:
-    _lastError = "invalid UTF-16 trail surrogate";
+    // _lastError = "invalid UTF-16 trail surrogate";
     goto unexpectedValue;
 invalid_utf_value:
-    _lastError = "invalid UTF value";
+    // _lastError = "invalid UTF value";
     goto unexpectedValue;
 stack_overflow:
-    _lastError = "overflow of internal stack";
+    // _lastError = "overflow of internal stack";
     goto unexpectedValue;
 }}
 

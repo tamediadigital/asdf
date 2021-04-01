@@ -25,6 +25,7 @@ size_t stage1 (
     ref bool backwardEscapeBit,
     )
 {
+    version (LDC) pragma(inline, false);
     alias AliasSeq(T...) = T;
     alias params = AliasSeq!(n, vector, pairedMask, backwardEscapeBit);
     version (LDC)
@@ -79,7 +80,7 @@ private template stage1_impl(string arch)
         ref bool backwardEscapeBit,
         )
     {
-        version (LDC) pragma(inline, false);
+        version (LDC) pragma(inline, true);
         enum ubyte quote = '"';
         enum ubyte escape = '\\';
 

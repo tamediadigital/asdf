@@ -114,7 +114,7 @@ Params:
 Returns:
     corresponding error message
 +/
-string ionErrorMsg(IonErrorCode code) @property
+string ionErrorMsg()(IonErrorCode code) @property
 @safe pure nothrow @nogc
 {
     static immutable string[] msgs = [
@@ -195,7 +195,7 @@ Params:
 Returns:
     $(LREF MirIonException)
 +/
-MirIonException ionException(IonErrorCode code) @property
+MirIonException ionException()(IonErrorCode code) @property
 @trusted pure nothrow @nogc
 {
     import mir.array.allocation: array;

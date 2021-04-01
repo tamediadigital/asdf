@@ -550,7 +550,7 @@ struct IonIntField
             d = d[1 .. $];
             if (d.length == 0)
             {
-                if (_expect(f < 0, false))
+                if (f < 0)
                     break;
                 if (s)
                     f = cast(T)(0-f);
@@ -561,7 +561,7 @@ struct IonIntField
             i += cast(bool)f;
             f <<= 8;
             f |= d[0];
-            if (_expect(i >= T.sizeof, false))
+            if (i >= T.sizeof)
                 break;
         }
         return IonErrorCode.overflowInIntegerValue;

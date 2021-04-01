@@ -505,8 +505,8 @@ void serializeIon(Appender, V)(ref Appender appender, auto ref V value)
 @safe pure nothrow @nogc
 unittest
 {
-    import mir.appender: ScopedBuffer;
-    // ScopedBuffer!char buffer;
+    import mir.format: stringBuf;
+    // stringBuf buffer;
     // static struct S { int a; }
     // serializeIon(buffer, S(4));
     // assert(buffer.data == `{"a":4}`);
@@ -528,10 +528,10 @@ template ionSerializer(string sep = "")
 ///
 @safe pure nothrow @nogc unittest
 {
-    // import mir.appender: ScopedBuffer;
+    // import mir.format: stringBuf;
     // import mir.bignum.integer;
 
-    // ScopedBuffer!char buffer;
+    // stringBuf buffer;
     // auto ser = ionSerializer((()@trusted=>&buffer)());
     // auto state0 = ser.structBegin;
 

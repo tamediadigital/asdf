@@ -522,16 +522,23 @@ IonErrorCode deserializeValueImpl(T)(IonDescribedValue data, ref T value)
     alias E = Unqual!(ForeachType!T);
     if (data.descriptor.type == IonTypeCode.list)
     {
-        ScopedBuffer!E buffer;
-        if (auto error = deserializeListToScopedBuffer(data, buffer))
-            return error;
-        import std.array: uninitializedArray;
-        (()@trusted {
+        if (false)
+        {
+            ScopedBuffer!E buffer;
+            if (auto error = deserializeListToScopedBuffer(data, buffer))
+                return error;
+        }
+        return () @trusted {
+            import std.array: uninitializedArray;
+            ScopedBuffer!E buffer = void;
+            buffer.initialize;
+            if (auto error = deserializeListToScopedBuffer(data, buffer))
+                return error;
             auto ar = uninitializedArray!(E[])(buffer.length);
             buffer.moveDataAndEmplaceTo(ar);
             value = cast(T) ar;
-        })();
-        return IonErrorCode.none;
+            return IonErrorCode.none;
+        } ();
     }
     else
     if (data.descriptor.type == IonTypeCode.null_)

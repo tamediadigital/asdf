@@ -14,7 +14,7 @@ import mir.utility: _expect;
 import std.traits;
 
 version(LDC) import ldc.attributes: optStrategy;
-else struct optStrategy { string opt; }
+else private struct optStrategy { string opt; }
 
 /++
 +/
