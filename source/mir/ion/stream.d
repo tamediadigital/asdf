@@ -81,13 +81,15 @@ const:
 
     /++
     +/
-    @safe pure nothrow @nogc
+    @trusted pure nothrow @nogc
     int opApply(scope int delegate(IonErrorCode error, const(char[])[] symbolTable, IonDescribedValue value) @safe pure nothrow @nogc dg)
     {
         import mir.appender: ScopedBuffer;
         import mir.ion.symbol_table;
 
-        ScopedBuffer!(const(char)[]) symbolTableBuffer;
+        ScopedBuffer!(const(char)[]) symbolTableBuffer = void;
+        symbolTableBuffer.initialize;
+
         const(ubyte)[] d = data;
 
         void resetSymbolTable()

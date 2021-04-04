@@ -14,7 +14,7 @@ import mir.utility: _expect;
 import std.traits;
 
 version(LDC) import ldc.attributes: optStrategy;
-else struct optStrategy { string opt; }
+else private struct optStrategy { string opt; }
 
 /++
 +/
@@ -1296,69 +1296,71 @@ size_t ionPutStartLength()()
 
 /++
 +/
+size_t ionPutEmpty()(ubyte* startPtr, IonTypeCode tc)
+{
+    version(LDC) pragma(inline, true);
+    assert (tc == IonTypeCode.string || tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_ || tc == IonTypeCode.annotations);
+    auto tck = tc << 4;
+    *startPtr = cast(ubyte) tck;
+    return 1;
+}
+
+/++
++/
 size_t ionPutEnd()(ubyte* startPtr, IonTypeCode tc, size_t totalElementLength)
 {
     version(LDC) pragma(inline, true);
     assert (tc == IonTypeCode.string || tc == IonTypeCode.list || tc == IonTypeCode.sexp || tc == IonTypeCode.struct_ || tc == IonTypeCode.annotations);
     auto tck = tc << 4;
+    if (totalElementLength < 0xE)
+    {
+        *startPtr = cast(ubyte) (tck | totalElementLength);
+        if (__ctfe)
+            foreach (i; 0 .. totalElementLength)
+                startPtr[i + 1] = startPtr[i + 3];
+        else
+            memmove(startPtr + 1, startPtr + 3, 16);
+        debug {
+            startPtr[totalElementLength + 1] = 0xFF;
+            startPtr[totalElementLength + 2] = 0xFF;
+        }
+        return 1 + totalElementLength;
+    }
     if (totalElementLength < 0x80)
     {
-        if (totalElementLength < 0xE)
-        {
-            *startPtr = cast(ubyte) (tck | totalElementLength);
-            if (__ctfe)
-                foreach (i; 0 .. totalElementLength)
-                    startPtr[i + 1] = startPtr[i + 3];
-            else
-                memmove(startPtr + 1, startPtr + 3, 16);
-            debug {
-                startPtr[totalElementLength + 1] = 0xFF;
-                startPtr[totalElementLength + 2] = 0xFF;
-            }
-            return 1 + totalElementLength;
-        }
+        *startPtr = cast(ubyte)(tck | 0xE);
+        startPtr[1] = cast(ubyte) (0x80 | totalElementLength);
+        if (__ctfe)
+            foreach (i; 0 .. totalElementLength)
+                startPtr[i + 2] = startPtr[i + 3];
         else
-        {
-            *startPtr = cast(ubyte)(tck | 0xE);
-            startPtr[1] = cast(ubyte) (0x80 | totalElementLength);
-            if (__ctfe)
-                foreach (i; 0 .. totalElementLength)
-                    startPtr[i + 2] = startPtr[i + 3];
-            else
-                memmove(startPtr + 2, startPtr + 3, 128);
-            debug {
-                startPtr[totalElementLength + 2] = 0xFF;
-            }
-            return 2 + totalElementLength;
+            memmove(startPtr + 2, startPtr + 3, 128);
+        debug {
+            startPtr[totalElementLength + 2] = 0xFF;
         }
+        return 2 + totalElementLength;
+    }
+    *startPtr = cast(ubyte)(tck | 0xE);
+    if (_expect(totalElementLength < 0x4000, true))
+    {
+        startPtr[1] = cast(ubyte) (totalElementLength >> 7);
+        startPtr[2] = cast(ubyte) (totalElementLength | 0x80);
+        return 3 + totalElementLength;
+    }
+    ubyte[10] lengthPayload;
+    auto lengthLength = ionPutVarUInt(lengthPayload.ptr, totalElementLength);
+    if (__ctfe)
+    {
+        foreach_reverse (i; 0 .. totalElementLength)
+            startPtr[i + 1 + lengthLength] = startPtr[i + 3];
+        startPtr[1 .. lengthLength + 1] = lengthPayload[0 .. lengthLength];
     }
     else
     {
-        *startPtr = cast(ubyte)(tck | 0xE);
-        if (_expect(totalElementLength < 0x4000, true))
-        {
-            startPtr[1] = cast(ubyte) (totalElementLength >> 7);
-            startPtr[2] = cast(ubyte) (totalElementLength | 0x80);
-            return 3 + totalElementLength;
-        }
-        else
-        {
-            ubyte[10] lengthPayload;
-            auto lengthLength = ionPutVarUInt(lengthPayload.ptr, totalElementLength);
-            if (__ctfe)
-            {
-                foreach_reverse (i; 0 .. totalElementLength)
-                    startPtr[i + 1 + lengthLength] = startPtr[i + 3];
-                startPtr[1 .. lengthLength + 1] = lengthPayload[0 .. lengthLength];
-            }
-            else
-            {
-                memmove(startPtr + 1 + lengthLength, startPtr + 3, totalElementLength);
-                memcpy(startPtr + 1, lengthPayload.ptr, lengthLength);
-            }
-            return totalElementLength + 1 + lengthLength;
-        }
+        memmove(startPtr + 1 + lengthLength, startPtr + 3, totalElementLength);
+        memcpy(startPtr + 1, lengthPayload.ptr, lengthLength);
     }
+    return totalElementLength + 1 + lengthLength;
 }
 
 ///
@@ -1411,66 +1413,58 @@ size_t ionPutStartLength()(ubyte* startPtr, IonTypeCode tc)
 size_t ionPutEnd()(ubyte* startPtr, size_t totalElementLength)
 {
     version(LDC) pragma(inline, true);
+
+    if (totalElementLength < 0xE)
+    {
+        *startPtr |= cast(ubyte) (totalElementLength);
+        if (__ctfe)
+            foreach (i; 0 .. totalElementLength)
+                startPtr[i + 1] = startPtr[i + 3];
+        else
+            memmove(startPtr + 1, startPtr + 3, 16);
+        debug
+        {
+            startPtr[totalElementLength + 1] = 0xFF;
+            startPtr[totalElementLength + 2] = 0xFF;
+        }
+        return 1 + totalElementLength;
+    }
     if (totalElementLength < 0x80)
     {
-        if (totalElementLength < 0xE)
-        {
-            *startPtr |= cast(ubyte) (totalElementLength);
-            if (__ctfe)
-                foreach (i; 0 .. totalElementLength)
-                    startPtr[i + 1] = startPtr[i + 3];
-            else
-                memmove(startPtr + 1, startPtr + 3, 16);
-            debug
-            {
-                startPtr[totalElementLength + 1] = 0xFF;
-                startPtr[totalElementLength + 2] = 0xFF;
-            }
-            return 1 + totalElementLength;
-        }
+        *startPtr |= cast(ubyte)(0xE);
+        startPtr[1] = cast(ubyte) (0x80 | totalElementLength);
+        if (__ctfe)
+            foreach (i; 0 .. totalElementLength)
+                startPtr[i + 2] = startPtr[i + 3];
         else
+            memmove(startPtr + 2, startPtr + 3, 128);
+        debug
         {
-            *startPtr |= cast(ubyte)(0xE);
-            startPtr[1] = cast(ubyte) (0x80 | totalElementLength);
-            if (__ctfe)
-                foreach (i; 0 .. totalElementLength)
-                    startPtr[i + 2] = startPtr[i + 3];
-            else
-                memmove(startPtr + 2, startPtr + 3, 128);
-            debug
-            {
-                startPtr[totalElementLength + 2] = 0xFF;
-            }
-            return 2 + totalElementLength;
+            startPtr[totalElementLength + 2] = 0xFF;
         }
+        return 2 + totalElementLength;
+    }
+    *startPtr |= cast(ubyte)(0xE);
+    if (_expect(totalElementLength < 0x4000, true))
+    {
+        startPtr[1] = cast(ubyte) (totalElementLength >> 7);
+        startPtr[2] = cast(ubyte) (totalElementLength | 0x80);
+        return 3 + totalElementLength;
+    }
+    ubyte[10] lengthPayload;
+    auto lengthLength = ionPutVarUInt(lengthPayload.ptr, totalElementLength);
+    if (__ctfe)
+    {
+        foreach_reverse (i; 0 .. totalElementLength)
+            startPtr[i + 1 + lengthLength] = startPtr[i + 3];
+        startPtr[1 .. lengthLength + 1] = lengthPayload[0 .. lengthLength];
     }
     else
     {
-        *startPtr |= cast(ubyte)(0xE);
-        if (_expect(totalElementLength < 0x4000, true))
-        {
-            startPtr[1] = cast(ubyte) (totalElementLength >> 7);
-            startPtr[2] = cast(ubyte) (totalElementLength | 0x80);
-            return 3 + totalElementLength;
-        }
-        else
-        {
-            ubyte[10] lengthPayload;
-            auto lengthLength = ionPutVarUInt(lengthPayload.ptr, totalElementLength);
-            if (__ctfe)
-            {
-                foreach_reverse (i; 0 .. totalElementLength)
-                    startPtr[i + 1 + lengthLength] = startPtr[i + 3];
-                startPtr[1 .. lengthLength + 1] = lengthPayload[0 .. lengthLength];
-            }
-            else
-            {
-                memmove(startPtr + 1 + lengthLength, startPtr + 3, totalElementLength);
-                memcpy(startPtr + 1, lengthPayload.ptr, lengthLength);
-            }
-            return totalElementLength + 1 + lengthLength;
-        }
+        memmove(startPtr + 1 + lengthLength, startPtr + 3, totalElementLength);
+        memcpy(startPtr + 1, lengthPayload.ptr, lengthLength);
     }
+    return totalElementLength + 1 + lengthLength;
 }
 
 /++

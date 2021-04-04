@@ -103,8 +103,8 @@ struct IonSymbolTable(bool gc)
     uint maxProbe = initialMaxProbe;
     uint elementCount;
     uint startId = IonSystemSymbol.max + 1;
-
     ubyte[] keySpace;
+
     static if (!gc)
     {
         Entry[initialLength + initialMaxProbe] initialStackSpace = void;
@@ -138,6 +138,14 @@ pure nothrow:
     ///
     void initialize()
     {
+        entries = null;
+        nextKeyPosition = 0;
+        lengthMinusOne = initialLength - 1;
+        maxProbe = initialMaxProbe;
+        elementCount = 0;
+        startId = IonSystemSymbol.max + 1;
+        keySpace = null;
+
         static if (gc)
         {
             entries = new Entry[initialLength + initialMaxProbe].ptr;
@@ -274,7 +282,6 @@ pure nothrow:
     ///
     uint find(scope const(char)[] key) const
     {
-        pragma(inline, false);
         return find(key, cast(uint)hashOf(key));
     }
 

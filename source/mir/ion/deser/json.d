@@ -5,11 +5,11 @@ module mir.ion.deser.json;
 public import mir.serde;
 
 version(LDC) import ldc.attributes: optStrategy;
-else struct optStrategy { string opt; }
+else private struct optStrategy { string opt; }
 
 private template deserializeJsonImpl(bool file)
 {
-    @optStrategy("optsize")
+    // @optStrategy("optsize")
     T deserializeJsonImpl(T)(scope const(char)[] text)
     {
         import mir.ion.deser: deserializeValue;
@@ -32,19 +32,29 @@ private template deserializeJsonImpl(bool file)
         static immutable table = createTableChar!(keys, false);
         T value;
 
-        // nMax * 4 is enough. We use larger multiplier to reduce memory allocation count
-        auto tapeHolder = IonTapeHolder!(nMax * 8)(nMax * 8);
-        auto errorInfo = algo!nMax(table, tapeHolder, text);
-        if (errorInfo.code)
-            throw new SerdeMirException(errorInfo.code.ionErrorMsg, ". location = ", errorInfo.location, ", last input key = ", errorInfo.key);
+        if (false)
+        {
+            if (auto msg = deserializeValue!(keys, false)(IonDescribedValue.init, value))
+                throw new SerdeMirException(msg, text);
+        }
 
-        IonDescribedValue ionValue;
+        () @trusted {
+            // nMax * 4 is enough. We use larger multiplier to reduce memory allocation count
+            IonTapeHolder!(nMax * 8) tapeHolder = void;
+            tapeHolder.initialize;
+            auto errorInfo = algo!nMax(table, tapeHolder, text);
+            if (errorInfo.code)
+                throw new SerdeMirException(errorInfo.code.ionErrorMsg, ". location = ", errorInfo.location, ", last input key = ", errorInfo.key);
 
-        if (auto error = IonValue(tapeHolder.tapeData).describe(ionValue))
-            throw new SerdeException(error.ionErrorMsg);
+            IonDescribedValue ionValue;
 
-        if (auto msg = deserializeValue!(keys, false)(ionValue, value))
-            throw new SerdeException(msg);
+            if (auto error = IonValue(tapeHolder.tapeData).describe(ionValue))
+                throw new SerdeException(error.ionErrorMsg);
+
+            if (auto msg = deserializeValue!(keys, false)(ionValue, value))
+                throw new SerdeMirException(msg, text);
+        } ();
+
         return value;
     }
 }
@@ -55,6 +65,7 @@ alias deserializeJson = deserializeJsonImpl!false;
 
 /// Test @nogc deserialization
 @safe pure @nogc
+version(none)
 unittest
 {
     import mir.serde: serdeIgnoreIn, serdeIgnore, serdeScoped;
@@ -146,6 +157,7 @@ Params: JSON file nam
 alias deserializeJsonFile = deserializeJsonImpl!true;
 
 /// Test @nogc deserialization
+version(none)
 @nogc
 unittest
 {
