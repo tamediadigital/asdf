@@ -146,7 +146,6 @@ version(mir_ion_test) unittest
     static assert(IonTokenType.TokenCloseDoubleBrace.ionTokenMsg == "}}");
 }
 
-
 /++
 All valid Ion operator characters.
 +/
@@ -407,7 +406,7 @@ char hexLiteral(char c) @safe @nogc pure {
 }
 
 mixin template IonTextToken() {
-    const(ubyte)[] matchedText;
+    const(char)[] matchedText;
     size_t matchedIndex;
 }
 
@@ -444,6 +443,10 @@ struct IonTextQuotedSymbol {
     mixin IonTextWithEscapeToken;
 }
 
+struct IonTextSymbolOperator {
+    mixin IonTextToken;
+}
+
 struct IonTextString {
     mixin IonTextWithEscapeToken;
     bool isLongString;
@@ -451,6 +454,7 @@ struct IonTextString {
 
 struct IonTextClob {
     mixin IonTextWithEscapeToken;
+    bool isLongClob;
 }
 
 version(D_Exceptions):
@@ -472,6 +476,8 @@ enum IonTokenizerErrorCode {
     encodingInvalidCode,
     cannotSkipWhitespace,
     cannotSkipLongString,
+    expectedValidLeader,
+    invalidTimestampOffset,
 }
 
 string ionTokenizerMsg(IonTokenizerErrorCode error) @property
@@ -492,7 +498,9 @@ string ionTokenizerMsg(IonTokenizerErrorCode error) @property
         "encoding a surrogate code point in UTF-8",
         "encoding an invalid code point in UTF-8",
         "could not skip over whitespace",
-        "could not skip to end of long string"
+        "could not skip to end of long string",
+        "expected a valid digit leader",
+        "invalid timestamp offset",
     ];
 
     return errors[error - IonTokenizerErrorCode.min];
@@ -511,8 +519,8 @@ class MirIonTokenizerException : MirIonException
     }
 }
 
-MirIonTokenizerException ionTokenizerException(string file = __FILE__, int line = __LINE__)(IonTokenizerErrorCode code) @property
-@trusted pure nothrow @nogc
+MirIonTokenizerException ionTokenizerException(string file = __FILE__, int line = __LINE__)(IonTokenizerErrorCode code)
+@property @trusted pure nothrow @nogc
 {
     import mir.array.allocation: array;
     import mir.ndslice.topology: map;
@@ -520,7 +528,9 @@ MirIonTokenizerException ionTokenizerException(string file = __FILE__, int line 
 
     static immutable MirIonTokenizerException[] exceptions =
         [EnumMembers!IonTokenizerErrorCode]
-        .map!(code => code ? new MirIonTokenizerException("MirIonTokenizerException: " ~ code.ionTokenizerMsg, file, line) : null)
+        .map!(code => code ? new MirIonTokenizerException("MirIonTokenizerException: " ~ code.ionTokenizerMsg,
+                                                          file, line) 
+                           : null)
         .array;
         
     return cast(MirIonTokenizerException) exceptions[code - IonTokenizerErrorCode.min];

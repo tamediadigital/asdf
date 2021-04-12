@@ -27,7 +27,7 @@ Returns:
     [IonTokenizer]
 +/
 IonTokenizer tokenizeString(const(char)[] input) @safe pure {
-    return IonTokenizer(cast(ubyte[])input.dup);
+    return IonTokenizer(input);
 }
 
 /++
@@ -72,10 +72,10 @@ Tokenizer based off of how ion-go handles tokenization
 // Assume ubyte to avoid auto-decoding (and thus, a GC allocation)
 struct IonTokenizer {
     /++ Our input range that we read from +/
-    const(ubyte)[] input;
+    const(char)[] input;
 
     /++ The current window that we're reading from (sliding window) +/
-    const(ubyte)[] window;
+    const(char)[] window;
 
     /++ The escape sequence that we're reading from the wire +/
     char[4] escapeSequence; 
@@ -94,7 +94,7 @@ struct IonTokenizer {
     Params:
         input = The input range to read over 
     +/
-    this(ubyte[] input) @safe pure {
+    this(const(char)[] input) @safe pure {
         import std.array : replace;
         this.input = input.replace(ION_CR_LF, ION_LF).replace(ION_CR, ION_LF);
         resizeWindow(0);
@@ -120,7 +120,9 @@ struct IonTokenizer {
         true if end of file, false otherwise
     +/
     bool isEOF() @safe @nogc pure {
-        return this.window.empty == true || this.currentToken == IonTokenType.TokenEOF || this.position >= this.input.length;
+        return this.window.empty == true 
+               || this.currentToken == IonTokenType.TokenEOF 
+               || this.position >= this.input.length;
     }
 
     /++ 
@@ -346,12 +348,12 @@ struct IonTokenizer {
     Throws:
         [MirIonTokenizerException]
     +/
-    ubyte readInput() @safe @nogc pure {
+    char readInput() @safe @nogc pure {
         if (isEOF) {
             return 0;
         }
 
-        ubyte c = this.window.front;
+        char c = this.window[0];
         resizeWindow(this.position + 1);
         if (c == '\r') {
             // EOFs should've been normalized at the first stage
@@ -439,7 +441,9 @@ struct IonTokenizer {
         import mir.ion.deser.text.tokens : MirIonTokenizerException;
         void test(string txt, ubyte expectedChar) {
             auto t = tokenizeString(txt);
-            assertNotThrown!MirIonTokenizerException(enforce!"skipWhitespace did not return expected character"(t.skipWhitespace() == expectedChar));
+            assertNotThrown!MirIonTokenizerException(
+                enforce!"skipWhitespace did not return expected character"(t.skipWhitespace() == expectedChar)
+            );
         }
 
         test("/ 0)", '/');
@@ -472,7 +476,9 @@ struct IonTokenizer {
         import mir.ion.deser.text.tokens : MirIonTokenizerException;
         void test(string txt, char expectedChar)() {
             auto t = tokenizeString(txt);
-            assertNotThrown!MirIonTokenizerException(enforce!"Lob whitespace did not match expecte character"(t.skipLobWhitespace() == expectedChar));
+            assertNotThrown!MirIonTokenizerException(
+                enforce!"Lob whitespace did not match expecte character"(t.skipLobWhitespace() == expectedChar)
+            );
         }
 
         test!("///=", '/');
@@ -582,7 +588,7 @@ struct IonTokenizer {
     in {
         assert(isDigit(c), "Scan for number called with non-digit number");
     } body {
-        const(ubyte)[] cs;
+        const(char)[] cs;
         try {
             cs = peekMax(4);
         } catch(MirIonTokenizerException e) {
