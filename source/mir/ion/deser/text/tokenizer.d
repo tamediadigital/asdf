@@ -46,7 +46,6 @@ if (is(Input == wstring) || is(Input == dstring)) {
     auto range = input.toUTF8();
     return tokenizeString(range);
 }
-/*
 /// UTF-16 string
 version(mir_ion_parser_test) unittest {
     import mir.ion.deser.text.tokens : IonTokenType;
@@ -54,7 +53,7 @@ version(mir_ion_parser_test) unittest {
     auto t = tokenizeString(`"hello𐐷world"`w);
     assert(t.nextToken());
     assert(t.currentToken == IonTokenType.TokenString);
-    assert(t.readString() == "hello𐐷world");
+    assert(t.readString().matchedText == "hello𐐷world");
 }
 /// UTF-32 string
 version(mir_ion_parser_test) unittest {
@@ -63,13 +62,11 @@ version(mir_ion_parser_test) unittest {
     auto t = tokenizeString(`"hello𐐷world"`d);
     assert(t.nextToken());
     assert(t.currentToken == IonTokenType.TokenString);
-    assert(t.readString() == "hello𐐷world");
-}*/
+    assert(t.readString().matchedText == "hello𐐷world");
+}
 /++
 Tokenizer based off of how ion-go handles tokenization
 +/
-
-// Assume ubyte to avoid auto-decoding (and thus, a GC allocation)
 struct IonTokenizer {
     /++ Our input range that we read from +/
     const(char)[] input;
@@ -130,7 +127,7 @@ struct IonTokenizer {
     Params:
         c = Character to append to the top of the peek buffer.
     +/
-    void unread(ubyte c) @safe @nogc pure  {
+    void unread(char c) @safe @nogc pure  {
         if (this.position <= 0) {
             throw ionTokenizerException(IonTokenizerErrorCode.cannotUnreadAtPos0);
         }
@@ -182,7 +179,7 @@ struct IonTokenizer {
         false if it was unable (due to hitting an EOF or the like)
     +/
     bool skipOne() @safe @nogc pure  {
-        const(ubyte) c = readInput();
+        const(char) c = readInput();
         if (c == 0) {
             return false;
         }
@@ -301,12 +298,12 @@ struct IonTokenizer {
     Throws:
         [MirIonTokenizerException]
     +/
-    ubyte peekOne() @safe @nogc pure {
+    char peekOne() @safe @nogc pure {
         if (isEOF) {
             this.unexpectedEOF();
         }
 
-        ubyte c;
+        char c;
         c = readInput();
         unread(c);
         
@@ -439,7 +436,7 @@ struct IonTokenizer {
         import std.exception : assertNotThrown;
         import mir.exception : enforce;
         import mir.ion.deser.text.tokens : MirIonTokenizerException;
-        void test(string txt, ubyte expectedChar) {
+        void test(string txt, char expectedChar) {
             auto t = tokenizeString(txt);
             assertNotThrown!MirIonTokenizerException(
                 enforce!"skipWhitespace did not return expected character"(t.skipWhitespace() == expectedChar)

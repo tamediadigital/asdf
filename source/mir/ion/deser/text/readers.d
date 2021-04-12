@@ -694,7 +694,7 @@ IonTextBlob readBlob(ref IonTokenizer t) @safe @nogc pure
 {
     IonTextBlob val;
     size_t startIndex = t.position;
-    ubyte c;
+    char c;
     while (true) {
         c = t.expect!("a != 0", true)(t.skipLobWhitespace());
         if (c == '}') {
