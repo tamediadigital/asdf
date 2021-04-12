@@ -446,7 +446,7 @@ auto readString(bool longString = false, bool isClob = false)(ref IonTokenizer t
                     break loop;
             } else {
                 case '\'':
-                    auto v = t.peekMax(2);
+                    const(char)[] v = t.peekMax(2);
                     if (v.length != 2) {
                         goto default;
                     } else {
@@ -821,7 +821,7 @@ Returns:
 +/
 const(char)[] readDigits(ref IonTokenizer t, char leader) @safe @nogc pure
 {
-    char c = leader;
+    immutable char c = leader;
     if (!isDigit(c)) {
         throw IonTokenizerErrorCode.expectedValidLeader.ionTokenizerException;
     }
@@ -880,7 +880,7 @@ const(char)[] readRadix(alias isMarker, alias isValid)(ref IonTokenizer t) @safe
     // 0(b || x)
     c = t.expect!isMarker;
     t.expect!("a != '_'", true)(t.peekOne()); // cannot be 0x_ or 0b_
-    auto val = readRadixDigits!(isValid)(t);
+    const(char)[] val = readRadixDigits!(isValid)(t);
     c = t.expect!(t.isStopChar);
     t.unread(c);
 

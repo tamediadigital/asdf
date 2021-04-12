@@ -350,7 +350,7 @@ struct IonTokenizer {
             return 0;
         }
 
-        char c = this.window[0];
+        immutable char c = this.window[0];
         resizeWindow(this.position + 1);
         if (c == '\r') {
             // EOFs should've been normalized at the first stage
@@ -827,7 +827,7 @@ struct IonTokenizer {
             return false;
         }
 
-        char c = this.skipValue();
+        immutable char c = this.skipValue();
         unread(c);
         finished = true;
         return true;
@@ -980,7 +980,7 @@ template testRead(T, string file = __FILE__, int line = __LINE__) {
         import mir.exception : MirError;
         char v = t.readInput();
         if (v != expected) {
-            import mir.format;
+            import mir.format : stringBuf, print;
             stringBuf buf;
             throw new MirError(buf.print("Expected ", v, " but got ", expected).data, file, line);
         }
@@ -995,7 +995,7 @@ template testPeek(T, string file = __FILE__, int line = __LINE__) {
         import mir.exception : MirError;
         char v = t.peekOne();
         if (v != expected) {
-            import mir.format;
+            import mir.format : stringBuf, print;
             stringBuf buf;
             throw new MirError(buf.print("Expected ", v, " but got ", expected).data, file, line);
         }

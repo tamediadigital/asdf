@@ -452,7 +452,7 @@ char skipTimestamp(ref IonTokenizer t) @safe @nogc pure
     if (!offsetH.isDigit()) {
         // YYYY-MM-DDT('+' || '-' || 'z' || 'Z')
         // skipped yyyy-mm-ddT(+hh:mm)
-        char afterOffset = skipTSOffset(offsetH);
+        immutable char afterOffset = skipTSOffset(offsetH);
         return skipTSFinish(afterOffset);
     }
 
@@ -460,17 +460,17 @@ char skipTimestamp(ref IonTokenizer t) @safe @nogc pure
     t.expect!("a == ':'", true)(skipTSDigits(1));
 
     // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9](':' || '+' || '-' || 'z' || 'Z')
-    char afterOffsetMM = t.expect!("a == ':' || a == '+' || a == '-' || a == 'z' || a == 'Z'", true)
+    immutable char afterOffsetMM = t.expect!("a == ':' || a == '+' || a == '-' || a == 'z' || a == 'Z'", true)
                                                                                             (skipTSDigits(2));
     if (afterOffsetMM != ':') {
         // skipped yyyy-mm-ddThh:mmZ
-        char afterOffset = skipTSOffsetOrZ(afterOffsetMM);
+        immutable char afterOffset = skipTSOffsetOrZ(afterOffsetMM);
         return skipTSFinish(afterOffset);
     }
     // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9]:[0-9][0-9]('.')?
-    char afterOffsetSS = skipTSDigits(2);
+    immutable char afterOffsetSS = skipTSDigits(2);
     if (afterOffsetSS != '.') {
-        char afterOffset = skipTSOffsetOrZ(afterOffsetSS);
+        immutable char afterOffset = skipTSOffsetOrZ(afterOffsetSS);
         return skipTSFinish(afterOffset); 
     }
 
@@ -481,7 +481,7 @@ char skipTimestamp(ref IonTokenizer t) @safe @nogc pure
     }
 
     // YYYY-MM-DDT[0-9][0-9]:[0-9][0-9]:[0-9][0-9].[0-9]*('+' || '-' || 'z' || 'Z')([0-9][0-9]:[0-9][0-9])?
-    char afterOffsetNS = skipTSOffsetOrZ(offsetNS);
+    immutable char afterOffsetNS = skipTSOffsetOrZ(offsetNS);
     return skipTSFinish(afterOffsetNS);  
 }
 /// Test skipping over timestamps
@@ -757,7 +757,7 @@ if (__traits(compiles, { t.skipWhitespace!(skipComments, failOnComment); })) {
     }
 
     t.skipExactly(2);
-    char c = t.skipWhitespace!(skipComments, failOnComment);
+    immutable char c = t.skipWhitespace!(skipComments, failOnComment);
     if (c == '\'') {
         if (t.isTripleQuote()) {
             return false;

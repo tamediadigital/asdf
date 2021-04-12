@@ -405,61 +405,122 @@ char hexLiteral(char c) @safe @nogc pure {
     throw ionTokenizerException(IonTokenizerErrorCode.invalidHexLiteral);
 }
 
+/++
+Represents Ion Text token read from the tokenizer.
++/
 mixin template IonTextToken() {
+    /++
+    What text did we match while scanning for this token?
+    +/
     const(char)[] matchedText;
+    /++
+    Where in the input stream did we match it?
+    +/
     size_t matchedIndex;
 }
 
+/++
+For Ion Text Tokens which allow escape characters, what type is it? 
+(either a hex '\xFF', or a Unicode '\uXXXX' '\UXXXXXXXX')
++/
 enum IonTextEscapeType {
     Hex,
     UTF
-};
+}
 
+/++
+Represents Ion Text tokens which can have escape characters.
++/
 mixin template IonTextWithEscapeToken() {
     mixin IonTextToken;
+    /++
+    Have we the end of the token, or is there more to be read?
+    +/
     bool isFinal;
+    /++
+    Is this token only an escape sequence (and nothing else?)
+    +/
     bool isEscapeSequence;
+    /++
+    If this is an escape sequence, what type is it?
+    +/
     IonTextEscapeType escapeSequenceType;
 }
 
+/++
+The Ion Text Number token
++/
 struct IonTextNumber {
     mixin IonTextToken;
+    /++
+    What type of number is this? (integer, negative integer, decimal, etc)
+    +/
     IonTypeCode type;
 }
 
+/++
+The Ion Text Timestamp token
++/
 struct IonTextTimestamp {
     mixin IonTextToken;
 }
 
+/++
+The Ion Text Blob token
++/
 struct IonTextBlob {
     mixin IonTextToken;
 }
 
+/++
+The Ion Text Symbol token
++/
 struct IonTextSymbol {
     mixin IonTextToken;
 }
 
+/++
+The Ion Text Symbol (with quotes surrounding it) token
++/
 struct IonTextQuotedSymbol {
     mixin IonTextWithEscapeToken;
 }
 
+/++
+The Ion Text Symbol Operator token
++/
 struct IonTextSymbolOperator {
     mixin IonTextToken;
 }
 
+/++
+The Ion Text String token. Can represent a long string as well.
++/
 struct IonTextString {
     mixin IonTextWithEscapeToken;
+    /++
+    Is this a long string?
+    +/
     bool isLongString;
 }
 
+/++
+The Ion Text Clob token. Can represent a long clob as well.
++/
 struct IonTextClob {
     mixin IonTextWithEscapeToken;
+    /++
+    Is this a long clob?
+    +/
     bool isLongClob;
 }
 
 version(D_Exceptions):
 import mir.ion.exception;
 
+/++
+All possible exceptions within the tokenizer.
++/
 enum IonTokenizerErrorCode {
     none,
     unexpectedEOF,
