@@ -14,14 +14,6 @@ import std.range.primitives : isInputRange, ElementType;
 import mir.appender : ScopedBuffer;
 
 /++
-Check to verify that a range meets the specifications
-+/
-@safe @nogc nothrow template isValidTokenizerInput(T) {
-    const isValidElementType = is(Unqual!(ElementType!(T)) == ubyte) || is(Unqual!(ElementType!(T)) == char);
-    const isValidTokenizerInput = isValidElementType && isInputRange!(T);
-}
-
-/++
 Create a tokenizer for a given UTF-8 string.
 
 This function will take in a given string, and duplicate it.
@@ -34,11 +26,8 @@ Params:
 Returns:
     [IonTokenizer]
 +/
-IonTokenizer!(ubyte[]) tokenizeString(const(char)[] input) @safe pure {
-    auto _input = cast(const(ubyte)[])input;
-    // cannot handle utf-16/utf-32 as of current, so just rely on utf-8/ascii sized characters
-    assert(is(typeof(_input) == const(ubyte)[]), "Expected a single byte-sized representation"); 
-    return tokenize!(ubyte[])(_input.dup);
+IonTokenizer tokenizeString(const(char)[] input) @safe pure {
+    return IonTokenizer(cast(ubyte[])input.dup);
 }
 
 /++
@@ -57,6 +46,7 @@ if (is(Input == wstring) || is(Input == dstring)) {
     auto range = input.toUTF8();
     return tokenizeString(range);
 }
+/*
 /// UTF-16 string
 version(mir_ion_parser_test) unittest {
     import mir.ion.deser.text.tokens : IonTokenType;
@@ -74,33 +64,21 @@ version(mir_ion_parser_test) unittest {
     assert(t.nextToken());
     assert(t.currentToken == IonTokenType.TokenString);
     assert(t.readString() == "hello𐐷world");
-}
-
-/++
-Create a tokenizer for a given range.
-
-This function will take in a given range, duplicate it, and then tokenize it.
-Params:
-    input = Range to tokenize
-Returns:
-    [IonTokenizer]
-+/
-IonTokenizer!(Input) tokenize(Input)(Input input) @safe pure 
-if (isValidTokenizerInput!(Input)) {
-    IonTokenizer!(Input) tokenizer = IonTokenizer!(Input)(input);
-    return tokenizer;
-}
-
+}*/
 /++
 Tokenizer based off of how ion-go handles tokenization
 +/
-struct IonTokenizer(Input) 
-if (isValidTokenizerInput!(Input)) {
+
+// Assume ubyte to avoid auto-decoding (and thus, a GC allocation)
+struct IonTokenizer {
     /++ Our input range that we read from +/
-    Input input;
+    const(ubyte)[] input;
 
     /++ The current window that we're reading from (sliding window) +/
-    Input window;
+    const(ubyte)[] window;
+
+    /++ The escape sequence that we're reading from the wire +/
+    char[4] escapeSequence; 
 
     /++ Bool specifying if we want to read through the contents of the current token +/
     bool finished;
@@ -116,7 +94,7 @@ if (isValidTokenizerInput!(Input)) {
     Params:
         input = The input range to read over 
     +/
-    this(Input input) @safe pure {
+    this(ubyte[] input) @safe pure {
         import std.array : replace;
         this.input = input.replace(ION_CR_LF, ION_LF).replace(ION_CR, ION_LF);
         resizeWindow(0);
@@ -220,8 +198,8 @@ if (isValidTokenizerInput!(Input)) {
         true if skipped the entire range,
         false if unable to skip the full range specified.
     +/
-    bool skipExactly(int n) @safe @nogc pure {
-        for (int i = 0; i < n; i++) {
+    bool skipExactly(size_t n) @safe @nogc pure {
+        for (size_t i = 0; i < n; i++) {
             if (!skipOne()) { 
                 return false;
             }
@@ -282,6 +260,7 @@ if (isValidTokenizerInput!(Input)) {
 
         auto t = tokenizeString("abc\r\ndef");
         
+        assert(t.peekExactly(1).ptr == t.window.ptr);
         assert(t.peekExactly(1) == "a");
         assert(t.peekExactly(2) == "ab");
         assert(t.peekExactly(3) == "abc");
@@ -289,6 +268,7 @@ if (isValidTokenizerInput!(Input)) {
         t.testRead('a');
         t.testRead('b');
         
+        assert(t.peekExactly(3).ptr == t.window.ptr);
         assert(t.peekExactly(3) == "c\nd");
         assert(t.peekExactly(2) == "c\n");
         assert(t.peekExactly(3) == "c\nd");
@@ -419,10 +399,10 @@ if (isValidTokenizerInput!(Input)) {
     Throws:
         [MirIonTokenizerException]
     +/
-    ubyte skipWhitespace(bool skipComments = true, bool failOnComment = false)() @safe @nogc pure 
+    char skipWhitespace(bool skipComments = true, bool failOnComment = false)() @safe @nogc pure 
     if (skipComments != failOnComment || (skipComments == false && skipComments == failOnComment)) { // just a sanity check, we cannot skip comments and also fail on comments -- it is one or another (fail or skip)
         while (true) {
-            ubyte c = readInput();
+            char c = readInput();
             sw: switch(c) {
                 static foreach(member; ION_WHITESPACE) {
                     case member:
@@ -431,7 +411,7 @@ if (isValidTokenizerInput!(Input)) {
                 
                 case '/': {
                     static if (failOnComment) {
-                        throw new MirIonTokenizerException("Comments are not allowed within this token.");
+                        throw IonTokenizerErrorCode.commentsNotAllowed.ionTokenizerException; 
                     } else static if(skipComments) {
                         // Peek on the next letter, and check if it's a second slash / star
                         // This may fail if we read a comment and do not find the end (newline / '*/')
@@ -481,7 +461,7 @@ if (isValidTokenizerInput!(Input)) {
     Throws:
         MirIonTokenizerException if a comment is found
     +/
-    ubyte skipLobWhitespace() @safe @nogc pure {
+    char skipLobWhitespace() @safe @nogc pure {
         return skipWhitespace!(false, false);
     }
     /// Test skipping over whitespace within a (c|b)lob
@@ -490,7 +470,7 @@ if (isValidTokenizerInput!(Input)) {
         import std.exception : assertNotThrown;
         import mir.exception : enforce;
         import mir.ion.deser.text.tokens : MirIonTokenizerException;
-        void test(string txt, ubyte expectedChar)() {
+        void test(string txt, char expectedChar)() {
             auto t = tokenizeString(txt);
             assertNotThrown!MirIonTokenizerException(enforce!"Lob whitespace did not match expecte character"(t.skipLobWhitespace() == expectedChar));
         }
@@ -511,7 +491,7 @@ if (isValidTokenizerInput!(Input)) {
     Returns:
         true if it is the infinity type, false if it is not.
     +/
-    bool isInfinity(ubyte c) @safe @nogc pure {
+    bool isInfinity(char c) @safe @nogc pure {
         if (c != '+' && c != '-') return false;
 
         auto cs = peekMax(5);
@@ -533,7 +513,7 @@ if (isValidTokenizerInput!(Input)) {
     /// Test scanning for inf
     version(mir_ion_parser_test) unittest
     {
-        void test(string txt, bool inf, ubyte after) {
+        void test(string txt, bool inf, char after) {
             auto t = tokenizeString(txt);
             auto c = t.readInput();
             assert(t.isInfinity(c) == inf);
@@ -598,11 +578,11 @@ if (isValidTokenizerInput!(Input)) {
     Returns:
         the corresponding number type (or invalid)
     +/
-    IonTokenType scanForNumber(ubyte c) @safe @nogc pure 
+    IonTokenType scanForNumber(char c) @safe @nogc pure 
     in {
         assert(isDigit(c), "Scan for number called with non-digit number");
     } body {
-        ubyte[] cs = peekMax(4);
+        const(ubyte)[] cs;
         try {
             cs = peekMax(4);
         } catch(MirIonTokenizerException e) {
@@ -685,7 +665,7 @@ if (isValidTokenizerInput!(Input)) {
         true if it was able to read a valid token from the range.
     +/
     bool nextToken() @safe @nogc pure {
-        ubyte c;
+        char c;
         // if we're finished with the current value, then skip over the rest of it and go to the next token
         // this typically happens when we hit commas (or the like) and don't have anything to extract
         if (this.finished) {
@@ -701,7 +681,7 @@ if (isValidTokenizerInput!(Input)) {
         bool inf;
 
         // second character
-        ubyte cs;
+        char cs;
         
         with(IonTokenType) switch(c) {
             case 0:
@@ -844,7 +824,7 @@ if (isValidTokenizerInput!(Input)) {
             return false;
         }
 
-        ubyte c = this.skipValue();
+        char c = this.skipValue();
         unread(c);
         finished = true;
         return true;
@@ -859,13 +839,13 @@ if (isValidTokenizerInput!(Input)) {
     Returns:
         true if the character is the "stop" character.
     +/
-    bool isStopChar(ubyte c) @safe @nogc pure {
+    bool isStopChar(char c) @safe @nogc pure {
         if (mir.ion.deser.text.tokens.isStopChar(c)) { // make sure
             return true;
         }
 
         if (c == '/') {
-            const(ubyte) c2 = peekOne();
+            const(char) c2 = peekOne();
             if (c2 == '/' || c2 == '*') {
                 return true;
             }
@@ -877,7 +857,7 @@ if (isValidTokenizerInput!(Input)) {
     /++
     Helper to generate a thrown exception (if an unexpected character is hit)
     +/
-    void unexpectedChar(string file = __FILE__, int line = __LINE__)(ubyte c, size_t pos = -1) @safe @nogc pure {
+    void unexpectedChar(string file = __FILE__, int line = __LINE__)(char c, size_t pos = -1) @safe @nogc pure {
         if (c == 0) {
             throw ionTokenizerException!(file, line)(IonTokenizerErrorCode.unexpectedEOF);
         } else {
@@ -903,7 +883,7 @@ if (isValidTokenizerInput!(Input)) {
     template expect(alias pred = "a", bool noRead = false, string file = __FILE__, int line = __LINE__) {
         import mir.functional : naryFun;
         static if (noRead) {
-            ubyte expect(ubyte c) @trusted @nogc pure {
+            char expect(char c) @trusted @nogc pure {
                 if (!naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
@@ -911,8 +891,8 @@ if (isValidTokenizerInput!(Input)) {
                 return c;
             }
         } else {
-            ubyte expect() @trusted @nogc pure {
-                ubyte c = readInput();
+            char expect() @trusted @nogc pure {
+                char c = readInput();
                 if (!naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
@@ -969,7 +949,7 @@ if (isValidTokenizerInput!(Input)) {
     template expectFalse(alias pred = "a", bool noRead = false, string file = __FILE__, int line = __LINE__) {
         import mir.functional : naryFun;
         static if (noRead) {
-            ubyte expectFalse(ubyte c) @trusted @nogc pure {
+            char expectFalse(char c) @trusted @nogc pure {
                 if (naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
@@ -977,8 +957,8 @@ if (isValidTokenizerInput!(Input)) {
                 return c;
             }
         } else {
-            ubyte expectFalse() @trusted @nogc pure {
-                ubyte c = readInput();
+            char expectFalse() @trusted @nogc pure {
+                char c = readInput();
                 if (naryFun!pred(c)) {
                     unexpectedChar!(file, line)(c);
                 }
@@ -993,9 +973,9 @@ if (isValidTokenizerInput!(Input)) {
 Generic helper to verify the functionality of the parsing code in unit-tests
 +/
 template testRead(T, string file = __FILE__, int line = __LINE__) {
-    void testRead(ref T t, ubyte expected) {
+    void testRead(ref T t, char expected) {
         import mir.exception : MirError;
-        ubyte v = t.readInput();
+        char v = t.readInput();
         if (v != expected) {
             import mir.format;
             stringBuf buf;
@@ -1008,9 +988,9 @@ template testRead(T, string file = __FILE__, int line = __LINE__) {
 Generic helper to verify the functionality of the parsing code in unit-tests
 +/
 template testPeek(T, string file = __FILE__, int line = __LINE__) {
-    void testPeek(ref T t, ubyte expected) {
+    void testPeek(ref T t, char expected) {
         import mir.exception : MirError;
-        ubyte v = t.peekOne();
+        char v = t.peekOne();
         if (v != expected) {
             import mir.format;
             stringBuf buf;

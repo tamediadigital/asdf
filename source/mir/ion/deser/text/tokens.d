@@ -4,6 +4,7 @@ Token definitions for parsing Ion Text.
 Authors: Harrison Ford
 +/
 module mir.ion.deser.text.tokens;
+import mir.ion.type_code : IonTypeCode;
 /++
 Ion Token Types
 +/
@@ -222,7 +223,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a digit.
 +/
-bool isDigit(ubyte c) @safe @nogc pure {
+bool isDigit(char c) @safe @nogc pure {
     static foreach(member; ION_DIGITS) {
         if (c == member) return true;
     }
@@ -236,7 +237,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a hex digit.
 +/
-bool isHexDigit(ubyte c) @safe @nogc pure {
+bool isHexDigit(char c) @safe @nogc pure {
     static foreach(member; ION_HEX_DIGITS) {
         if (c == member) return true;
     }
@@ -250,7 +251,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a valid start to an identifier.
 +/
-bool isIdentifierStart(ubyte c) @safe @nogc pure{
+bool isIdentifierStart(char c) @safe @nogc pure{
     static foreach(member; ION_IDENTIFIER_CHARS) {
         if (c == member) return true;
     }
@@ -264,7 +265,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a valid part of an identifier.
 +/
-bool isIdentifierPart(ubyte c) @safe @nogc pure {
+bool isIdentifierPart(char c) @safe @nogc pure {
     return isIdentifierStart(c) || isDigit(c);
 }   
 
@@ -275,7 +276,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a symbol operator character.
 +/
-bool isOperatorChar(ubyte c) @safe @nogc pure {
+bool isOperatorChar(char c) @safe @nogc pure {
     static foreach(member; ION_OPERATOR_CHARS) {
         if (c == member) return true;
     }
@@ -289,7 +290,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be a "stop" character.
 +/
-bool isStopChar(ubyte c) @safe @nogc pure {
+bool isStopChar(char c) @safe @nogc pure {
     static foreach(member; ION_STOP_CHARS) {
         if (c == member) return true;
     }
@@ -304,7 +305,7 @@ Params:
 Returns:
     true if the character is considered by Ion to be whitespace.
 +/
-bool isWhitespace(ubyte c) @safe @nogc pure {
+bool isWhitespace(char c) @safe @nogc pure {
     static foreach(member; ION_WHITESPACE) {
         if (c == member) return true;
     }
@@ -338,7 +339,7 @@ Params:
 Returns:
     true if a character is considered to be a new-line.
 +/
-bool isNewLine(ubyte c) @safe @nogc pure {
+bool isNewLine(char c) @safe @nogc pure {
     return c == 0x0A || 0x0D;
 }
 
@@ -350,7 +351,7 @@ Params:
 Returns:
     true if a character is considered to be printable whitespace.
 +/
-bool isStringWhitespace(ubyte c) @safe @nogc pure {
+bool isStringWhitespace(char c) @safe @nogc pure {
     return c == 0x09 || c == 0x0B || c == 0x0C;
 }
 
@@ -362,7 +363,7 @@ Params:
 Returns:
     true if a character is considered a control character.
 +/
-bool isControlChar(ubyte c) @safe @nogc pure {
+bool isControlChar(char c) @safe @nogc pure {
     return c < 0x20 || c == 0x7F;
 }
 
@@ -374,7 +375,7 @@ Params:
 Returns:
     true if a character is considered to be valid ASCII.
 +/
-bool isASCIIChar(ubyte c) @safe @nogc pure {
+bool isASCIIChar(char c) @safe @nogc pure {
     return c <= 0x7F;
 }
 
@@ -385,7 +386,7 @@ Params:
 Returns:
     true if a character is invalid, false otherwise
 +/
-bool isInvalidChar(ubyte c) @safe @nogc pure {
+bool isInvalidChar(char c) @safe @nogc pure {
     if (isStringWhitespace(c) || isNewLine(c)) return false;
     if (isControlChar(c)) return true;
     return false;
@@ -398,11 +399,58 @@ This is to convert a hex-literal as fast as possible.
 Params:
     c = a hex character
 +/
-ubyte hexLiteral(ubyte c) @safe @nogc pure {
-    if (isDigit(c)) return cast(ubyte)(c - ION_DIGITS[0]);
-    else if (c >= 'a' && c <= 'f') return cast(ubyte)(10 + (c - ION_LOWERCASE[0]));
-    else if (c >= 'A' && c <= 'F') return cast(ubyte)(10 + (c - ION_UPPERCASE[0]));
+char hexLiteral(char c) @safe @nogc pure {
+    if (isDigit(c)) return cast(char)(c - ION_DIGITS[0]);
+    else if (c >= 'a' && c <= 'f') return cast(char)(10 + (c - ION_LOWERCASE[0]));
+    else if (c >= 'A' && c <= 'F') return cast(char)(10 + (c - ION_UPPERCASE[0]));
     throw ionTokenizerException(IonTokenizerErrorCode.invalidHexLiteral);
+}
+
+mixin template IonTextToken() {
+    const(ubyte)[] matchedText;
+    size_t matchedIndex;
+}
+
+enum IonTextEscapeType {
+    Hex,
+    UTF
+};
+
+mixin template IonTextWithEscapeToken() {
+    mixin IonTextToken;
+    bool isFinal;
+    bool isEscapeSequence;
+    IonTextEscapeType escapeSequenceType;
+}
+
+struct IonTextNumber {
+    mixin IonTextToken;
+    IonTypeCode type;
+}
+
+struct IonTextTimestamp {
+    mixin IonTextToken;
+}
+
+struct IonTextBlob {
+    mixin IonTextToken;
+}
+
+struct IonTextSymbol {
+    mixin IonTextToken;
+}
+
+struct IonTextQuotedSymbol {
+    mixin IonTextWithEscapeToken;
+}
+
+struct IonTextString {
+    mixin IonTextWithEscapeToken;
+    bool isLongString;
+}
+
+struct IonTextClob {
+    mixin IonTextWithEscapeToken;
 }
 
 version(D_Exceptions):
@@ -420,6 +468,10 @@ enum IonTokenizerErrorCode {
     invalidHexEscape,
     invalidLeadingZeros,
     cannotUpdateWindow,
+    encodingSurrogateCode,
+    encodingInvalidCode,
+    cannotSkipWhitespace,
+    cannotSkipLongString,
 }
 
 string ionTokenizerMsg(IonTokenizerErrorCode error) @property
@@ -436,7 +488,11 @@ string ionTokenizerMsg(IonTokenizerErrorCode error) @property
         "cannot unread when pos >= 0",
         "invalid hex escape",
         "invalid leading zeros in integer literal",
-        "cannot update sliding window"
+        "cannot update sliding window",
+        "encoding a surrogate code point in UTF-8",
+        "encoding an invalid code point in UTF-8",
+        "could not skip over whitespace",
+        "could not skip to end of long string"
     ];
 
     return errors[error - IonTokenizerErrorCode.min];

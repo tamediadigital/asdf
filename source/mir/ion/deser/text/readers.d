@@ -24,45 +24,49 @@ Params:
 Returns:
     The string contents of the token given
 +/
-const(char)[] readValue(T)(ref T t, IonTokenType token) 
-if (isInstanceOf!(IonTokenizer, T)) {
-    const(char)[] val;
+auto readValue(IonTokenType token)(ref IonTokenizer t) 
+{
+    import std.traits : EnumMembers;
+    import std.string : chompPrefix;
+    static foreach(i, member; EnumMembers!IonTokenType) {{
+        static if (member != IonTokenType.TokenInvalid && member != IonTokenType.TokenEOF 
+                    && member != IonTokenType.TokenFloatInf && member != IonTokenType.TokenFloatMinusInf
+                    && member < IonTokenType.TokenComma) 
+        {
+            enum name = __traits(identifier, EnumMembers!IonTokenType[i]);
+            pragma(msg, name);
 
-    with(IonTokenType) switch (token) {
-        case TokenSymbol:
-            val = t.readSymbol();
-            break;
-        case TokenSymbolQuoted:
-            val = t.readSymbolQuoted();
-            break;
-        case TokenSymbolOperator:
-        case TokenDot:
-            val = t.readSymbolOperator();
-            break;
-        case TokenString:
-            val = t.readString();
-            break;
-        case TokenLongString:
-            val = t.readLongString();
-            break;
-        case TokenNumber:
-            val = t.readNumber();
-            break;
-        case TokenBinary:
-            val = t.readBinary();
-            break;
-        case TokenHex:
-            val = t.readHex();
-            break;
-        case TokenTimestamp:
-            val = t.readTimestamp();
-            break;
-        default:
-            assert(0, "Unsupported token");
+            static if (token == member) {
+                pragma(msg, name.chompPrefix("Token"));
+                t.finished = true;
+                static if (member == IonTokenType.TokenDot) {
+                    auto val = t.readSymbolOperator();
+                }
+                else {
+                    auto val = mixin("t.read" ~ name.chompPrefix("Token") ~ "()");
+                }
+                return val;
+            }
+        }
+    }}
+    assert(0);
+}
+///
+version(mir_ion_parser_test) unittest {
+    import mir.ion.deser.text.tokenizer : tokenizeString;
+    import mir.ion.deser.text.tokens : IonTokenType;
+
+    void testVal(IonTokenType token)(string ts, string expected, char after) {
+        auto t = tokenizeString(ts);
+        assert(t.nextToken());
+        assert(t.currentToken == token);
+        auto v = readValue!(token)(t);
+        assert(v.matchedText == expected);
+        assert(t.readInput() == after);
     }
-
-    t.finished = true;
-    return val;
+    with (IonTokenType) {
+        testVal!(TokenNumber)("123123", "123123", '\0');
+    }
 }
 
 /++
@@ -72,8 +76,8 @@ Params:
 Returns:
     a UTF-32 code-point
 +/
-dchar readEscapedClobChar(T)(ref T t) {
-    return readEscapedChar!(T, true)(t);
+dchar readEscapedClobChar(ref IonTokenizer t) {
+    return readEscapedChar!(true)(t);
 }
 
 /++
@@ -87,21 +91,20 @@ Returns:
 Throws:
     MirIonTokenizerException if an invalid escape value was found.
 +/
-dchar readEscapedChar(T, bool isClob = false)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
-    dchar readHexEscapeLiteral(int length)() { 
-        typeof(return) val;
-        dchar codePoint = 0;
+dchar readEscapedChar(bool isClob = false)(ref IonTokenizer t) @nogc @safe pure 
+{
+    dchar readHexEscapeLiteral(int length)() @nogc @safe pure { 
+        dchar codePoint = 0, val;
         for (int i = 0; i < length; i++) {
-            const(ubyte) c = t.expect!isHexDigit;
-            const(ubyte) hexVal = hexLiteral(c);
+            const(char) c = t.expect!isHexDigit;
+            const(char) hexVal = hexLiteral(c);
             codePoint = (codePoint << 4) | hexVal; // TODO: is this correct?
         }
         val = codePoint;
         return val;
     }
 
-    ubyte c;
+    char c;
     static if (isClob) {
         c = t.expect!"a != 'U' && a != 'u'"; // cannot have unicode escapes within clobs
     } else {
@@ -128,8 +131,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
         case 'x':
             return readHexEscapeLiteral!2;
         default:
-            import mir.format : text;
-            throw new MirIonTokenizerException(text("bad escape 0x", c, " (location: ", t.position, ")"));
+            throw IonTokenizerErrorCode.invalidHexEscape.ionTokenizerException;
     }
 }
 /// Test reading a unicode escape
@@ -171,18 +173,63 @@ Returns:
     A string containing the UTF-32 escape sequence, or nothing if we read a new-line.
     The length of the string is not well-defined, it can change depending on the escape sequence.
 +/
-const(char)[] readEscapeSeq(T, bool isClob = false)(ref T t)
-if (isInstanceOf!(IonTokenizer, T)) {
-    import std.utf : toUTF8;
-    const(ubyte) esc = t.peekOne();
+size_t readEscapeSeq(bool isClob = false)(ref IonTokenizer t) @nogc @safe pure
+{
+    import std.utf : isValidDchar;
+    import std.typecons : No;
+    const(char) esc = t.peekOne();
     if (esc == '\n') {
         t.skipOne();
-        return "";
+        return 0;
     }
 
+    
     // I hate this, but apparently toUTF8 cannot take in a single UTF-32 code-point
-    dchar[] r = [readEscapedChar!(T, isClob)(t)]; 
-    return r.toUTF8();
+    const(dchar) c = readEscapedChar!(isClob)(t); 
+    // Extracted encode logic from std.utf.encode
+    // Since it's not @nogc, we have to REIMPLEMENT IT
+    // FUCK
+    t.escapeSequence[0] = 0;
+    t.escapeSequence[1] = 0;
+    t.escapeSequence[2] = 0;
+    t.escapeSequence[3] = 0;
+    if (c <= 0x7F)
+    {
+        assert(isValidDchar(c));
+        t.escapeSequence[0] = cast(char) c;
+        return 1;
+    }
+    if (c <= 0x7FF)
+    {
+        assert(isValidDchar(c));
+        t.escapeSequence[0] = cast(char)(0xC0 | (c >> 6));
+        t.escapeSequence[1] = cast(char)(0x80 | (c & 0x3F));
+        return 2;
+    }
+    if (c <= 0xFFFF)
+    {
+        if (0xD800 <= c && c <= 0xDFFF)
+            throw IonTokenizerErrorCode.encodingSurrogateCode.ionTokenizerException;
+
+        assert(isValidDchar(c));
+    L3:
+        t.escapeSequence[0] = cast(char)(0xE0 | (c >> 12));
+        t.escapeSequence[1] = cast(char)(0x80 | ((c >> 6) & 0x3F));
+        t.escapeSequence[2] = cast(char)(0x80 | (c & 0x3F));
+        return 3;
+    }
+    if (c <= 0x10FFFF)
+    {
+        assert(isValidDchar(c));
+        t.escapeSequence[0] = cast(char)(0xF0 | (c >> 18));
+        t.escapeSequence[1] = cast(char)(0x80 | ((c >> 12) & 0x3F));
+        t.escapeSequence[2] = cast(char)(0x80 | ((c >> 6) & 0x3F));
+        t.escapeSequence[3] = cast(char)(0x80 | (c & 0x3F));
+        return 4;
+    }
+
+    assert(!isValidDchar(c));
+    throw IonTokenizerErrorCode.encodingInvalidCode.ionTokenizerException;
 }
 
 /++
@@ -192,21 +239,28 @@ if (isInstanceOf!(IonTokenizer, T)) {
     Returns:
         A string containing the un-quoted symbol from the input range in the tokenizer.
 +/
-const(char)[] readSymbol(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
-    ScopedBuffer!char buf;
-    l: while (true) {
-        // TODO: can modify this for chunking
-        auto cbuf = t.peekMax(1); 
-        if (cbuf.length == 0) break l;
-        foreach(c; cbuf) {
-            if (!c.isIdentifierPart()) break l;
-            buf.put(c);
-            t.skipOne();
+const(char)[] readSymbol(ref IonTokenizer t) @safe pure @nogc
+{
+    size_t end = 0, endPos = 0;
+    const(ubyte)[] window = t.window;
+
+    if (window.length == 0) return null;
+    foreach(c; window) {
+        if (!c.isIdentifierPart()) {
+            break;
         }
+        end++;
     }
 
-    return buf.data;
+    endPos = t.position + end;
+    if (end > t.window.length || endPos > t.input.length) {
+        assert(0); // should never happen
+    }
+
+    window = t.input[t.position .. endPos];
+    t.skipExactly(end);
+
+    return cast(typeof(return)) window;
 }
 /// Test reading a symbol
 version(mir_ion_parser_test) unittest
@@ -241,18 +295,24 @@ Params:
 Returns:
     A string containing the quoted symbol.
 +/
-const(char)[] readSymbolQuoted(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
+const(char)[] readSymbolQuoted(ref IonTokenizer t) 
+{
     ScopedBuffer!char buf;
     while (true) {
-        ubyte c = t.expect!"a != 0 && a != '\\n'";
+        char c = t.expect!"a != 0 && a != '\\n'";
         switch (c) {
             case '\'': // found the end 
-                return buf.data;
+                return buf.data.dup;
             case '\\':
-                const(char)[] esc = t.readEscapeSeq();
-                if (esc.length == 0) continue;
-                buf.put(esc);
+                size_t esc = t.readEscapeSeq();
+                if (esc == 0) continue;
+                debug {
+                    import std.stdio;
+                    writeln(esc);
+                    writeln(cast(ubyte[])t.escapeSequence);
+                    writeln(cast(ubyte[])t.escapeSequence[0 .. esc]);
+                }
+                buf.put(t.escapeSequence[0 .. esc]);
                 break;
             default:
                 buf.put(cast(char)c);
@@ -266,8 +326,14 @@ version(mir_ion_parser_test) unittest
     import mir.ion.deser.text.tokenizer : tokenizeString;
     import mir.ion.deser.text.tokens : IonTokenType;
 
-    void test(string ts, string expected, ubyte after) {
+    void test(string ts, string expected, char after) {
         auto t = tokenizeString(ts);
+        debug {
+            import std.stdio;
+            writeln("input: ", ts);
+            writeln("expected: ", expected);
+            writeln("after: ", after);
+        }
         assert(t.nextToken());
         assert(t.currentToken == IonTokenType.TokenSymbolQuoted);
         assert(t.readSymbolQuoted() == expected);
@@ -281,11 +347,11 @@ version(mir_ion_parser_test) unittest
     test("'nan']", "nan", ']');
 
     test("'a\\'b'", "a'b", 0);
-    test("'a\\\nb'", "ab", 0);
+    test(`'a\nb'`, "a\nb", 0);
     test("'a\\\\b'", "a\\b", 0);
-    test("'a\x20b'", "a b", 0);
-    test("'a\\u2248b'", "a≈b", 0);
-    test("'a\\U0001F44Db'", "a👍b", 0);
+    test(`'a\x20b'`, "a b", 0);
+    test(`'a\u2248b'`, "a≈b", 0);
+    test(`'a\U0001F44Db'`, "a👍b", 0);
 }
 
 /++
@@ -295,10 +361,10 @@ Params:
 Returns:
     A string containing any symbol operators that were able to be read.
 +/
-const(char)[] readSymbolOperator(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
+const(char)[] readSymbolOperator(ref IonTokenizer t) 
+{
     ScopedBuffer!char buf;
-    ubyte c = t.peekOne();
+    char c = t.peekOne();
     while (c.isOperatorChar()) {
         buf.put(c);
         t.skipOne();
@@ -317,10 +383,21 @@ Params:
 Returns:
     The string's content from the input range.
 +/
-const(char)[] readString(T, bool longString = false, bool isClob = false)(ref T t)
-if (isInstanceOf!(IonTokenizer, T)) {
-    ScopedBuffer!char buf;
-    while (true) {
+auto readString(bool longString = false, bool isClob = false)(ref IonTokenizer t)
+{
+    static if (isClob) {
+        IonTextClob val;
+    } else {
+        IonTextString val;
+    } 
+
+    val.isFinal = true;
+    static if (longString && !isClob) {
+        val.isLongString = true;
+    }
+
+    size_t read = 0, startIndex = t.position, endIndex = 0;
+    loop: while (true) {
         ubyte c = t.expect!"a != 0";
         t.expectFalse!(isInvalidChar, true)(c);
 
@@ -336,38 +413,92 @@ if (isInstanceOf!(IonTokenizer, T)) {
         s: switch (c) {
             static if (!longString) {
                 case '"':
-                    return buf.data;
+                    break loop;
             } else {
                 case '\'':
                     auto v = t.peekMax(2);
                     if (v.length != 2) {
                         goto default;
                     } else {
-                        if (v != ['\'', '\'']) { // TODO: ugly, fix
+                        if (v != "''") { // TODO: ugly, fix
                             goto default;
                         }
                     }
+                    val.isFinal = true;
+                    endIndex = t.position - 1;
                     static if (isClob) {
-                        if (t.skipLobWhitespace!(false, true)) { // fail on comments
-                            return buf.data;
+                        if (t.skipWhitespace!(false, true)) {
+                            break loop;
+                        } else {
+                            break s;
                         }
                     } else {
-                        if (t.skipLongStringEnd()) {
-                            return buf.data;
-                        }
+                        t.skipExactly(2);
+                        break loop;
                     }
-                    break s;
             }
             case '\\':
-                const(char)[] esc = readEscapeSeq!(T, isClob)(t);
-                buf.put(esc);
-                break s;
+                if (read != 0) {
+                    t.unread(c);
+                    endIndex = t.position;
+                    val.isFinal = false;
+                    break loop;
+                }
+                
+                size_t esc = readEscapeSeq!(isClob)(t);
+                static if (isClob) {
+                    assert(esc == 1); // we cannot have UTF escapes in a clob, sanity check
+                } else {
+                    assert(esc <= 4); // sanity check that we do not have an escape larger then 4 chars
+                }
+                
+                val.matchedText = cast(const(ubyte)[])t.escapeSequence[0 .. esc];
+                val.matchedIndex = startIndex;
+                val.isEscapeSequence = true;
+                val.isFinal = false;
+                // check if the string ends *directly* after this escape,
+                // if so, just consume the quotations, and call it a day
+                static if (longString) {
+                    if (t.peekExactly(3) == "'''") {
+                        // consume, and skip whitespace
+                        assert(t.skipOne());
+                        val.isFinal = true;
+                        static if (isClob) {
+                            if (!t.skipWhitespace!(false, true)) {
+                                throw IonTokenizerErrorCode.cannotSkipWhitespace.ionTokenizerException;
+                            }
+                        } else {
+                            if (!t.skipLongStringEnd()) {
+                                throw IonTokenizerErrorCode.cannotSkipLongString.ionTokenizerException;
+                            }
+                        }
+                    }
+                } else {
+                    if (t.peekOne() == '"') {
+                        assert(t.skipOne());
+                        val.isFinal = true;
+                    }
+                }
+                if (esc >= 1) {
+                    val.escapeSequenceType = IonTextEscapeType.UTF;
+                } else {
+                    val.escapeSequenceType = IonTextEscapeType.Hex;
+                }
+                return val;
+                //break s;
             default:
-                buf.put(c);
+                read++;
                 break s;
         }
     }
-    assert(0);
+
+    if (endIndex == 0) {
+        endIndex = t.position - 1;
+    }
+
+    val.matchedText = t.input[startIndex .. endIndex];
+    val.matchedIndex = startIndex;
+    return val;
 }
 /// Test reading a string
 version(mir_ion_parser_test) unittest
@@ -375,16 +506,45 @@ version(mir_ion_parser_test) unittest
     import mir.ion.deser.text.tokenizer : tokenizeString;
     import mir.ion.deser.text.tokens : IonTokenType;
 
-    void test(string ts, string expected, ubyte after) {
+    void test(string ts, string expected, char after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
         assert(t.currentToken == IonTokenType.TokenString);
-        assert(t.readString() == expected);
+        auto str = t.readString();
+        debug {
+            import std.stdio;
+            writeln(cast(char[])str.matchedText);
+        }
+        assert(str.matchedText == expected);
         assert(t.readInput() == after);
     }
 
+    void testMultiPart(string ts, string expected, string after, char last) {
+        debug {
+            import std.stdio;
+        }
+        auto t = tokenizeString(ts);
+        assert(t.nextToken());
+        assert(t.currentToken == IonTokenType.TokenString);
+        auto str = t.readString();
+        debug {
+            writeln(cast(char[])str.matchedText);
+        }
+        assert(str.matchedText == expected);
+        assert(!str.isEscapeSequence);
+        assert(!str.isFinal);
+        auto str2 = t.readString();
+        debug {
+            writeln(cast(char[])str2.matchedText);
+        }
+        assert(str2.matchedText == after);
+        assert(str2.isEscapeSequence);
+        assert(str2.isFinal);
+        assert(t.readInput() == last);
+    }
+
     test(`"Hello, world"`, "Hello, world", 0);
-    test(`"Hello! \U0001F44D"`, "Hello! 👍", 0);
+    testMultiPart(`"Hello! \U0001F44D"`, "Hello! ", "👍", 0);
     test(`"0xFOOBAR",`, "0xFOOBAR", ',');
 }
 
@@ -400,9 +560,9 @@ Params:
 Returns:
     A string holding the contents of any long strings found.
 +/
-const(char)[] readLongString(T)(ref T t)
-if (isInstanceOf!(IonTokenizer, T)) {
-    return readString!(T, true)(t);
+IonTextString readLongString(ref IonTokenizer t)
+{
+    return readString!(true)(t);
 }
 /// Test reading a long string
 version(mir_ion_parser_test) unittest
@@ -410,20 +570,38 @@ version(mir_ion_parser_test) unittest
     import mir.ion.deser.text.tokenizer : tokenizeString;
     import mir.ion.deser.text.tokens : IonTokenType;
 
-    void test(string ts, string expected, ubyte after) {
+    void test(string ts, string expected, char after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
         assert(t.currentToken == IonTokenType.TokenLongString);
-        assert(t.readLongString() == expected);
+        auto str = t.readLongString();
+        assert(str.matchedText == expected);
         assert(t.readInput() == after);
+        assert(str.isFinal);
+    }
+
+    void testMultiPart(string ts, string expected1, string expected2, char after) {
+        auto t = tokenizeString(ts);
+        assert(t.nextToken());
+        assert(t.currentToken == IonTokenType.TokenLongString);
+        auto str = t.readLongString();
+        assert(str.matchedText == expected1);
+        assert(str.isFinal);
+
+        assert(t.nextToken());
+        assert(t.currentToken == IonTokenType.TokenLongString);
+        auto str2 = t.readLongString();
+        assert(str2.matchedText == expected2);
+        assert(t.readInput() == after);
+        assert(str.isFinal);
     }
 
     test(`'''Hello, world'''`, "Hello, world", 0);
-    test(`'''Hello! \U0001F44D'''`, "Hello! 👍", 0);
+    testMultiPart(`'''Hello! ''''''\U0001F44D'''`, "Hello! ", "👍", 0);
     test(`'''0xFOOBAR''',`, "0xFOOBAR", ',');
     test(`'''Hello, 'world'!'''`, "Hello, \'world\'!", 0);
-    test(`'''Hello,'''''' world!'''`, "Hello, world!", 0);
-    test(`'''Hello,'''     ''' world!'''`, "Hello, world!", 0);
+    testMultiPart(`'''Hello,'''''' world!'''`, "Hello,", " world!", 0);
+    testMultiPart(`'''Hello,'''     ''' world!'''`, "Hello,", " world!", 0);
 }
 
 /++
@@ -437,13 +615,14 @@ Params:
 Returns:
     An untyped array containing the contents of the clob. This array is guaranteed to have no UTF-8/UTF-32 characters -- only ASCII characters.
 +/
-ubyte[] readClob(T, bool longClob = false)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
+/*
+ubyte[] readClob(bool longClob = false)(ref IonTokenizer t) 
+{
     // Always read out bytes, as clobs are octet-based (and not necessarily a string)
-    ubyte[] data = cast(ubyte[])(readString!(T, longClob, true)(t));
+    ubyte[] data = cast(ubyte[])(readString!(longClob, true)(t));
 
     // read out the following }}
-    ubyte c = t.expect!("a == '}'", true)(t.skipLobWhitespace()); // after skipping any whitespace, it should be the terminator ('}')
+    char c = t.expect!("a == '}'", true)(t.skipLobWhitespace()); // after skipping any whitespace, it should be the terminator ('}')
     c = t.expect!"a == '}'"; // and no whitespace should between one bracket and another
 
     t.finished = true; // we're done reading!
@@ -455,7 +634,7 @@ version(mir_ion_parser_test) unittest
     import mir.ion.deser.text.tokenizer : tokenizeString;
     import mir.ion.deser.text.tokens : IonTokenType;
 
-    void test(string ts, string expected, ubyte after) {
+    void test(string ts, string expected, char after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
         assert(t.currentToken == IonTokenType.TokenString);
@@ -476,11 +655,11 @@ Params:
 Returns:
     An untyped array holding the contents of the clob.
 +/
-ubyte[] readLongClob(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
-    return readClob!(T, true)(t);
+ubyte[] readLongClob(ref IonTokenizer t) 
+{
+    return readClob!(true)(t);
 }
-
+*/
 /++
 Read a blob from the input stream, and return the Base64 contents.
 
@@ -490,8 +669,8 @@ Params:
 Returns:
     An untyped array containing the Base64 contents of the blob.
 +/
-ubyte[] readBlob(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
+ubyte[] readBlob(ref IonTokenizer t) 
+{
     ScopedBuffer!ubyte buf;
     ubyte c;
     while (true) {
@@ -504,7 +683,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
 
     c = t.expect!"a == '}'";
     t.finished = true;
-    return buf.data;
+    return buf.data.dup;
 }
 
 /++
@@ -516,27 +695,23 @@ Returns:
     A struct holding the type and value of the number.
     See the examples below on how to access the type/value.
 +/
-auto readNumber(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
+auto readNumber(ref IonTokenizer t) 
+{
     import mir.ion.type_code : IonTypeCode;
-    struct IonNumberRead {
-        const(char)[] val;
-        IonTypeCode type;
-    }
-    IonNumberRead num;
+    IonTextNumber num;
     ScopedBuffer!char buf;
 
-    ubyte readExponent() {
-        ubyte c = t.readInput();
+    char readExponent() {
+        char c = t.readInput();
         if (c == '+' || c == '-') {
             buf.put(c);
             c = t.expect!"a != 0";
         }
 
-        return readDigits!T(t, c, buf);
+        return readDigits(t, c, buf);
     }
 
-    ubyte c = t.readInput();
+    char c = t.readInput();
     if (c == '-') {
         c = t.readInput();
         if (c == 0) {
@@ -549,9 +724,9 @@ if (isInstanceOf!(IonTokenizer, T)) {
         num.type = IonTypeCode.uInt;
     }
 
-    ubyte leader = c;
+    char leader = c;
     const(size_t) len = buf.length;
-    c = readDigits!T(t, leader, buf);
+    c = readDigits(t, leader, buf);
     if (leader == '0') {
         if (buf.length - len > 1) {
             throw new MirIonTokenizerException("invalid leading zeros");
@@ -561,8 +736,8 @@ if (isInstanceOf!(IonTokenizer, T)) {
     if (c == '.') {
         buf.put('.');
         num.type = IonTypeCode.decimal;
-        ubyte decimalLeader = t.expect!"a != 0";
-        c = readDigits!T(t, decimalLeader, buf);
+        char decimalLeader = t.expect!"a != 0";
+        c = readDigits(t, decimalLeader, buf);
     }
 
     switch (c) {
@@ -584,7 +759,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
 
     t.expect!(t.isStopChar, true)(c);
     t.unread(c);
-    num.val = buf.data;
+    num.matchedText = cast(const(ubyte)[])buf.data.dup;
 
     return num; 
 }
@@ -595,12 +770,12 @@ version(mir_ion_parser_test) unittest
     import mir.ion.deser.text.tokens : IonTokenType;
     import mir.ion.type_code : IonTypeCode;
 
-    void test(string ts, string expected, IonTypeCode type, ubyte after) {
+    void test(string ts, string expected, IonTypeCode type, char after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
         assert(t.currentToken == IonTokenType.TokenNumber);
         auto n = t.readNumber();
-        assert(n.val == expected);
+        assert(n.matchedText == expected);
         assert(n.type == type);
         assert(t.readInput() == after);
     }
@@ -624,14 +799,14 @@ Params:
 Returns:
     A character located after it has read every single digit in a sequence.
 +/
-ubyte readDigits(T)(ref T t, ubyte leader, ref ScopedBuffer!(char) buf) 
-if (isInstanceOf!(IonTokenizer, T)) {
-    ubyte c = leader;
+char readDigits(ref IonTokenizer t, char leader, ref ScopedBuffer!(char) buf) 
+{
+    char c = leader;
     if (!isDigit(c)) {
         return c;
     }
     buf.put(c);
-    return readRadixDigits!T(t, buf);
+    return readRadixDigits(t, buf);
 }
 
 /++
@@ -645,10 +820,10 @@ Params:
 Returns:
     A character located after it has read every single digit in a sequence.
 +/
-ubyte readRadixDigits(T, alias isValid = isDigit)(ref T t, ref ScopedBuffer!(char) buf) 
-if (isInstanceOf!(IonTokenizer, T)) {
+char readRadixDigits(alias isValid = isDigit)(ref IonTokenizer t, ref ScopedBuffer!(char) buf) 
+{
     import mir.functional : naryFun;
-    ubyte c;
+    char c;
     while (true) {
         c = t.readInput();
         if (c == '_') {
@@ -672,10 +847,10 @@ Params:
 Returns:
     A string containing the full radix number (including the leading 0 and marker).
 +/
-const(char)[] readRadix(T, alias isMarker, alias isValid)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
+const(char)[] readRadix(alias isMarker, alias isValid)(ref IonTokenizer t) 
+{
     ScopedBuffer!char buf;
-    ubyte c = t.readInput();
+    char c = t.readInput();
     if (c == '-') {
         buf.put('-');
         c = t.readInput();
@@ -688,11 +863,11 @@ if (isInstanceOf!(IonTokenizer, T)) {
     c = t.expect!isMarker;
     buf.put(c);
     t.expect!("a != '_'", true)(t.peekOne()); // cannot be 0x_ or 0b_
-    c = readRadixDigits!(T, isValid)(t, buf);
+    c = readRadixDigits!(isValid)(t, buf);
     t.expect!(t.isStopChar, true)(c);
     t.unread(c);
 
-    return buf.data; 
+    return buf.data.dup; 
 }
 
 /++
@@ -703,9 +878,9 @@ Params:
 Returns:
     A string containing the entire binary number read.
 +/
-const(char)[] readBinary(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
-    return readRadix!(T, "a == 'b' || a == 'B'", "a == '0' || a == '1'")(t);
+const(char)[] readBinary(ref IonTokenizer t) 
+{
+    return readRadix!("a == 'b' || a == 'B'", "a == '0' || a == '1'")(t);
 }
 /// Test reading a binary number
 version(mir_ion_parser_test) unittest
@@ -713,7 +888,7 @@ version(mir_ion_parser_test) unittest
     import mir.ion.deser.text.tokenizer : tokenizeString;
     import mir.ion.deser.text.tokens : IonTokenType;
 
-    void test(string ts, string expected, ubyte after) {
+    void test(string ts, string expected, char after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
         assert(t.currentToken == IonTokenType.TokenBinary);
@@ -735,9 +910,9 @@ Params:
 Returns:
     A string containing the entire hex number read.
 +/
-const(char)[] readHex(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
-    return readRadix!(T, "a == 'x' || a == 'X'", isHexDigit)(t);
+const(char)[] readHex(ref IonTokenizer t) 
+{
+    return readRadix!("a == 'x' || a == 'X'", isHexDigit)(t);
 }
 /// Test reading a hex number
 version(mir_ion_parser_test) unittest
@@ -745,7 +920,7 @@ version(mir_ion_parser_test) unittest
     import mir.ion.deser.text.tokenizer : tokenizeString;
     import mir.ion.deser.text.tokens : IonTokenType;
 
-    void test(string ts, string expected, ubyte after) {
+    void test(string ts, string expected, char after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
         assert(t.currentToken == IonTokenType.TokenHex);
@@ -772,29 +947,29 @@ Params:
 Returns:
     A string containing the entire timestamp read from the input stream.
 +/
-const(char)[] readTimestamp(T)(ref T t) 
-if (isInstanceOf!(IonTokenizer, T)) {
+const(char)[] readTimestamp(ref IonTokenizer t) 
+{
     ScopedBuffer!char buf;
 
-    ubyte readTSDigits(int nums) {
+    char readTSDigits(int nums) {
         for (int i = 0; i < nums; i++) {
-            ubyte c = t.expect!isDigit;
+            char c = t.expect!isDigit;
             buf.put(c);
         }
         return t.readInput();
     }
 
-    ubyte readTSOffset(ubyte c) {
+    char readTSOffset(char c) {
         if (c != '-' && c != '+') {
             return c;
         }
         buf.put(c);
-        const(ubyte) cs = t.expect!("a == ':'", true)(readTSDigits(2));
+        const(char) cs = t.expect!("a == ':'", true)(readTSDigits(2));
         buf.put(':');
         return readTSDigits(2);
     }
 
-    ubyte readTSOffsetOrZ(ubyte c) {
+    char readTSOffsetOrZ(char c) {
         t.expect!("a == '-' || a == '+' || a == 'z' || a == 'Z'", true)(c);
         if (c == '-' || c == '+') {
             return readTSOffset(c);
@@ -806,25 +981,25 @@ if (isInstanceOf!(IonTokenizer, T)) {
         assert(0);
     }
 
-    const(char)[] readTSFinish(ubyte c) {
+    const(char)[] readTSFinish(char c) {
         t.expect!(t.isStopChar, true)(c);
         t.unread(c);
-        return buf.data;
+        return buf.data.dup;
     }
 
     // yyyy(T || -)
-    ubyte c = t.expect!("a == 'T' || a == '-'", true)(readTSDigits(4));
+    char c = t.expect!("a == 'T' || a == '-'", true)(readTSDigits(4));
     if (c == 'T') {
         // yyyyT
         buf.put('T');
-        return buf.data;
+        return buf.data.dup;
     }
     buf.put('-');
     // yyyy-mm(T || -)
     c = t.expect!("a == 'T' || a == '-'", true)(readTSDigits(2));
     if (c == 'T') {
         buf.put('T');
-        return buf.data;
+        return buf.data.dup;
     }
     buf.put('-');
     // yyyy-mm-dd(T)?
@@ -867,7 +1042,7 @@ if (isInstanceOf!(IonTokenizer, T)) {
     // yyyy-mm-ddThh:mm:ss.ssssZ
     c = t.readInput();
     if (c.isDigit()) {
-        c = readDigits!T(t, c, buf);
+        c = readDigits(t, c, buf);
     }
 
     c = readTSOffsetOrZ(c);
@@ -879,7 +1054,7 @@ version(mir_ion_parser_test) unittest
     import mir.ion.deser.text.tokenizer : tokenizeString;
     import mir.ion.deser.text.tokens : IonTokenType;
 
-    void test(string ts, string expected, ubyte after) {
+    void test(string ts, string expected, char after) {
         auto t = tokenizeString(ts);
         assert(t.nextToken());
         assert(t.currentToken == IonTokenType.TokenTimestamp);
