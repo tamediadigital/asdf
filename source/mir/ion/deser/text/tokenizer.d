@@ -26,14 +26,14 @@ Params:
 Returns:
     [IonTokenizer]
 +/
-IonTokenizer tokenizeString(const(char)[] input) @safe pure {
+IonTokenizer tokenizeString(const(char)[] input) @safe @nogc pure {
     return IonTokenizer(input);
 }
 
 /++
 Create a tokenizer for a given UTF-16/UTF-32 string.
 
-This function will take in a UTF-16/UTF-32 string, and convert it to a UTF-8 string on the fly.
+This function will take in a UTF-16/UTF-32 string, and convert it to a UTF-8 string before tokenizing.
 
 Params:
     input = UTF-16 string to tokenize.
@@ -91,9 +91,8 @@ struct IonTokenizer {
     Params:
         input = The input range to read over 
     +/
-    this(const(char)[] input) @safe pure {
-        import std.array : replace;
-        this.input = input.replace(ION_CR_LF, ION_LF).replace(ION_CR, ION_LF);
+    this(const(char)[] input) @safe @nogc pure {
+        this.input = input;
         resizeWindow(0);
     }
 
@@ -109,6 +108,16 @@ struct IonTokenizer {
 
         window = input[start .. $];
         this.position = start;
+    }
+
+    /++
+    Clear out the escape sequence buffer.
+    +/
+    void resetEscapeBuffer() @safe @nogc pure {
+        this.escapeSequence[0] = '\0';
+        this.escapeSequence[1] = '\0';
+        this.escapeSequence[2] = '\0';
+        this.escapeSequence[3] = '\0';
     }
 
     /++
@@ -154,13 +163,14 @@ struct IonTokenizer {
 
         t.testRead('b');
         t.testRead('c');
-        t.testRead('\n');
-        t.unread('\n');
+        t.testRead('\r');
+        t.unread('\r');
 
-        t.testRead('\n');
+        t.testRead('\r');
         t.testRead('d');
         t.testRead('\n');
         t.testRead('e');
+        t.testRead('\r');
         t.testRead('\n');
         t.testRead(0); // test EOF
 
@@ -268,11 +278,12 @@ struct IonTokenizer {
         t.testRead('b');
         
         assert(t.peekExactly(3).ptr == t.window.ptr);
-        assert(t.peekExactly(3) == "c\nd");
-        assert(t.peekExactly(2) == "c\n");
-        assert(t.peekExactly(3) == "c\nd");
+        assert(t.peekExactly(3) == "c\r\n");
+        assert(t.peekExactly(2) == "c\r");
+        assert(t.peekExactly(3) == "c\r\n");
 
         t.testRead('c');
+        t.testRead('\r');
         t.testRead('\n');
         t.testRead('d');
 
@@ -339,7 +350,7 @@ struct IonTokenizer {
     /++
     Read a single character from the input range (or from the peek buffer, if it's not empty)
 
-    $(NOTE `readInput` normalizes CRLF to a simple new-line.)
+    $(NOTE `readInput` does NOT normalize CRLF to a simple new-line.)
     Returns:
         a single character from the input range, or 0 if the EOF is encountered.
     Throws:
@@ -352,10 +363,12 @@ struct IonTokenizer {
 
         immutable char c = this.window[0];
         resizeWindow(this.position + 1);
+        /*
         if (c == '\r') {
             // EOFs should've been normalized at the first stage
             throw ionTokenizerException(IonTokenizerErrorCode.normalizeEOFFail);
         }
+        */
 
         return c;
     }
@@ -378,11 +391,13 @@ struct IonTokenizer {
     {
         auto t = tokenizeString("a\r\nb\r\nc\rd");
         t.testRead('a');
+        t.testRead('\r');
         t.testRead('\n');
         t.testRead('b');
+        t.testRead('\r');
         t.testRead('\n');
         t.testRead('c');
-        t.testRead('\n');
+        t.testRead('\r');
         t.testRead('d');
         t.testRead(0);
     }
@@ -474,7 +489,7 @@ struct IonTokenizer {
         void test(string txt, char expectedChar)() {
             auto t = tokenizeString(txt);
             assertNotThrown!MirIonTokenizerException(
-                enforce!"Lob whitespace did not match expecte character"(t.skipLobWhitespace() == expectedChar)
+                enforce!"Lob whitespace did not match expected character"(t.skipLobWhitespace() == expectedChar)
             );
         }
 
@@ -982,7 +997,7 @@ template testRead(T, string file = __FILE__, int line = __LINE__) {
         if (v != expected) {
             import mir.format : stringBuf, print;
             stringBuf buf;
-            throw new MirError(buf.print("Expected ", v, " but got ", expected).data, file, line);
+            throw new MirError(buf.print("Expected ", expected, " but got ", v).data, file, line);
         }
     }
 } 
@@ -997,7 +1012,7 @@ template testPeek(T, string file = __FILE__, int line = __LINE__) {
         if (v != expected) {
             import mir.format : stringBuf, print;
             stringBuf buf;
-            throw new MirError(buf.print("Expected ", v, " but got ", expected).data, file, line);
+            throw new MirError(buf.print("Expected ", expected, " but got ", v).data, file, line);
         }
     }
 }

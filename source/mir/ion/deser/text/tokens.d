@@ -160,8 +160,7 @@ static immutable ION_WHITESPACE = [' ', '\t', '\n', '\r'];
 /++
 All characters that Ion considers to be the end of a token (stop chars)
 +/
-static immutable ION_STOP_CHARS = [0, '{', '}', '[', ']', '(', ')', ',', '"', '\'',
-        ' ', '\t', '\n', '\r'];
+static immutable ION_STOP_CHARS = ['\0', '{', '}', '[', ']', '(', ')', ',', '"', '\''] ~ ION_WHITESPACE;
 
 /++
 All valid digits within Ion (0-9)
@@ -339,7 +338,7 @@ Returns:
     true if a character is considered to be a new-line.
 +/
 bool isNewLine(char c) @safe @nogc pure {
-    return c == 0x0A || 0x0D;
+    return c == 0x0A || c == 0x0D;
 }
 
 /++
@@ -502,6 +501,10 @@ struct IonTextString {
     Is this a long string?
     +/
     bool isLongString;
+    /++
+    Is this long string a normalized new line?
+    +/
+    bool isNormalizedNewLine;
 }
 
 /++

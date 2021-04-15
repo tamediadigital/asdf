@@ -743,17 +743,17 @@ if (__traits(compiles, { t.skipWhitespace!(skipComments, failOnComment); })) {
 }
 
 /++
-Skip over the end of a long string (`'''``)
+Skip over the end of a long string (`'''``), and see if we find a long string following this one.
 Params:
     t = The tokenizer
 Returns:
-    true if it was able to skip over the end of the long string.
+    true if we found a second long string
 +/
 bool skipLongStringEnd(bool skipComments = true, bool failOnComment = false)(ref IonTokenizer t) @safe @nogc pure  
 if (__traits(compiles, { t.skipWhitespace!(skipComments, failOnComment); })) {
     auto cs = t.peekMax(2);
     if (cs.length < 2 || cs[0] != '\'' || cs[1] != '\'') {
-        return false;
+        throw IonTokenizerErrorCode.cannotSkipLongString.ionTokenizerException;
     }
 
     t.skipExactly(2);

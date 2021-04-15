@@ -184,10 +184,7 @@ size_t readEscapeSeq(bool isClob = false)(ref IonTokenizer t) @nogc @safe pure
     const(dchar) c = readEscapedChar!(isClob)(t); 
     // Extracted encode logic from std.utf.encode
     // Zero out the escape sequence (since we re-use this buffer)
-    t.escapeSequence[0] = 0;
-    t.escapeSequence[1] = 0;
-    t.escapeSequence[2] = 0;
-    t.escapeSequence[3] = 0;
+    t.resetEscapeBuffer();
     if (c <= 0x7F)
     {
         assert(isValidDchar(c));
@@ -432,7 +429,7 @@ auto readString(bool longString = false, bool isClob = false)(ref IonTokenizer t
         t.expectFalse!(isInvalidChar, true)(c);
 
         static if (!longString) {
-            t.expect!("a != '\\n'", true)(c);
+            t.expectFalse!(isNewLine, true)(c);
         }
 
         static if (isClob) {
@@ -445,6 +442,38 @@ auto readString(bool longString = false, bool isClob = false)(ref IonTokenizer t
                 case '"':
                     break loop;
             } else {
+                static if (!isClob) {
+                    case '\r':
+                        if (read != 0) {
+                            t.unread(c);
+                            endIndex = t.position;
+                            val.isFinal = false;
+                            break loop;
+                        }
+
+                        const(char)[] v = t.peekMax(1);
+                        if (v.length == 1 && v[0] == '\n') { // see if this is \r\n or just \r
+                            t.skipOne();
+                        }
+
+                        t.resetEscapeBuffer();
+                        t.escapeSequence[0] = '\n';
+                        val.matchedText = t.escapeSequence[0 .. 1];
+                        val.isNormalizedNewLine = true;
+                        val.isFinal = false;
+
+                        // do the same check, and see if this string ends *directly* after this newline
+                        // again, peekExactly is acceptable here because the long string *MUST* end with
+                        // a sequence of 3 quotes, and we should throw if it's not there.
+                        if (t.peekExactly(3) == "'''") {
+                            // consume, and skip whitespace
+                            assert(t.skipExactly(3)); // consume the first quote mark
+                            val.isFinal = true;
+                            c = t.skipWhitespace!(true, false);
+                            t.unread(c);
+                        }
+                        return val;
+                }
                 case '\'':
                     const(char)[] v = t.peekMax(2);
                     if (v.length != 2) {
@@ -489,19 +518,19 @@ auto readString(bool longString = false, bool isClob = false)(ref IonTokenizer t
                 // check if the string ends *directly* after this escape,
                 // if so, just consume the quotations, and call it a day
                 static if (longString) {
-                    if (t.peekExactly(3) == "'''") {
+                    // if this is a long string, there should be *at least* 3 extra
+                    // characters left (for the ending quotes). this will throw 
+                    // if they are not there.
+                    if (t.peekExactly(3) == "'''") { 
                         // consume, and skip whitespace
-                        assert(t.skipOne());
+                        assert(t.skipExactly(3));
                         val.isFinal = true;
                         static if (isClob) {
-                            if (!t.skipWhitespace!(false, true)) {
-                                throw IonTokenizerErrorCode.cannotSkipWhitespace.ionTokenizerException;
-                            }
+                            c = t.skipWhitespace!(false, true);
                         } else {
-                            if (!t.skipLongStringEnd()) {
-                                throw IonTokenizerErrorCode.cannotSkipLongString.ionTokenizerException;
-                            }
+                            c = t.skipWhitespace!(true, false);
                         }
+                        t.unread(c);
                     }
                 } else {
                     if (t.peekOne() == '"') {
@@ -603,6 +632,7 @@ version(mir_ion_parser_test) unittest
         auto t = tokenizeString(ts);
         assert(t.nextToken());
         assert(t.currentToken == IonTokenType.TokenLongString);
+
         auto str = t.readLongString();
         assert(str.matchedText == expected1);
         assert(str.isFinal);
@@ -615,12 +645,47 @@ version(mir_ion_parser_test) unittest
         assert(str.isFinal);
     }
 
+    void testNewLine(string ts, string expected1, string expected2, bool normalized, bool eofFinal, char after) {
+        auto t = tokenizeString(ts);
+        assert(t.nextToken());
+        assert(t.currentToken == IonTokenType.TokenLongString);
+        auto str = t.readLongString();
+        assert(str.matchedText == expected1);
+        if (normalized) {
+            assert(!str.isFinal);
+            auto str1 = t.readLongString();
+            assert(str1.isNormalizedNewLine);
+            assert(str1.matchedText == "\n");
+            if (eofFinal) {
+                assert(str1.isFinal);
+                assert(t.nextToken());
+                assert(t.currentToken == IonTokenType.TokenLongString);
+            } else {
+                assert(!str1.isFinal);
+            }
+        } else {
+            assert(str.isFinal);
+            assert(t.nextToken());
+            assert(t.currentToken == IonTokenType.TokenLongString);
+        }
+        auto str1 = t.readLongString();
+        assert(str1.matchedText == expected2);
+        assert(str1.isFinal);
+        assert(t.readInput() == after);
+    }
+
     test(`'''Hello, world'''`, "Hello, world", 0);
     testMultiPart(`'''Hello! ''''''\U0001F44D'''`, "Hello! ", "👍", 0);
     test(`'''0xFOOBAR''',`, "0xFOOBAR", ',');
     test(`'''Hello, 'world'!'''`, "Hello, \'world\'!", 0);
     testMultiPart(`'''Hello,'''''' world!'''`, "Hello,", " world!", 0);
     testMultiPart(`'''Hello,'''     ''' world!'''`, "Hello,", " world!", 0);
+    // Test the normalization of new-lines in long strings here.
+    testNewLine("'''Hello, \r\n''' '''world!'''", "Hello, ", "world!", true, true, 0); // normalized, crlf precedes end of string
+    testNewLine("'''Hello, \r\n world!'''", "Hello, ", " world!", true, false, 0); // normalized, but there is extra text
+    testNewLine("'''Hello, \n''' '''world!'''", "Hello, \n", "world!", false, false, 0); // not normalized, no extra text
+    testNewLine("'''Hello, \r''' '''world!'''", "Hello, ", "world!", true, true, 0); // normalized, crlf precedes end of string
+    testNewLine("'''Hello, \r \nworld!'''", "Hello, ", " \nworld!", true, false, 0); // normalized, but there is extra text
 }
 
 /++
