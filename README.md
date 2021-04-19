@@ -1,3 +1,6 @@
+[![Dub version](https://img.shields.io/dub/v/mir-ion.svg)](http://code.dlang.org/packages/mir-ion)
+[![Dub downloads](https://img.shields.io/dub/dt/mir-ion.svg)](http://code.dlang.org/packages/mir-ion)
+[![License](https://img.shields.io/dub/l/mir-ion.svg)](http://code.dlang.org/packages/mir-ion)
 [![codecov](https://codecov.io/gh/libmir/mir-ion/branch/master/graph/badge.svg?token=MF9yMpCZbO)](https://codecov.io/gh/libmir/mir-ion)
 [![Build Status](https://travis-ci.org/libmir/mir-ion.svg?branch=master)](https://travis-ci.org/libmir/mir-ion)
 [![CircleCI](https://circleci.com/gh/libmir/mir-ion.svg?style=svg)](https://circleci.com/gh/libmir/mir-ion)
