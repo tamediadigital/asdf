@@ -6,11 +6,11 @@ IONREF = $(REF_ALTTEXT $(TT $2), $2, mir, ion, $1)$(NBSP)
 +/
 module mir.ion.ser;
 
-import mir.bignum.decimal: Decimal;
-import mir.bignum.integer: BigInt;
 import mir.conv;
 import mir.ion.deser;
 import mir.ion.deser.low_level: isNullable;
+import mir.ion.internal.basic_types;
+import mir.ion.type_code;
 import mir.reflection;
 import std.meta;
 import std.range.primitives;
@@ -33,36 +33,19 @@ unittest
 
 /// Number serialization
 void serializeValue(S, V)(ref S serializer, auto ref const V value)
-    if ((isNumeric!V && !is(V == enum)) || is(V == BigInt!size0, size_t size0) || is(V == Decimal!size1, size_t size1))
+    if (isNumeric!V && !is(V == enum))
 {
-    static if (isFloatingPoint!V)
-    {
-        import mir.math.common: fabs;
-        import mir.math.ieee: signbit;
-
-        if (value.fabs < value.infinity)
-            serializer.putValue(value);
-        else if (value != value)
-            serializer.putValue(signbit(value) ? "-nan" : "nan");
-        else if (value == V.infinity)
-            serializer.putValue("inf");
-        else if (value == -V.infinity)
-            serializer.putValue("-inf");
-    }
-    else
-        serializer.putValue(value);
+    serializer.putValue(value);
 }
 
 ///
 unittest
 {
-    import mir.bignum.integer;
     import mir.ion.ser.json: serializeJson;
 
-    assert(serializeJson(BigInt!2(123)) == `123`);
     assert(serializeJson(2.40f) == `2.4`);
     assert(serializeJson(float.nan) == `"nan"`);
-    assert(serializeJson(float.infinity) == `"inf"`);
+    assert(serializeJson(float.infinity) == `"+inf"`);
     assert(serializeJson(-float.infinity) == `"-inf"`);
 }
 
@@ -111,11 +94,11 @@ unittest
 }
 
 /// String serialization
-void serializeValue(S)(ref S serializer, in char[] value)
+void serializeValue(S)(ref S serializer, scope const(char)[] value)
 {
     if(value is null)
     {
-        serializer.putValue(null);
+        serializer.putNull(IonTypeCode.string);
         return;
     }
     serializer.putValue(value);
@@ -134,7 +117,7 @@ void serializeValue(S, T)(ref S serializer, T[] value)
 {
     if(value is null)
     {
-        serializer.putValue(null);
+        serializer.putNull(IonTypeCode.list);
         return;
     }
     auto state = serializer.listBegin();
@@ -148,7 +131,7 @@ void serializeValue(S, T)(ref S serializer, T[] value)
 
 /// Input range serialization
 void serializeValue(S, R)(ref S serializer, R value)
-    if ((isIterable!R) &&
+    if (isIterable!R &&
         !isSomeChar!(ForeachType!R) &&
         !isDynamicArray!R &&
         !isNullable!R)
@@ -198,7 +181,7 @@ void serializeValue(S, T)(ref S serializer, auto ref T[string] value)
 {
     if(value is null)
     {
-        serializer.putValue(null);
+        serializer.putNull(IonTypeCode.struct_);
         return;
     }
     auto state = serializer.structBegin();
@@ -227,7 +210,7 @@ void serializeValue(S, V : const T[K], T, K)(ref S serializer, V value)
 {
     if(value is null)
     {
-        serializer.putValue(null);
+        serializer.putNull(IonTypeCode.struct_);
         return;
     }
     auto state = serializer.structBegin();
@@ -253,11 +236,11 @@ unittest
 
 /// integral typed value associative array serialization
 void serializeValue(S,  V : const T[K], T, K)(ref S serializer, V value)
-    if((isIntegral!K) && !is(K == enum))
+    if (isIntegral!K && !is(K == enum))
 {
     if(value is null)
     {
-        serializer.putValue(null);
+        serializer.putNull(IonTypeCode.struct_);
         return;
     }
     auto state = serializer.structBegin();
@@ -285,64 +268,153 @@ unittest
     // assert(deserializeJson!(uint[short])(`{"256":1}`) == cast(uint[short]) [256 : 1]);
 }
 
-/// Nullable type serialization
-void serializeValue(S, N)(ref S serializer, auto ref N value)
-    if (isNullable!N)
+
+private IonTypeCode nullTypeCodeOf(T)()
 {
-    if(value.isNull)
+    import mir.algebraic: isVariant, visit;
+    import mir.serde: serdeGetFinalProxy;
+
+    IonTypeCode code;
+
+    static if (is(T == bool))
+        code = IonTypeCode.bool_;
+    else
+    static if (isUnsigned!T)
+        code = IonTypeCode.uInt;
+    else
+    static if (isIntegral!T || isBigInt!T)
+        code = IonTypeCode.nInt;
+    else
+    static if (isFloatingPoint!T)
+        code = IonTypeCode.float_;
+    else
+    static if (isDecimal!T)
+        code = IonTypeCode.decimal;
+    else
+    static if (isClob!T)
+        code = IonTypeCode.clob;
+    else
+    static if (isBlob!T)
+        code = IonTypeCode.blob;
+    else
+    static if (isSomeString!T)
+        code = IonTypeCode.string;
+    else
+    static if (!isVariant!T && isSomeStruct!T)
     {
-        serializer.putValue(null);
-        return;
+        static if (hasUDA!(T, serdeProxy))
+            code = .nullTypeCodeOf!(serdeGetFinalProxy!T);
+        else
+        static if (isIterable!T)
+            code = IonTypeCode.list;
+        else
+            code = IonTypeCode.struct_;
     }
-    serializer.serializeValue(value.get);
+    else
+    static if (isIterable!T)
+        code = IonTypeCode.list;
+
+    return code;
 }
 
-///
 unittest
 {
-    import mir.ion.ser.json: serializeJson;
-    import mir.algebraic: Nullable;
+    static assert(nullTypeCodeOf!long == IonTypeCode.nInt);
+}
 
-    struct Nested
+void serializeAnnotatedValue(S, V)(ref S serializer, auto ref V value, size_t annotationsState, size_t wrapperState)
+    if (isSomeStruct!V && (!isIterable!V || hasUDA!(V, serdeProxy)))
+{
+    static if (serdeIsComplexVariant!V)
     {
-        float f;
+        value.visit!(
+            (auto ref v) {
+                alias A = typeof(v);
+                static if (serdeHasAlgebraicAnnotation!A)
+                {
+                    serializer.putCompiletimeAnnotation!(serdeGetAlgebraicAnnotation!A);
+                }
+                serializeAnnotatedValue(serializer, v, annotationsState, wrapperState);
+            }
+        );
     }
-
-    struct T
+    else
     {
-        string str;
-        Nullable!Nested nested;
+        
     }
-
-    T t;
-    assert(t.serializeJson == `{"str":null,"nested":null}`, t.serializeJson);
-    t.str = "txt";
-    t.nested = Nested(123);
-    assert(t.serializeJson == `{"str":"txt","nested":{"f":123.0}}`);
 }
 
 /// Struct and class type serialization
 void serializeValue(S, V)(ref S serializer, auto ref V value)
-    if (!isNullable!V && (is(V == struct) || is(V == union) || is(V == class) || is(V == interface)) && !is(V == BigInt!size0, size_t size0) && (!isIterable!V || hasUDA!(V, serdeProxy)))
+    if (isSomeStruct!V && (!isIterable!V || hasUDA!(V, serdeProxy)))
 {
+    import mir.algebraic: Algebraic;
+
     static if(is(V == class) || is(V == interface))
     {
         if(value is null)
         {
-            serializer.putValue(null);
+            serializer.putNull(nullTypeCodeOf!V);
             return;
         }
     }
 
+    static if (isBigInt!V || isDecimal!V || isTimestamp!V || isBlob!V || isClob!V)
+    {
+        serializer.putValue(value);
+    }
+    else
     static if (hasUDA!(V, serdeProxy))
     {{
-        serializer.serializeValue(value.to!(serdeGetProxy!V));
+        serializeValue(serializer, value.to!(serdeGetProxy!V));
         return;
     }}
     else
     static if(__traits(hasMember, V, "serialize"))
     {
         value.serialize(serializer);
+    }
+    else
+    static if (is(Unqual!V == Algebraic!TypeSet, TypeSet...))
+    {
+        import mir.algebraic: visit;
+        static if (serdeIsComplexVariant!V)
+        {
+            
+            value.visit!(
+                (auto ref v) {
+                    alias A = typeof(v);
+                    static if (serdeHasAlgebraicAnnotation!A)
+                    {
+                        auto wrapperState = serializer.annotationWrapperBegin;
+                        auto annotationsState = serializer.annotationsBegin;
+                        serializer.putCompiletimeAnnotation!(serdeGetAlgebraicAnnotation!A);
+                        serializeAnnotatedValue(serializer, v, annotationsState, wrapperState);
+                    }
+                    else
+                    {
+                        serializeValue(serializer, v);
+                    }
+                }
+            );
+        }
+        else
+        {
+            value.visit!(
+                (typeof(null)) => serializer.putNull(nullTypeCodeOf!(V.AllowedTypes[1])),
+                (auto ref v) => serializeValue(serializer, v)
+            );
+        }
+    }
+    else
+    static if (isNullable!V)
+    {
+        if(value.isNull)
+        {
+            serializer.putNull(nullTypeCodeOf!(typeof(value.get())));
+            return;
+        }
+        serializeValue(serializer, value.get);
     }
     else
     {
@@ -391,7 +463,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
                     {
                         if(val is null)
                         {
-                            serializer.putValue(null);
+                            serializer.putNull(nullTypeCodeOf!V);
                             continue;
                         }
                     }
@@ -410,7 +482,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
                     {
                         if(val is null)
                         {
-                            serializer.putValue(null);
+                            serializer.putNull(nullTypeCodeOf!V);
                             continue F;
                         }
                     }
@@ -439,6 +511,19 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
         }
         serializer.structEnd(state);
     }
+}
+
+/// Mir types
+unittest
+{
+    import mir.bignum.integer;
+    import mir.date;
+    import mir.ion.ser.json: serializeJson;
+    import mir.ion.ser.text: serializeText;
+    assert(Date(2021, 4, 24).serializeJson == `"2021-04-24"`);
+    assert(BigInt!2(123).serializeJson == `123`);
+    assert(Date(2021, 4, 24).serializeText == `2021-04-24`);
+    assert(BigInt!2(123).serializeText == `123`);
 }
 
 /// Alias this support
@@ -476,4 +561,28 @@ unittest
 
     import mir.ion.ser.json: serializeJson;
     assert(serializeJson(S()) == `{"foo":"bar"}`);
+}
+
+/// Nullable type serialization
+unittest
+{
+    import mir.ion.ser.json: serializeJson;
+    import mir.algebraic: Nullable;
+
+    struct Nested
+    {
+        float f;
+    }
+
+    struct T
+    {
+        string str;
+        Nullable!Nested nested;
+    }
+
+    T t;
+    assert(t.serializeJson == `{"str":null,"nested":null}`, t.serializeJson);
+    t.str = "txt";
+    t.nested = Nested(123);
+    assert(t.serializeJson == `{"str":"txt","nested":{"f":123.0}}`);
 }

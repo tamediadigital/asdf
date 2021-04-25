@@ -109,6 +109,9 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     }
 
     ///
+    alias putCompiletimeAnnotation = putCompiletimeKey;
+
+    ///
     void putKey()(scope const char[] key)
     {
         import mir.utility: _expect;
@@ -144,7 +147,7 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     alias putAnnotationId = putKeyId;
 
     ///
-    void putValueId(uint id)
+    void putSymbolId(uint id)
     {
         tapeHolder.reserve(5);
         tapeHolder.currentTapePosition += ionPutSymbolId(tapeHolder.data.ptr + tapeHolder.currentTapePosition, id);
@@ -179,8 +182,14 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     ///
     void putValue(typeof(null))
     {
+        putNull(IonTypeCode.null_);
+    }
+
+    ///
+    void putNull(IonTypeCode code)
+    {
         tapeHolder.reserve(1);
-        tapeHolder.currentTapePosition += ionPut(tapeHolder.data.ptr + tapeHolder.currentTapePosition, null);
+        tapeHolder.currentTapePosition += ionPut(tapeHolder.data.ptr + tapeHolder.currentTapePosition, null, code);
     }
 
     ///
@@ -188,12 +197,6 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     {
         tapeHolder.reserve(1);
         tapeHolder.currentTapePosition += ionPut(tapeHolder.data.ptr + tapeHolder.currentTapePosition, b);
-    }
-
-    ///
-    void putEscapedValue(scope const char[] value)
-    {
-        putValue(value);
     }
 
     ///
@@ -221,6 +224,9 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     void elemBegin()
     {
     }
+
+    ///
+    alias sexpElemBegin = elemBegin;
 }
 
 /++
@@ -335,8 +341,8 @@ void serializeIon(TapeHolder, T)(
 //     assert(Cake("Normal Cake").serializeIon == `{"name":"Normal Cake","slices":8,"flavor":1.0}`);
 //     auto cake = Cake.init;
 //     cake.dec = Decor.init;
-//     assert(cake.serializeIon == `{"slices":8,"flavor":1.0,"dec":{"candles":0,"fluff":"inf"}}`);
-//     assert(cake.dec.serializeIon == `{"candles":0,"fluff":"inf"}`);
+//     assert(cake.serializeIon == `{"slices":8,"flavor":1.0,"dec":{"candles":0,"fluff":"+inf"}}`);
+//     assert(cake.dec.serializeIon == `{"candles":0,"fluff":"+inf"}`);
     
 //     static struct A
 //     {
