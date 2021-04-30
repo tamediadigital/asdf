@@ -12,6 +12,7 @@ import mir.ion.deser.low_level: isNullable;
 import mir.ion.internal.basic_types;
 import mir.ion.type_code;
 import mir.reflection;
+import mir.reflection: isSomeStruct;
 import std.meta;
 import std.range.primitives;
 import std.traits;
@@ -322,15 +323,43 @@ unittest
     static assert(nullTypeCodeOf!long == IonTypeCode.nInt);
 }
 
-void serializeAnnotatedValue(S, V)(ref S serializer, auto ref V value, size_t annotationsState, size_t wrapperState)
-    if (isSomeStruct!V && (!isIterable!V || hasUDA!(V, serdeProxy)))
+template isAnnotatedAliasThisAlgebraic(T)
 {
-    static if (serdeIsComplexVariant!V)
+    static if (serdeGetAnnotationMembersOut!T.length && __traits(getAliasThis, T).length)
     {
+        import mir.algebraic: isVariant;
+        T* aggregate;
+        enum isAnnotatedAliasThisAlgebraic = isVariant!(typeof(__traits(getMember, aggregate, __traits(getAliasThis, T))));
+    }
+    else
+    {
+        enum isAnnotatedAliasThisAlgebraic = false;
+    }
+}
+
+private void serializeAnnotatedValue(S, V)(ref S serializer, auto ref V value, size_t annotationsState, size_t wrapperState)
+{
+    import mir.algebraic: isVariant;
+    static if (serdeGetAnnotationMembersOut!V.length)
+    {
+        static foreach (annotationMember; serdeGetAnnotationMembersOut!V)
+        {
+            serializer.putAnnotation(__traits(getMember, value, annotationMember)[]);
+        }
+    }
+
+    static if (isAnnotatedAliasThisAlgebraic!V)
+    {
+        serializeAnnotatedValue(serializer, __traits(getMember, value, __traits(getAliasThis, V)), annotationsState, wrapperState);
+    }
+    else
+    static if (isVariant!V)
+    {
+        import mir.algebraic: visit;
         value.visit!(
             (auto ref v) {
                 alias A = typeof(v);
-                static if (serdeHasAlgebraicAnnotation!A)
+                static if (serdeIsComplexVariant!V && serdeHasAlgebraicAnnotation!A)
                 {
                     serializer.putCompiletimeAnnotation!(serdeGetAlgebraicAnnotation!A);
                 }
@@ -340,8 +369,114 @@ void serializeAnnotatedValue(S, V)(ref S serializer, auto ref V value, size_t an
     }
     else
     {
-        
+        serializer.annotationsEnd(annotationsState);
+        static if (serdeGetAnnotationMembersOut!V.length)
+            serializeValueImpl(serializer, value);
+        else
+            serializeValue(serializer, value);
+        serializer.annotationWrapperEnd(wrapperState);
     }
+}
+
+/// Struct and class type serialization
+void serializeValueImpl(S, V)(ref S serializer, auto ref V value)
+    if (isSomeStruct!V && (!isIterable!V || hasUDA!(V, serdeProxy)))
+{
+    import mir.algebraic;
+    auto state = serializer.structBegin();
+
+    foreach(member; aliasSeqOf!(SerializableMembers!V))
+    {{
+        enum key = serdeGetKeyOut!(__traits(getMember, value, member));
+
+        static if (key !is null)
+        {
+            static if (hasUDA!(__traits(getMember, value, member), serdeIgnoreDefault))
+            {
+                if (__traits(getMember, value, member) == __traits(getMember, V.init, member))
+                    continue;
+            }
+            
+            static if(hasUDA!(__traits(getMember, value, member), serdeIgnoreOutIf))
+            {
+                alias pred = serdeGetIgnoreOutIf!(__traits(getMember, value, member));
+                if (pred(__traits(getMember, value, member)))
+                    continue;
+            }
+            static if(hasUDA!(__traits(getMember, value, member), serdeTransformOut))
+            {
+                alias f = serdeGetTransformOut!(__traits(getMember, value, member));
+                auto val = f(__traits(getMember, value, member));
+            }
+            else
+            {
+                auto val = __traits(getMember, value, member);
+            }
+
+            static if (__traits(hasMember, S, "putCompiletimeKey"))
+            {
+                serializer.putCompiletimeKey!key;
+            }
+            else
+            {
+                serializer.putKey(key);
+            }
+
+            static if(hasUDA!(__traits(getMember, value, member), serdeLikeList))
+            {
+                alias V = typeof(val);
+                static if(is(V == interface) || is(V == class) || is(V : E[], E))
+                {
+                    if(val is null)
+                    {
+                        serializer.putNull(nullTypeCodeOf!V);
+                        continue;
+                    }
+                }
+                auto valState = serializer.listBegin();
+                foreach (ref elem; val)
+                {
+                    serializer.elemBegin;
+                    serializer.serializeValue(elem);
+                }
+                serializer.listEnd(valState);
+            }
+            else
+            static if(hasUDA!(__traits(getMember, value, member), serdeLikeStruct))
+            {
+                static if(is(V == interface) || is(V == class) || is(V : E[T], E, T))
+                {
+                    if(val is null)
+                    {
+                        serializer.putNull(nullTypeCodeOf!V);
+                        continue F;
+                    }
+                }
+                auto valState = serializer.structBegin();
+                foreach (key, elem; val)
+                {
+                    serializer.putKey(key);
+                    serializer.serializeValue(elem);
+                }
+                serializer.structEnd(valState);
+            }
+            else
+            static if(hasUDA!(__traits(getMember, value, member), serdeProxy))
+            {
+                serializer.serializeValue(val.to!(serdeGetProxy!(__traits(getMember, value, member))));
+            }
+            else
+            {
+                serializer.serializeValue(val);
+            }
+        }
+    }}
+    static if(__traits(hasMember, V, "finalizeSerialization"))
+    {
+        value.finalizeSerialization(serializer);
+    }
+
+    serializer.structEnd(state);
 }
 
 /// Struct and class type serialization
@@ -362,6 +497,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
     static if (isBigInt!V || isDecimal!V || isTimestamp!V || isBlob!V || isClob!V)
     {
         serializer.putValue(value);
+        return;
     }
     else
     static if (hasUDA!(V, serdeProxy))
@@ -373,14 +509,22 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
     static if(__traits(hasMember, V, "serialize"))
     {
         value.serialize(serializer);
+        return;
+    }
+    else
+    static if (serdeGetAnnotationMembersOut!V.length)
+    {
+        auto wrapperState = serializer.annotationWrapperBegin;
+        auto annotationsState = serializer.annotationsBegin;
+        serializeAnnotatedValue(serializer, value, annotationsState, wrapperState);
+        return;
     }
     else
     static if (is(Unqual!V == Algebraic!TypeSet, TypeSet...))
     {
-        import mir.algebraic: visit;
+        import mir.algebraic: visit, isNullable;
         static if (serdeIsComplexVariant!V)
         {
-            
             value.visit!(
                 (auto ref v) {
                     alias A = typeof(v);
@@ -399,12 +543,20 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
             );
         }
         else
+        static if (isNullable!V && V.AllowedTypes.length > 1)
         {
             value.visit!(
                 (typeof(null)) => serializer.putNull(nullTypeCodeOf!(V.AllowedTypes[1])),
-                (auto ref v) => serializeValue(serializer, v)
+                (auto ref v) => .serializeValue(serializer, v)
             );
         }
+        else
+        {
+            value.visit!(
+                (auto ref v) => .serializeValue(serializer, v)
+            );
+        }
+        return;
     }
     else
     static if (isNullable!V)
@@ -415,101 +567,12 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
             return;
         }
         serializeValue(serializer, value.get);
+        return;
     }
     else
     {
-        auto state = serializer.structBegin();
-        foreach(member; aliasSeqOf!(SerializableMembers!V))
-        {{
-            enum key = serdeGetKeyOut!(__traits(getMember, value, member));
-
-            static if (key !is null)
-            {
-                static if (hasUDA!(__traits(getMember, value, member), serdeIgnoreDefault))
-                {
-                    if (__traits(getMember, value, member) == __traits(getMember, V.init, member))
-                        continue;
-                }
-                
-                static if(hasUDA!(__traits(getMember, value, member), serdeIgnoreOutIf))
-                {
-                    alias pred = serdeGetIgnoreOutIf!(__traits(getMember, value, member));
-                    if (pred(__traits(getMember, value, member)))
-                        continue;
-                }
-                static if(hasUDA!(__traits(getMember, value, member), serdeTransformOut))
-                {
-                    alias f = serdeGetTransformOut!(__traits(getMember, value, member));
-                    auto val = f(__traits(getMember, value, member));
-                }
-                else
-                {
-                    auto val = __traits(getMember, value, member);
-                }
-
-                static if (__traits(hasMember, S, "putCompiletimeKey"))
-                {
-                    serializer.putCompiletimeKey!key;
-                }
-                else
-                {
-                    serializer.putKey(key);
-                }
-
-                static if(hasUDA!(__traits(getMember, value, member), serdeLikeList))
-                {
-                    alias V = typeof(val);
-                    static if(is(V == interface) || is(V == class) || is(V : E[], E))
-                    {
-                        if(val is null)
-                        {
-                            serializer.putNull(nullTypeCodeOf!V);
-                            continue;
-                        }
-                    }
-                    auto valState = serializer.listBegin();
-                    foreach (ref elem; val)
-                    {
-                        serializer.elemBegin;
-                        serializer.serializeValue(elem);
-                    }
-                    serializer.listEnd(valState);
-                }
-                else
-                static if(hasUDA!(__traits(getMember, value, member), serdeLikeStruct))
-                {
-                    static if(is(V == interface) || is(V == class) || is(V : E[T], E, T))
-                    {
-                        if(val is null)
-                        {
-                            serializer.putNull(nullTypeCodeOf!V);
-                            continue F;
-                        }
-                    }
-                    auto valState = serializer.structBegin();
-                    foreach (key, elem; val)
-                    {
-                        serializer.putKey(key);
-                        serializer.serializeValue(elem);
-                    }
-                    serializer.structEnd(valState);
-                }
-                else
-                static if(hasUDA!(__traits(getMember, value, member), serdeProxy))
-                {
-                    serializer.serializeValue(val.to!(serdeGetProxy!(__traits(getMember, value, member))));
-                }
-                else
-                {
-                    serializer.serializeValue(val);
-                }
-            }
-        }}
-        static if(__traits(hasMember, V, "finalizeSerialization"))
-        {
-            value.finalizeSerialization(serializer);
-        }
-        serializer.structEnd(state);
+        serializeValueImpl(serializer, value);
+        return;
     }
 }
 
@@ -585,4 +648,65 @@ unittest
     t.str = "txt";
     t.nested = Nested(123);
     assert(t.serializeJson == `{"str":"txt","nested":{"f":123.0}}`);
+}
+
+///
+unittest
+{
+    import mir.algebraic;
+    import mir.small_string;
+
+    @serdeAlgebraicAnnotation("$a")
+    static struct B
+    {
+        double number;
+    }
+
+    static struct A
+    {
+        @serdeAnnotation
+        SmallString!32 id1;
+
+        @serdeAnnotation
+        SmallString!32 id2;
+
+        // Alias this is transparent for members and can catch algebraic annotation
+        alias c this;
+        B c;
+
+        string s;
+    }
+
+
+    static assert(serdeHasAlgebraicAnnotation!B);
+    static assert(serdeGetAlgebraicAnnotation!B == "$a");
+    static assert(serdeHasAlgebraicAnnotation!A);
+    static assert(serdeGetAlgebraicAnnotation!A == "$a");
+
+    @serdeAlgebraicAnnotation("$c")
+    static struct C
+    {
+    }
+
+    @serdeAlgebraicAnnotation("$S")
+    static struct S
+    {
+        @serdeAnnotation
+        string sid;
+
+        alias Data = Nullable!(A, C, int);
+
+        alias data this;
+
+        Data data;
+    }
+
+    Nullable!S value = S("LIBOR", S.Data(A(SmallString!32("Rate"), SmallString!32("USD"))));
+
+    import mir.ion.conv: ion2text;
+    import mir.ion.ser.ion: serializeIon;
+    import mir.ion.ser.text: serializeText;
+    static immutable text = `LIBOR::$a::Rate::USD::{number:nan,s:null.string}`;
+    assert(value.serializeText == text);
+    assert(value.serializeIon.ion2text == text);
 }

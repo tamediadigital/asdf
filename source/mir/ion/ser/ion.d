@@ -26,7 +26,7 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     private alias U = minimalIndexType!(IonSystemSymbolTable_v1.length + compiletimeSymbolTable.length);
 
     private static immutable compiletimeTable = createTableChar!(IonSystemSymbolTable_v1 ~ compiletimeSymbolTable, false);
-    static immutable U[IonSystemSymbolTable_v1.length + compiletimeTable.sortedKeys.length] compileTimeIndex = () {
+    static immutable U[IonSystemSymbolTable_v1.length + compiletimeTable.sortedKeys.length] compiletimeIndex = () {
         U[IonSystemSymbolTable_v1.length + compiletimeTable.sortedKeys.length] index;
         foreach (i, key; IonSystemSymbolTable_v1 ~ compiletimeSymbolTable)
             index[compiletimeTable[key]] = cast(U) i;
@@ -89,7 +89,7 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     ///
     void annotationsEnd(size_t state)
     {
-        tapeHolder.currentTapePosition = state + ionPutEnd(tapeHolder.data.ptr + state, IonTypeCode.annotations, tapeHolder.currentTapePosition - (state + ionPutAnnotationsListStartLength));
+        tapeHolder.currentTapePosition = state + ionPutAnnotationsListEnd(tapeHolder.data.ptr + state, tapeHolder.currentTapePosition - (state + ionPutAnnotationsListStartLength));
     }
 
     ///
@@ -105,7 +105,7 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
     void putCompiletimeKey(string key)()
     {
         enum id = compiletimeTable[key];
-        putKeyId(compileTimeIndex[id]);
+        putKeyId(compiletimeIndex[id]);
     }
 
     ///
@@ -118,7 +118,7 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
         uint id;
         if (_expect(compiletimeTable.get(key, id), true))
         {
-            id = compileTimeIndex[id];
+            id = compiletimeIndex[id];
         }
         else // use GC CTFE symbol table because likely `putKey` is used either for Associative array of for similar types.
         {
@@ -134,6 +134,9 @@ struct IonSerializer(TapeHolder, string[] compiletimeSymbolTable)
         }
         putKeyId(id);
     }
+
+    ///
+    alias putAnnotation = putKey;
 
     ///
     void putKeyId(T)(const T id)
@@ -253,17 +256,20 @@ immutable(ubyte)[] serializeIon(T)(auto ref T value) @safe
 
     static immutable ubyte[] compiletimePrefixAndTableTapeData = ionPrefix ~ serializer.compiletimeTableTape;
 
-    // use runtime table
-    if (_expect(table.initialized, false))
-    {
-        () @trusted { table.finalize; } ();
-        return ionPrefix ~ table.tapeData ~ tapeHolder.tapeData;
+    immutable(ubyte)[] ret () @trusted {
+        // use runtime table
+        if (_expect(table.initialized, false))
+        {
+            table.finalize; 
+            return cast(immutable) (ionPrefix ~ table.tapeData ~ tapeHolder.tapeData);
+        }
+        // compile time table
+        else
+        {
+            return cast(immutable) (compiletimePrefixAndTableTapeData ~ tapeHolder.tapeData);
+        }
     }
-    // compile time table
-    else
-    {
-        return compiletimePrefixAndTableTapeData ~ tapeHolder.tapeData;
-    }
+    return ret();
 }
 
 ///

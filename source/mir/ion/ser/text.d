@@ -144,6 +144,33 @@ struct TextSerializer(string sep, Appender)
         }
     }
 
+    private void putCompiletimeSymbol(string str)()
+    {
+        static if (str.isIdentifier)
+        {
+            appender.put(str);
+        }
+        else
+        {
+            appender.put('\'');
+            static if (str.any!(c => c == '"' || c == '\\' || c < ' '))
+            {
+                import str.array: appender;
+                enum estr = () {
+                    auto app = appender!string;
+                    printEscaped!(char, EscapeFormat.ionSymbol)(app, str);
+                    return app.data;
+                } ();
+                appender.put(estr);
+            }
+            else
+            {
+                appender.put(str);
+            }
+            appender.put('\'');
+        }
+    }
+
     ///
     size_t structBegin()
     {
@@ -242,6 +269,13 @@ struct TextSerializer(string sep, Appender)
     }
 
     ///
+    void putCompiletimeAnnotation(string str)()
+    {
+        putCompiletimeSymbol!str;
+        appender.put(`::`);
+    }
+
+    ///
     void annotationsEnd(size_t state)
     {
         static if (sep.length)
@@ -277,29 +311,7 @@ struct TextSerializer(string sep, Appender)
             putSpace;
         }
 
-        static if (key.isIdentifier)
-        {
-            appender.put(key);
-        }
-        else
-        {
-            appender.put('\'');
-            static if (key.any!(c => c == '"' || c == '\\' || c < ' '))
-            {
-                import str.array: appender;
-                enum ekey = () {
-                    auto app = appender!string;
-                    printEscaped!(char, EscapeFormat.ionSymbol)(app, key);
-                    return app.data;
-                } ();
-                appender.put(ekey);
-            }
-            else
-            {
-                appender.put(key);
-            }
-            appender.put('\'');
-        }
+        putCompiletimeSymbol!key;
 
         static if(sep.length)
         {

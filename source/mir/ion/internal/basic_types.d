@@ -12,5 +12,4 @@ package(mir.ion) enum isBigInt(T) = is(Unqual!T == BigInt!size, size_t size);
 package(mir.ion) enum isBlob(T) = is(Unqual!T == Blob);
 package(mir.ion) enum isClob(T) = is(Unqual!T == Clob);
 package(mir.ion) enum isDecimal(T) = is(Unqual!T == Decimal!size, size_t size);
-package(mir.ion) enum isSomeStruct(T) = is(T == struct) || is(T == union) || is(T == class) || is(T == interface);
 package(mir.ion) enum isTimestamp(T) = is(Unqual!T == Timestamp);

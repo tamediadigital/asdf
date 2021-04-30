@@ -9,6 +9,7 @@ import mir.ion.exception;
 import mir.ion.internal.basic_types;
 import mir.ion.type_code;
 import mir.ion.value;
+import mir.reflection: isSomeStruct;
 import mir.small_array;
 import mir.small_string;
 import mir.timestamp;
