@@ -2605,6 +2605,14 @@ struct IonAnnotations
         return data.length == 0;
     }
 
+    ///
+    IonErrorCode pick(ref size_t symbolID)
+        @safe pure nothrow @nogc
+    {
+        assert(!empty);
+        return parseVarUInt(data, symbolID);
+    }
+
 const:
 
     version (D_Exceptions)
