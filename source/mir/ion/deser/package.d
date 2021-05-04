@@ -104,42 +104,45 @@ Deserialize aggregate value using compile time symbol table
 +/
 template deserializeValue(string[] symbolTable, bool exteneded = false)
 {
+    static if (!exteneded)
+        static immutable table = symbolTable;
+
+    @safe pure nothrow @nogc
+    private bool prepareSymbolId(scope TableParams!exteneded tableParams, ref size_t symbolId)
+    {
+        static if (exteneded)
+        {
+            alias table = tableParams[0];
+            if (symbolId >= tableParams[1].length)
+                return false;
+            symbolId = tableParams[1][symbolId];
+        }
+        return symbolId < table.length;
+    }
+
     private string deserializeAnnotations(T)(
         ref IonAnnotations annotations,
         scope TableParams!exteneded tableParams,
         ref T value)
     {
-        static if (!exteneded)
-            static immutable table = symbolTable;
-        else
+        static if (exteneded)
             alias table = tableParams[0];
         static foreach (member; serdeGetAnnotationMembersIn!T)
         {{
             if (annotations.empty)
                 return "Data missing for annotation member";
-            size_t symbolID;
-            if (auto error = annotations.pick(symbolID))
+            size_t symbolId;
+            if (auto error = annotations.pick(symbolId))
                 return error.ionErrorMsg;
-            static if (exteneded)
-            {
-                auto originalID = symbolID;
-                if (symbolID >= tableParams[1].length)
-                    return "Symbol ID is greater then the symbol table";
-                symbolID = tableParams[1][symbolID];
-            }
-            else
-            {
-                alias originalID = symbolID;
-                if (symbolID >= table.length)
-                    return "Symbol ID is greater then the symbol table";
-            }
+            if (symbolId >= table.length)
+                return "Symbol ID is greater then the symbol table";
             static if (__traits(compiles, {__traits(getMember, value, member) = table[id];}))
             {
-                __traits(getMember, value, member) = table[symbolID];
+                __traits(getMember, value, member) = table[symbolId];
             }
             else
             {
-                __traits(getMember, value, member) = table[symbolID].idup;
+                __traits(getMember, value, member) = table[symbolId].idup;
             }
         }}
         return null;
@@ -152,23 +155,21 @@ template deserializeValue(string[] symbolTable, bool exteneded = false)
         value = value to deserialize
     Returns: `SerdeException`
     +/
-    string deserializeValue(T, Annotations...)(IonDescribedValue data, scope TableParams!exteneded tableParams, ref T value, Annotations optAnnotations)
+    string deserializeValue(T, Annotations...)(IonDescribedValue data, scope TableParams!exteneded tableParams, ref T value, Annotations optAnnotations) pure
         if (!isFirstOrderSerdeType!T && (is(Annotations == AliasSeq!()) || is(Annotations == AliasSeq!IonAnnotations)))
     {
         import mir.internal.meta: Contains;
         import mir.ndslice.slice: Slice, SliceKind;
         import mir.rc.array: RCArray, RCI;
+        import mir.string_map : isStringMap;
         import std.meta: anySatisfy, Filter, templateAnd, templateNot, templateOr;
         import std.traits: isArray, isSomeString, isAssociativeArray;
 
-        enum annotated = Annotations.length != 0;
+        static if (exteneded)
+            alias table = tableParams[0];
 
         static if (__traits(hasMember, value, "deserializeFromIon"))
         {
-            static if (!exteneded)
-                static immutable table = symbolTable;
-            else
-                alias table = tableParams[0];
             return value.deserializeFromIon!(symbolTable)(table, data);
         }
         else
@@ -233,9 +234,54 @@ template deserializeValue(string[] symbolTable, bool exteneded = false)
             return IonErrorCode.expectedListValue.ionErrorMsg;
         }
         else
-        static if (isAssociativeArray!T)
+        static if (is(T == V[K], K, V))
         {
-            //TODO
+            import mir.conv;
+            if (data.descriptor.type != IonTypeCode.null_ && data.descriptor.type != IonTypeCode.struct_)
+                return "Expected IonStruct for an associative array deserialization";
+            if (data.descriptor.L == 0xF)
+            {
+                value = null;
+                return null;
+            }
+            auto ionValue = data.trustedGet!IonStruct;
+
+            foreach (IonErrorCode error, size_t symbolId, IonDescribedValue elem; ionValue)
+            {
+                if (error)
+                    return error.ionErrorMsg;
+                if (symbolId >= table.length)
+                    return "Ion Symbol ID is too large for the current symbol table";
+                import mir.conv: to;
+                if (auto errorMsg = .deserializeValue!(symbolTable, exteneded)(elem, tableParams, value.require(table[symbolId].to!K)))
+                    return errorMsg;
+            }
+            return null;
+        }
+        else
+        static if (isStringMap!T)
+        {
+            import mir.conv;
+            if (data.descriptor.type != IonTypeCode.null_ && data.descriptor.type != IonTypeCode.struct_)
+                return "Expected IonStruct for an associative array deserialization";
+            if (data.descriptor.L == 0xF)
+            {
+                value = null;
+                return null;
+            }
+            auto ionValue = data.trustedGet!IonStruct;
+
+            foreach (IonErrorCode error, size_t symbolId, IonDescribedValue elem; ionValue)
+            {
+                if (error)
+                    return error.ionErrorMsg;
+                if (symbolId >= table.length)
+                    return "Ion Symbol ID is too large for the current symbol table";
+                import mir.conv: to;
+                if (auto errorMsg = .deserializeValue!(symbolTable, exteneded)(elem, tableParams, value.require(table[symbolId].to!string)))
+                    return errorMsg;
+            }
+            return null;
         }
         else
         static if (is(T == Slice!(D*, N, kind), D, size_t N, SliceKind kind))
@@ -479,7 +525,6 @@ template deserializeValue(string[] symbolTable, bool exteneded = false)
                     }
                 }
 
-                import mir.string_map : isStringMap;
                 static if (getAlgebraicAnnotationsOfVariant!T.length || anySatisfy!(templateOr!(isStringMap, isAssociativeArray), Types))
                 {
                     case IonTypeCode.struct_:
@@ -488,23 +533,15 @@ template deserializeValue(string[] symbolTable, bool exteneded = false)
                         {
                             if (!annotations.empty)
                             {
-                                size_t symbolID;
-                                if (auto error = annotations.pick(symbolID))
+                                size_t symbolId;
+                                if (auto error = annotations.pick(symbolId))
                                     return error.ionErrorMsg;
 
-                                static if (exteneded)
-                                {
-                                    auto originalID = symbolID;
-                                    if (symbolID >= tableParams[1].length)
-                                        goto Default;
-                                    symbolID = tableParams[1][symbolID];
-                                }
-                                else
-                                {
-                                    alias originalID = symbolID;
-                                }
+                                auto originalId = symbolId;
+                                if (!prepareSymbolId(tableParams, symbolId))
+                                    goto Default;
 
-                                switch (symbolID)
+                                switch (symbolId)
                                 {
                                     static foreach (VT; Types)
                                     static if (serdeHasAlgebraicAnnotation!VT)
@@ -521,12 +558,8 @@ template deserializeValue(string[] symbolTable, bool exteneded = false)
                                     }
                                     Default:
                                     default:
-                                        static if (!exteneded)
-                                            static immutable symbolTableInstance = symbolTable;
-                                        else
-                                            alias symbolTableInstance = tableParams[0];
                                         static if (__traits(hasMember, T, "serdeUnexpectedAnnotationHandler"))
-                                            value.serdeUnexpectedAnnotationHandler(originalID == 0 || originalID > symbolTableInstance.length ? "<@unknown symbol@>" : symbolTableInstance[originalID]);
+                                            value.serdeUnexpectedAnnotationHandler(originalId < table.length ? table[originalId] : "<@unknown symbol@>");
                                         else
                                             return "Unexpected annotation when deserializing " ~ T.stringof;
                                 }
@@ -696,24 +729,13 @@ template deserializeValue(string[] symbolTable, bool exteneded = false)
                             enum keys = serdeGetKeysIn!(__traits(getMember, value, member));
                             static if (keys.length)
                             {
-                                foreach (IonErrorCode error, size_t symbolID, IonDescribedValue elem; ionValue)
+                                foreach (IonErrorCode error, size_t symbolId, IonDescribedValue elem; ionValue)
                                 {
                                     if (error)
                                         return error.ionErrorMsg;
+                                    prepareSymbolId(tableParams, symbolId);
 
-                                    static if (exteneded)
-                                    {
-                                        auto originalID = symbolID;
-                                        if (symbolID >= tableParams[1].length)
-                                            goto Default;
-                                        symbolID = tableParams[1][symbolID];
-                                    }
-                                    else
-                                    {
-                                        alias originalID = symbolID;
-                                    }
-
-                                    switch(symbolID)
+                                    switch(symbolId)
                                     {
                                         static foreach (key; keys)
                                         {
@@ -734,24 +756,14 @@ template deserializeValue(string[] symbolTable, bool exteneded = false)
                     }
                     else
                     {
-                        foreach (IonErrorCode error, size_t symbolID, IonDescribedValue elem; ionValue)
+                        foreach (IonErrorCode error, size_t symbolId, IonDescribedValue elem; ionValue)
                         {
                             if (error)
-                            {
                                 return error.ionErrorMsg;
-                            }
-                            static if (exteneded)
-                            {
-                                auto originalID = symbolID;
-                                if (symbolID >= tableParams[1].length)
-                                    goto Default;
-                                symbolID = tableParams[1][symbolID];
-                            }
-                            else
-                            {
-                                alias originalID = symbolID;
-                            }
-                            S: switch(symbolID)
+                            auto originalId = symbolId;
+                            if (!prepareSymbolId(tableParams, symbolId))
+                                goto Default;
+                            S: switch(symbolId)
                             {
                                 static foreach(member; serdeFinalProxyDeserializableMembers!T)
                                 {{
@@ -774,7 +786,7 @@ template deserializeValue(string[] symbolTable, bool exteneded = false)
                                     else
                                         alias symbolTableInstance = tableParams[0];
                                     static if (hasUnexpectedKeyHandler)
-                                        value.serdeUnexpectedKeyHandler(originalID == 0 || originalID > symbolTableInstance.length ? "<@unknown symbol@>" : symbolTableInstance[originalID]);
+                                        value.serdeUnexpectedKeyHandler(originalId < table.length ? table[originalId] : "<@unknown symbol@>");
                                     else
                                         return "Unexpected key when deserializing " ~ T.stringof;
                             }

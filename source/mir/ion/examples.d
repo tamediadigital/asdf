@@ -511,10 +511,14 @@ unittest
         
         Returns: error msg if any
         +/
+        @safe pure
         string deserializeFromIon(string[] keys)(scope const char[][] symbolTable, IonDescribedValue value)
         {
-            foreach (elem; value.get!IonList)
+            import mir.ion.exception;
+            foreach (IonErrorCode error, IonDescribedValue elem; value.get!IonList)
             {
+                if (error)
+                    return error.ionErrorMsg;
                 array ~= "name" in elem.get!IonStruct.withSymbols(symbolTable)
                     ? MyObject(deserializeIon!ObjectA(symbolTable, elem))
                     : MyObject(deserializeIon!ObjectB(symbolTable, elem));
@@ -735,23 +739,21 @@ See_also: $(GMREF mir-core, mir,algebraic), $(GMREF mir-algorithm, mir,string_ma
 +/
 unittest
 {
+    import mir.string_map;
     import mir.ion.deser.ion: deserializeIon;
     import mir.ion.conv: json2ion, ion2text;
     import mir.algebraic: Nullable, This; // Nullable, Variant, or TaggedVariant
-    alias MyJsonAlgebraic = Nullable!(bool, string, double[], This[string]);
+    alias MyJsonAlgebraic = Nullable!(bool, string, double[], StringMap!This);
 
     auto json = `{"b" : true, "z" : null, "this" : {"c" : "str", "d" : [1, 2, 3, 4]}}`;
     auto binary = json.json2ion;
-    import std.stdio;
-    writeln(binary.ion2text);
     auto value = binary.deserializeIon!MyJsonAlgebraic;
 
-    auto object = value.get!(MyJsonAlgebraic[string]);
-    writeln(object);
+    auto object = value.get!(StringMap!MyJsonAlgebraic);
     assert(object["b"].get!bool == true);
     assert(object["z"].isNull);
 
-    object = object["this"].get!(MyJsonAlgebraic[string]);
+    object = object["this"].get!(StringMap!MyJsonAlgebraic);
     assert(object["c"].get!string == "str");
     assert(object["d"].get!(double[]) == [1.0, 2, 3, 4]);
 }

@@ -2207,6 +2207,7 @@ const:
     }
 
     ///
+    @safe pure nothrow @nogc
     IonStructWithSymbols withSymbols(return scope const(char[])[] symbolTable) return
     {
         return IonStructWithSymbols(this, symbolTable);
