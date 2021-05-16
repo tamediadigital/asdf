@@ -710,3 +710,13 @@ unittest
     ]
 }`, app.data);
 }
+
+/// Null vs Empty array serialization
+unittest
+{
+    int[] ar;
+    assert(ar.serializeJson == "null");
+
+    int[1] ar2;
+    assert(ar2[0 .. 0].serializeJson == "[]");
+}
