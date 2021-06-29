@@ -73,7 +73,7 @@ unittest
 
 /// Enum serialization
 void serializeValue(S, V)(ref S serializer, in V value)
-    if(is(V == enum))
+    if (is(V == enum))
 {
     static if (hasUDA!(V, serdeProxy))
     {
@@ -96,7 +96,7 @@ unittest
 /// String serialization
 void serializeValue(S)(ref S serializer, scope const(char)[] value)
 {
-    if(value is null)
+    if (value is null)
     {
         serializer.putNull(IonTypeCode.string);
         return;
@@ -113,9 +113,9 @@ unittest
 
 /// Array serialization
 void serializeValue(S, T)(ref S serializer, T[] value)
-    if(!isSomeChar!T)
+    if (!isSomeChar!T)
 {
-    if(value is null)
+    if (value is null)
     {
         serializer.putNull(IonTypeCode.list);
         return;
@@ -127,6 +127,18 @@ void serializeValue(S, T)(ref S serializer, T[] value)
         serializer.serializeValue(elem);
     }
     serializer.listEnd(state);
+}
+
+/// Array serialization
+void serializeValue(S, T)(ref S serializer, T value)
+    if (isPointer!T)
+{
+    if (value is null)
+    {
+        serializer.putNull(nullTypeCodeOf!T);
+        return;
+    }
+    serializeValue(serializer, *value);
 }
 
 /// Input range serialization
@@ -179,7 +191,7 @@ unittest
 /// String-value associative array serialization
 void serializeValue(S, T)(ref S serializer, auto ref T[string] value)
 {
-    if(value is null)
+    if (value is null)
     {
         serializer.putNull(IonTypeCode.struct_);
         return;
@@ -206,9 +218,9 @@ unittest
 
 /// Enumeration-value associative array serialization
 void serializeValue(S, V : const T[K], T, K)(ref S serializer, V value)
-    if(is(K == enum))
+    if (is(K == enum))
 {
-    if(value is null)
+    if (value is null)
     {
         serializer.putNull(IonTypeCode.struct_);
         return;
@@ -238,7 +250,7 @@ unittest
 void serializeValue(S,  V : const T[K], T, K)(ref S serializer, V value)
     if (isIntegral!K && !is(K == enum))
 {
-    if(value is null)
+    if (value is null)
     {
         serializer.putNull(IonTypeCode.struct_);
         return;
@@ -276,6 +288,9 @@ private IonTypeCode nullTypeCodeOf(T)()
 
     IonTypeCode code;
 
+    static if (isPointer!T)
+        code = nullTypeCodeOf!(PointerTarget!T);
+    else
     static if (is(T == bool))
         code = IonTypeCode.bool_;
     else
@@ -427,7 +442,7 @@ void serializeValueImpl(S, V)(ref S serializer, auto ref V value)
                 alias V = typeof(val);
                 static if(is(V == interface) || is(V == class) || is(V : E[], E))
                 {
-                    if(val is null)
+                    if (val is null)
                     {
                         serializer.putNull(nullTypeCodeOf!V);
                         continue;
@@ -446,7 +461,7 @@ void serializeValueImpl(S, V)(ref S serializer, auto ref V value)
             {
                 static if(is(V == interface) || is(V == class) || is(V : E[T], E, T))
                 {
-                    if(val is null)
+                    if (val is null)
                     {
                         serializer.putNull(nullTypeCodeOf!V);
                         continue F;
@@ -487,7 +502,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
 
     static if(is(V == class) || is(V == interface))
     {
-        if(value is null)
+        if (value is null)
         {
             serializer.putNull(nullTypeCodeOf!V);
             return;
@@ -561,7 +576,7 @@ void serializeValue(S, V)(ref S serializer, auto ref V value)
     else
     static if (isNullable!V)
     {
-        if(value.isNull)
+        if (value.isNull)
         {
             serializer.putNull(nullTypeCodeOf!(typeof(value.get())));
             return;

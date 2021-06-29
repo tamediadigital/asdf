@@ -14,7 +14,7 @@ import mir.ion.value;
 import mir.small_array;
 import mir.small_string;
 import mir.utility: _expect;
-import std.traits: ForeachType, hasUDA, Unqual;
+import std.traits: ForeachType, hasUDA, Unqual, isPointer, PointerTarget;
 
 public import mir.serde;
 
@@ -192,6 +192,32 @@ template deserializeValue(string[] symbolTable, bool exteneded = false)
         static if (__traits(hasMember, value, "deserializeFromIon"))
         {
             return value.deserializeFromIon(table, data);
+        }
+        else
+        static if (isPointer!T)
+        {
+            if (data.descriptor.L == 0xF)
+            {
+                if (data.descriptor.type == IonTypeCode.null_)
+                {
+                    static if (__traits(compiles, value = null))
+                    {
+                        value = null;
+                        return null; 
+                    }
+                    else
+                    {
+                        return "Can't construct null value of type" ~ T.stringof;
+                    }
+                }
+            }
+
+            if (value is null)
+            {
+                value = new PointerTarget!T;
+            }
+
+            return deserializeValue!(symbolTable, exteneded)(data, tableParams, *value, optAnnotations);
         }
         else
         static if (is(T : SmallArray!(E, maxLength), E, size_t maxLength))

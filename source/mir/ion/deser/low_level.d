@@ -17,6 +17,8 @@ import mir.timestamp;
 import mir.utility: _expect;
 
 import std.traits:
+    isPointer,
+    PointerTarget,
     isArray,
     ForeachType,
     hasUDA,
@@ -57,6 +59,9 @@ package template isFirstOrderSerdeType(T)
             enum isFirstOrderSerdeType = isFirstOrderSerdeType!(serdeGetFinalProxy!T);
     }
     else
+    static if (isPointer!T)
+        enum isFirstOrderSerdeType = .isFirstOrderSerdeType!(Unqual!(PointerTarget!T));
+    else
     static if (isArray!T)
         enum isFirstOrderSerdeType = .isFirstOrderSerdeType!(Unqual!(ForeachType!T));
     else
@@ -88,6 +93,33 @@ package(mir.ion) template isNullable(T)
     {
         enum isNullable = false;
     }
+}
+
+IonErrorCode deserializeValueImpl(T)(IonDescribedValue data, ref T value)
+    if (isPointer!T && isFirstOrderSerdeType!T)
+{
+    if (data.descriptor.L == 0xF)
+    {
+        if (data.descriptor.type == IonTypeCode.null_)
+        {
+            value = null;
+            return IonErrorCode.none;
+        }
+    }
+
+    if (value is null)
+    {
+        value = new PointerTarget!T;
+    }
+
+    return deserializeValueImpl(data, *value);
+}
+
+///
+unittest
+{
+    import mir.ion.deser.json: deserializeJson;
+    assert(*"4".deserializeJson!(int*) == 4);
 }
 
 /++
@@ -458,7 +490,7 @@ IonErrorCode deserializeValueImpl(T)(IonDescribedValue data, ref T value)
         value = ionValue.idup;
     else
         value = ionValue.dup;
-    return IonErrorCode.none; 
+    return IonErrorCode.none;
 }
 
 ///
@@ -487,7 +519,7 @@ IonErrorCode deserializeValueImpl(T)(IonDescribedValue data, ref T value)
         return IonErrorCode.expectedStringValue;
     auto ionValue = data.trustedGet!(const(char)[]);
     value = ionValue.rcarray!(TemplateArgsOf!T);
-    return IonErrorCode.none; 
+    return IonErrorCode.none;
 }
 
 ///
@@ -517,7 +549,7 @@ IonErrorCode deserializeValueImpl(T : SmallString!maxLength, size_t maxLength)(I
     if (ionValue.length > maxLength)
         return IonErrorCode.smallStringOverflow;
     value.trustedAssign(ionValue);
-    return IonErrorCode.none; 
+    return IonErrorCode.none;
 }
 
 ///
@@ -544,9 +576,9 @@ IonErrorCode deserializeValueImpl(T)(IonDescribedValue data, ref T value)
     if (auto error = data.get(ionValue))
         return error;
     if (_expect(ionValue.length != 1, false))
-        return IonErrorCode.expectedCharValue; 
+        return IonErrorCode.expectedCharValue;
     value = ionValue[0];
-    return IonErrorCode.none; 
+    return IonErrorCode.none;
 }
 
 ///
@@ -592,7 +624,7 @@ IonErrorCode deserializeScopedValueImpl(T)(IonDescribedValue data, ref T value)
         return IonErrorCode.expectedStringValue;
     auto ionValue = data.trustedGet!(const(char)[]);
     value = cast(T)ionValue;
-    return IonErrorCode.none; 
+    return IonErrorCode.none;
 }
 
 ///

@@ -896,3 +896,22 @@ unittest
     assert(value.index == 0.9962125);
     assert(value.data == 0.0001);
 }
+
+/// Pointers support
+unittest
+{
+    import mir.ion.ser.json: serializeJson;
+    import mir.ion.deser.json: deserializeJson;
+
+    static struct C { int d; }
+    static struct S
+    {
+        C* c;
+        int v;
+    }
+
+    assert(new S(new C(3), 4).serializeJson == `{"c":{"d":3},"v":4}`, new S(new C(3), 4).serializeJson);
+    auto s = `{"c":{"d":3},"v":4}`.deserializeJson!(C*);
+    import std.stdio;
+    writeln(s.serializeJson);
+}
